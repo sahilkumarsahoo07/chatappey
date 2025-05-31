@@ -18,17 +18,33 @@
 import jwt from "jsonwebtoken";
 
 export const generateToken = (userId, res) => {
-    const token = jwt.sign({ userId }, "nyscretkey", {
+    const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
         expiresIn: "7d"
     });
 
     res.cookie("jwt", token, {
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        httpOnly: true,
-        secure: true,          // 🔥 must be true for HTTPS
-        sameSite: "None"       // 🔥 allow cross-site cookies
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+        httpOnly: true, // Prevent XSS attacks
+        sameSite: "strict", // Prevent CSRF attacks
+        secure: process.env.NODE_ENV === "production" // Only send over HTTPS in production
     });
 
     return token;
+};
+
+export const verifyToken = (req, res, next) => {
+    const token = req.cookies.jwt;
+    
+    if (!token) {
+        return res.status(401).json({ error: "Unauthorized - No Token Provided" });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({ error: "Unauthorized - Invalid Token" });
+        }
+        req.userId = decoded.userId;
+        next();
+    });
 };
 
