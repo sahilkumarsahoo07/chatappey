@@ -16,59 +16,31 @@
 // }
 
 import jwt from "jsonwebtoken";
+import User from "../models/user.model.js";
 
-export const generateToken = (userId, res) => {
-    try {
-        if (!process.env.JWT_SECRET) {
-            throw new Error("JWT_SECRET is not defined in environment variables");
-        }
+export const login = async (req, res) => {
+  const { email, password } = req.body;
 
-        const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
-            expiresIn: "7d"
-        });
+  // Find user & verify password (your logic here)
+  const user = await User.findOne({ email });
+  if (!user || !(await user.comparePassword(password))) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
 
-        const isProduction = process.env.NODE_ENV === "production";
-        const frontendUrl = isProduction ? "https://chatappey.netlify.app" : "http://localhost:5173";
+  // Generate JWT token
+  const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 
-        res.cookie("jwt", token, {
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-            httpOnly: true,
-            sameSite: isProduction ? "none" : "lax",
-            secure: isProduction,
-            domain: isProduction ? ".netlify.app" : undefined,
-            path: "/"
-        });
+  // Set cookie with token
+  res.cookie("jwt", token, {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+  });
 
-        console.log(`Token generated and cookie set for ${userId}`);
-        return token;
-    } catch (error) {
-        console.error("Error generating token:", error);
-        throw error;
-    }
+  res.json({ message: "Login successful", user: { id: user._id, email: user.email } });
 };
 
-export const verifyToken = (req, res, next) => {
-    try {
-        // Check both cookie and Authorization header
-        const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
-        
-        if (!token) {
-            console.error("No token found in request:", {
-                cookies: req.cookies,
-                headers: req.headers
-            });
-            return res.status(401).json({ error: "Unauthorized - No Token Provided" });
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.userId;
-        next();
-    } catch (error) {
-        console.error("JWT Verification Error:", error);
-        return res.status(401).json({ 
-            error: "Unauthorized - Invalid Token",
-            details: error.message 
-        });
-    }
-};
 
