@@ -18,17 +18,17 @@
 import jwt from "jsonwebtoken";
 
 export const generateToken = (userId, res) => {
-  const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: "7d"
-  });
+    const token = jwt.sign({ userId }, "nyscretkey", {
+        expiresIn: "7d"
+    });
 
-  res.cookie("jwt", token, {
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    httpOnly: true,
-    secure: true,          // 🔥 must be true for HTTPS
-    sameSite: "None"       // 🔥 allow cross-site cookies
-  });
+    res.cookie("jwt", token, {
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        httpOnly: true,
+        secure: true,          // 🔥 must be true for HTTPS
+        sameSite: "None"       // 🔥 allow cross-site cookies
+    });
 
-  return token;
+    return token;
 };
 
