@@ -184,21 +184,33 @@ export const updateAbout = async (req, res) => {
     }
 };
 
+// const transporter = nodemailer.createTransport({
+//   host: process.env.EMAIL_HOST || 'smtp.office365.com',
+//   port: process.env.EMAIL_PORT || 587,
+//   secure: false, // true for 465, false for other ports
+//   auth: {
+//     user: process.env.EMAIL_USER,
+//     pass: process.env.EMAIL_PASS
+//   },
+//   tls: {
+//     ciphers: 'SSLv3',
+//     rejectUnauthorized: process.env.NODE_ENV === 'production' // false for development
+//   },
+//   logger: true,
+//   debug: process.env.NODE_ENV !== 'production'
+// });
+
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.office365.com',
-  port: process.env.EMAIL_PORT || 587,
-  secure: false, // true for 465, false for other ports
+  service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  tls: {
-    ciphers: 'SSLv3',
-    rejectUnauthorized: process.env.NODE_ENV === 'production' // false for development
+    user: process.env.EMAIL_USER,   // your gmail address
+    pass: process.env.EMAIL_PASS,   // the app password here
   },
   logger: true,
-  debug: process.env.NODE_ENV !== 'production'
+  debug: process.env.NODE_ENV !== 'production',
 });
+
+
 
 const otpStorage = new Map();
 
