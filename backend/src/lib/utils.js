@@ -16,31 +16,20 @@
 // }
 
 import jwt from "jsonwebtoken";
-import User from "../models/user.model.js";
 
-export const login = async (req, res) => {
-  const { email, password } = req.body;
-
-  // Find user & verify password (your logic here)
-  const user = await User.findOne({ email });
-  if (!user || !(await user.comparePassword(password))) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
-
-  // Generate JWT token
-  const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+export const generateToken = (userId, res) => {
+  const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: "7d",
   });
 
-  // Set cookie with token
   res.cookie("jwt", token, {
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,  // 7 days in milliseconds
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
   });
 
-  res.json({ message: "Login successful", user: { id: user._id, email: user.email } });
+  return token;
 };
 
 
