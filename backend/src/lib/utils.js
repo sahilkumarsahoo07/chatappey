@@ -23,12 +23,10 @@ export const generateToken = (userId, res) => {
   });
 
   res.cookie("jwt", token, {
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000,  // 7 days in milliseconds
     httpOnly: true,
-    secure: true, // Must be true for cross-domain cookies
-    sameSite: "None", // Required for cross-domain
-    domain: ".render.com", // Your Render domain (or omit if using exact domain)
-    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
   });
 
   return token;

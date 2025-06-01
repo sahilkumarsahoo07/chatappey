@@ -25,9 +25,6 @@ app.use(cors({
     "https://chatappey.netlify.app" 
   ],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    exposedHeaders: ["set-cookie"]
 }));
 
 
