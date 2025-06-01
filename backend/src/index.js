@@ -57,15 +57,15 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
 // ✅ CORS: Allow both local and deployed frontend
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://chatappey.netlify.app"
-    ],
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://chatappey.onrender.com",
+    "https://chatappey.netlify.app"
+  ],
+  credentials: true
+}));
+
 
 // ✅ Routes
 app.use("/api/auth", authRoutes);
