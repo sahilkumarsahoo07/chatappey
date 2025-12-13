@@ -22,25 +22,67 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  // Refresh users silently without loading state (for real-time updates)
+  refreshUsers: async () => {
+    try {
+      const res = await axiosInstance.get("/messages/users");
+      set({ users: res.data });
+    } catch (error) {
+      // Silently fail, don't show error toast for background refresh
+      console.error("Error refreshing users:", error);
+    }
+  },
+
   getMessages: async (userId) => {
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
       set({ messages: res.data });
+
+      // Mark messages as read when opening a chat
+      get().markMessagesAsRead(userId);
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
       set({ isMessagesLoading: false });
     }
   },
+
   sendMessage: async (messageData) => {
-    const { selectedUser, messages } = get();
+    const { selectedUser, messages, users } = get();
     try {
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
         messageData
       );
-      set({ messages: [...messages, res.data] });
+      const newMessage = res.data;
+      set({ messages: [...messages, newMessage] });
+
+      // Instantly update sidebar by modifying users list locally
+      const updatedUsers = users.map(user => {
+        if (user._id === selectedUser._id) {
+          return {
+            ...user,
+            lastMessage: {
+              text: newMessage.text,
+              image: newMessage.image,
+              createdAt: newMessage.createdAt,
+              senderId: newMessage.senderId,
+              status: newMessage.status
+            }
+          };
+        }
+        return user;
+      });
+
+      // Sort users to move the current chat to the top
+      const sortedUsers = [...updatedUsers].sort((a, b) => {
+        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      set({ users: sortedUsers });
     } catch (error) {
       toast.error(error.response.data.message);
     }
@@ -51,31 +93,113 @@ export const useChatStore = create((set, get) => ({
     if (!selectedUser) return;
 
     const socket = useAuthStore.getState().socket;
+    if (!socket) {
+      console.error("Socket not available");
+      return;
+    }
 
+    // Listen for new messages
     socket.on("newMessage", (newMessage) => {
-      const isMessageSentFromSelectedUser =
-        newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
+      const currentSelectedUser = get().selectedUser;
+      const authUser = useAuthStore.getState().authUser;
 
-      set({
-        messages: [...get().messages, newMessage],
-      });
+      // Add message if it's part of the conversation with the selected user
+      // (either sent by them to me, or sent by me to them)
+      const isMessageForCurrentChat =
+        (newMessage.senderId === currentSelectedUser?._id && newMessage.receiverId === authUser._id) ||
+        (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
+
+      if (isMessageForCurrentChat) {
+        set({
+          messages: [...get().messages, newMessage],
+        });
+
+        // If this is a message from the other user, mark it as read immediately
+        if (newMessage.senderId === currentSelectedUser?._id) {
+          get().markMessagesAsRead(currentSelectedUser._id);
+        }
+      }
+
+      // Always refresh user list to update last message preview
+      get().refreshUsers();
     });
 
-    // socket.on("messageUpdated", (updatedMessage) => {
-    //     set({
-    //         messages: get().messages.map(msg =>
-    //             msg._id === updatedMessage._id ? updatedMessage : msg
-    //         )
-    //     });
-    // });
-
+    // Listen for deleted messages
     socket.on("deleteMessageForAll", (updatedMessage) => {
       set({
         messages: get().messages.map((msg) =>
           msg._id === updatedMessage._id ? updatedMessage : msg
         ),
       });
+    });
+
+    // Listen for message delivered event (single message)
+    socket.on("messageDelivered", ({ messageId, status }) => {
+      const { messages } = get();
+      set({
+        messages: messages.map((msg) =>
+          msg._id === messageId ? { ...msg, status } : msg
+        ),
+      });
+    });
+
+    // Listen for multiple messages delivered event
+    socket.on("messagesDelivered", ({ receiverId, senderId }) => {
+      const { messages } = get();
+      const authUser = useAuthStore.getState().authUser;
+
+      // Update all sent messages to this receiver to "delivered"
+      if (senderId === authUser._id) {
+        set({
+          messages: messages.map((msg) =>
+            msg.senderId === authUser._id &&
+              msg.receiverId === receiverId &&
+              msg.status === "sent"
+              ? { ...msg, status: "delivered" }
+              : msg
+          ),
+        });
+      }
+    });
+
+    // Listen for messages read event
+    socket.on("messagesRead", ({ readBy, chatWith, messageIds }) => {
+      const { selectedUser, messages } = get();
+      const authUser = useAuthStore.getState().authUser;
+
+      // Update status of my messages when they're read
+      if (selectedUser && readBy === selectedUser._id && chatWith === authUser._id) {
+        set({
+          messages: messages.map((msg) =>
+            msg.senderId === authUser._id && msg.status !== "read"
+              ? { ...msg, status: "read" }
+              : msg
+          ),
+        });
+      }
+    });
+
+    // Listen for when user comes online
+    socket.on("userOnline", ({ userId }) => {
+      const authUser = useAuthStore.getState().authUser;
+      const { messages, selectedUser } = get();
+
+      // If the selected user comes online, update pending messages
+      if (selectedUser && userId === selectedUser._id) {
+        // Notify server to update pending messages
+        const pendingMessages = messages.filter(
+          msg => msg.senderId === authUser._id &&
+            msg.receiverId === userId &&
+            msg.status === "sent"
+        );
+
+        if (pendingMessages.length > 0) {
+          socket.emit("updatePendingMessages", {
+            senderId: authUser._id,
+            receiverId: userId
+          });
+        }
+      }
     });
   },
 
@@ -126,10 +250,24 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  markMessagesAsRead: async (userId) => {
+    try {
+      await axiosInstance.put(`/messages/read/${userId}`);
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+    }
+  },
+
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
-    socket.off("deleteMessageForAll");
+    if (socket) {
+      socket.off("newMessage");
+      socket.off("deleteMessageForAll");
+      socket.off("messageDelivered");
+      socket.off("messagesDelivered");
+      socket.off("messagesRead");
+      socket.off("userOnline");
+    }
   },
 
   setSelectedUser: (selectedUser) => set({ selectedUser }),

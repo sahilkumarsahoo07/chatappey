@@ -245,10 +245,31 @@ export const useAuthStore = create((set, get) => ({
             query: {
                 userId: authUser._id,
             },
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5,
         });
         socket.connect();
 
         set({ socket: socket });
+
+        // Handle reconnection
+        socket.on("connect", () => {
+            console.log("Socket connected successfully");
+        });
+
+        socket.on("disconnect", () => {
+            console.log("Socket disconnected");
+        });
+
+        socket.on("reconnect", (attemptNumber) => {
+            console.log("Socket reconnected after", attemptNumber, "attempts");
+            toast.success("Connection restored");
+        });
+
+        socket.on("reconnect_error", (error) => {
+            console.error("Socket reconnection error:", error);
+        });
 
         socket.on("blocked", ({ blockerId, blockedId }) => {
             if (authUser._id === blockerId || authUser._id === blockedId) {

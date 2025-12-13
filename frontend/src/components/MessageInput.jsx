@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { Image, Send, X } from "lucide-react";
 import toast from "react-hot-toast";
+import EmojiPickerComponent from "./EmojiPickerComponent";
 
 const MessageInput = () => {
     const [text, setText] = useState("");
@@ -48,19 +49,18 @@ const MessageInput = () => {
     };
 
     return (
-        <div className="p-4 w-full">
+        <div className="p-4 w-full border-t border-base-300 bg-base-200">
             {imagePreview && (
                 <div className="mb-3 flex items-center gap-2">
                     <div className="relative">
                         <img
                             src={imagePreview}
                             alt="Preview"
-                            className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
+                            className="w-20 h-20 object-cover rounded-lg"
                         />
                         <button
                             onClick={removeImage}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-base-300
-              flex items-center justify-center"
+                            className="absolute -top-1.5 -right-1.5 btn btn-circle btn-xs btn-error"
                             type="button"
                         >
                             <X className="size-3" />
@@ -70,10 +70,10 @@ const MessageInput = () => {
             )}
 
             <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                <div className="flex-1 flex gap-2">
+                <div className="flex-1 flex gap-2 items-center">
                     <input
                         type="text"
-                        className="w-full input input-bordered rounded-lg input-sm sm:input-md"
+                        className="input input-bordered w-full"
                         placeholder="Type a message..."
                         value={text}
                         onChange={(e) => setText(e.target.value)}
@@ -86,21 +86,28 @@ const MessageInput = () => {
                         onChange={handleImageChange}
                     />
 
+                    {/* Emoji Picker */}
+                    <EmojiPickerComponent
+                        onEmojiSelect={(emoji) => setText(prev => prev + emoji)}
+                    />
+
+                    {/* Image Button */}
                     <button
                         type="button"
-                        className={`hidden sm:flex btn btn-circle
-                     ${imagePreview ? "text-emerald-500" : "text-zinc-400"}`}
+                        className="btn btn-circle btn-ghost"
                         onClick={() => fileInputRef.current?.click()}
                     >
                         <Image size={20} />
                     </button>
                 </div>
+
+                {/* Send Button */}
                 <button
                     type="submit"
-                    className="btn btn-sm btn-circle"
+                    className="btn btn-circle btn-primary"
                     disabled={!text.trim() && !imagePreview}
                 >
-                    <Send size={22} />
+                    <Send size={20} />
                 </button>
             </form>
         </div>

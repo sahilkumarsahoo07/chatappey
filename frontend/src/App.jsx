@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
-import Navbar from './components/Navbar';
+import LeftNavbar from './components/LeftNavbar';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import SignUpPage from './pages/SignUpPage';
 import HomePage from './pages/HomePage';
@@ -37,7 +37,7 @@ function App() {
     );
   return (
     <div data-theme={theme}>
-      <Navbar />
+      {authUser && <LeftNavbar />}
       <Routes>
         <Route path='/' element={authUser ? <HomePage /> : <Navigate to="/login" />} />
         <Route path='/signup' element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />

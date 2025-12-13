@@ -39,18 +39,18 @@
 //     // In your socket.io server code
 //     socket.on("blocked", (data) => {
 //         console.log(`User blocked: ${data.blockerId} blocked ${data.blockedId}`);
-        
+
 //         // Notify both users
 //         io.to(getReceiverSocketId(data.blockerId)).emit("user-blocked", data);
 //         io.to(getReceiverSocketId(data.blockedId)).emit("user-blocked", data);
-        
+
 //         // Update online users list
 //         io.emit("getOnlineUsers", Object.keys(userSocketMap));
 //     });
 
 //     socket.on("unblocked", (data) => {
 //         console.log(`User unblocked: ${data.unblockedId} by ${data.unblockerId}`);
-        
+
 //         io.to(getReceiverSocketId(data.unblockerId)).emit("unblocked", data);
 //         io.to(getReceiverSocketId(data.unblockedId)).emit("unblocked", data);
 
@@ -98,10 +98,26 @@ io.on("connection", (socket) => {
   if (userId) {
     userSocketMap[userId] = socket.id;
     console.log(`User ID ${userId} mapped to socket ${socket.id}`);
+
+    // Notify the user that they're online (for updating pending messages to delivered)
+    socket.emit("userOnline", { userId });
   }
 
   // Notify all clients about current online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
+
+  // Handle updating message status to delivered when receiver comes online
+  socket.on("updatePendingMessages", (data) => {
+    const { senderId, receiverId } = data;
+    const senderSocketId = getReceiverSocketId(senderId);
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messagesDelivered", {
+        receiverId,
+        senderId
+      });
+    }
+  });
 
   socket.on("messageSeen", (message) => {
     const senderSocketId = getReceiverSocketId(message.senderId);
