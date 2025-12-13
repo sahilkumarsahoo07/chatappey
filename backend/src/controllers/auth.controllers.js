@@ -32,7 +32,7 @@ export const signup = async (req, res) => {
 
         if (newUser) {
             // generate jwt token here
-            generateToken(newUser._id, res);
+            const token = generateToken(newUser._id, res);
             await newUser.save();
 
             res.status(201).json({
@@ -40,6 +40,7 @@ export const signup = async (req, res) => {
                 fullName: newUser.fullName,
                 email: newUser.email,
                 profilePic: newUser.profilePic,
+                token: token,
             });
         } else {
             res.status(400).json({ message: "Invalid user data" });
@@ -64,13 +65,14 @@ export const login = async (req, res) => {
             return res.status(400).json({ message: "Invalid credentials" });
         }
 
-        generateToken(user._id, res);
+        const token = generateToken(user._id, res);
 
         res.status(200).json({
             _id: user._id,
             fullName: user.fullName,
             email: user.email,
             profilePic: user.profilePic,
+            token: token,
         });
     } catch (error) {
         console.log("Error in login controller", error.message);
@@ -201,13 +203,13 @@ export const updateAbout = async (req, res) => {
 // });
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,   // your gmail address
-    pass: process.env.EMAIL_PASS,   // the app password here
-  },
-  logger: true,
-  debug: process.env.NODE_ENV !== 'production',
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,   // your gmail address
+        pass: process.env.EMAIL_PASS,   // the app password here
+    },
+    logger: true,
+    debug: process.env.NODE_ENV !== 'production',
 });
 
 
@@ -215,51 +217,51 @@ const transporter = nodemailer.createTransport({
 const otpStorage = new Map();
 
 export const sendOtp = async (req, res) => {
-  const { email } = req.body;
+    const { email } = req.body;
 
-  // Input validation
-  if (!email) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Email is required' 
-    });
-  }
-
-  if (!/\S+@\S+\.\S+/.test(email)) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Invalid email format' 
-    });
-  }
-
-  try {
-    // Check if user exists
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
+    // Input validation
+    if (!email) {
+        return res.status(400).json({
+            success: false,
+            message: 'Email is required'
+        });
     }
 
-    // Generate OTP
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const otpId = uuidv4();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+    if (!/\S+@\S+\.\S+/.test(email)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid email format'
+        });
+    }
 
-    // Store OTP
-    otpStorage.set(email, {
-        otp,
-        userId: user._id,
-        expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-    });
+    try {
+        // Check if user exists
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
 
-    // Email options
-   const mailOptions = {
-    from: `"Chat Appey" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: 'Your Password Reset OTP',
-    html: `
+        // Generate OTP
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const otpId = uuidv4();
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+        // Store OTP
+        otpStorage.set(email, {
+            otp,
+            userId: user._id,
+            expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+        });
+
+        // Email options
+        const mailOptions = {
+            from: `"Chat Appey" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Your Password Reset OTP',
+            html: `
         <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 640px; margin: 0 auto; border-radius: 20px; overflow: hidden; border: 1px solid #2a2a3a;">
             <!-- Glowing Header -->
             <div style="background: linear-gradient(135deg, #0f0f15 0%, #1e1b4b 100%); padding: 40px 32px; text-align: center; border-bottom: 1px solid rgba(99, 102, 241, 0.2); position: relative;">
@@ -349,161 +351,161 @@ export const sendOtp = async (req, res) => {
             </div>
         </div>
     `
-    };
+        };
 
-    // Send email
-    const info = await transporter.sendMail(mailOptions);
+        // Send email
+        const info = await transporter.sendMail(mailOptions);
 
-    return res.status(200).json({ 
-      success: true,
-      message: 'OTP sent successfully',
-      otpId,
-    });
+        return res.status(200).json({
+            success: true,
+            message: 'OTP sent successfully',
+            otpId,
+        });
 
-  } catch (error) {
-    console.error('Error in sendOtp:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code
-    });
-    
-    let errorMessage = 'Failed to send OTP';
-    if (error.code === 'EAUTH') {
-      errorMessage = 'Email authentication failed';
-    } else if (error.code === 'ECONNECTION') {
-      errorMessage = 'Could not connect to email service';
+    } catch (error) {
+        console.error('Error in sendOtp:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code
+        });
+
+        let errorMessage = 'Failed to send OTP';
+        if (error.code === 'EAUTH') {
+            errorMessage = 'Email authentication failed';
+        } else if (error.code === 'ECONNECTION') {
+            errorMessage = 'Could not connect to email service';
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: errorMessage,
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
-
-    return res.status(500).json({ 
-      success: false, 
-      message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
 };
 
 export const verifyOtp = async (req, res) => {
-  const { email, otp, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-  if (!email || !otp) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email and OTP are required',
-    });
-  }
-
-  try {
-    const storedOtp = otpStorage.get(email);  // ✅ Use email as key
-
-    if (!storedOtp) {
-      return res.status(404).json({
-        success: false,
-        message: 'OTP expired or invalid',
-      });
-    }
-
-    if (Date.now() > storedOtp.expiresAt) {
-      otpStorage.delete(email);
-      return res.status(400).json({
-        success: false,
-        message: 'OTP expired',
-      });
-    }
-
-    if (storedOtp.otp !== otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OTP',
-      });
-    }
-
-    if (newPassword) {
-      if (newPassword.length < 6) {
+    if (!email || !otp) {
         return res.status(400).json({
-          success: false,
-          message: 'Password must be at least 6 characters',
+            success: false,
+            message: 'Email and OTP are required',
         });
-      }
-
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-      await User.findByIdAndUpdate(storedOtp.userId, {
-        password: hashedPassword,
-      });
     }
 
-    otpStorage.delete(email);  // ✅ Clean up using email
+    try {
+        const storedOtp = otpStorage.get(email);  // ✅ Use email as key
 
-    return res.status(200).json({
-      success: true,
-      message: newPassword ? 'Password updated successfully' : 'OTP verified successfully',
-      userId: storedOtp.userId,
-    });
+        if (!storedOtp) {
+            return res.status(404).json({
+                success: false,
+                message: 'OTP expired or invalid',
+            });
+        }
 
-  } catch (error) {
-    console.error('Error in verifyOtp:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-    });
-  }
+        if (Date.now() > storedOtp.expiresAt) {
+            otpStorage.delete(email);
+            return res.status(400).json({
+                success: false,
+                message: 'OTP expired',
+            });
+        }
+
+        if (storedOtp.otp !== otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid OTP',
+            });
+        }
+
+        if (newPassword) {
+            if (newPassword.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Password must be at least 6 characters',
+                });
+            }
+
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+            await User.findByIdAndUpdate(storedOtp.userId, {
+                password: hashedPassword,
+            });
+        }
+
+        otpStorage.delete(email);  // ✅ Clean up using email
+
+        return res.status(200).json({
+            success: true,
+            message: newPassword ? 'Password updated successfully' : 'OTP verified successfully',
+            userId: storedOtp.userId,
+        });
+
+    } catch (error) {
+        console.error('Error in verifyOtp:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
 };
 
 export const resetPassword = async (req, res) => {
-  const { email, newPassword } = req.body;
+    const { email, newPassword } = req.body;
 
-  try {
-    console.log(email,newPassword)
-    // const storedOtp = otpStorage.get(email);
+    try {
+        console.log(email, newPassword)
+        // const storedOtp = otpStorage.get(email);
 
-    // if (!storedOtp) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: 'Invalid or expired OTP'
-    //   });
-    // }
+        // if (!storedOtp) {
+        //   return res.status(400).json({
+        //     success: false,
+        //     message: 'Invalid or expired OTP'
+        //   });
+        // }
 
-    const user = await User.findOne({ email });
-    // console.log(user)
+        const user = await User.findOne({ email });
+        // console.log(user)
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        console.log(salt)
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        const updatedUser = await User.findOneAndUpdate(
+            { email },
+            { password: hashedPassword },
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found while updating password',
+            });
+        }
+
+
+        otpStorage.delete(email); // Clean up
+
+        return res.status(200).json({
+            message: 'Password reset successfully'
+        });
+
+    } catch (error) {
+        console.error('Error in resetPassword:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to reset password'
+        });
     }
-
-    const salt = await bcrypt.genSalt(10);
-    console.log(salt)
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    const updatedUser = await User.findOneAndUpdate(
-        { email },
-        { password: hashedPassword },
-    );
-
-    if (!updatedUser) {
-    return res.status(404).json({
-        success: false,
-        message: 'User not found while updating password',
-    });
-    }
-
-
-    otpStorage.delete(email); // Clean up
-
-    return res.status(200).json({
-      message: 'Password reset successfully'
-    });
-
-  } catch (error) {
-    console.error('Error in resetPassword:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to reset password'
-    });
-  }
 };
 
 export const blockUser = async (req, res) => {
@@ -512,54 +514,54 @@ export const blockUser = async (req, res) => {
         const currentUserId = req.user._id;
 
         if (!userId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "User ID is required" 
+            return res.status(400).json({
+                success: false,
+                message: "User ID is required"
             });
         }
 
         if (userId === currentUserId.toString()) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "You cannot block yourself" 
+            return res.status(400).json({
+                success: false,
+                message: "You cannot block yourself"
             });
         }
 
         const userToBlock = await User.findById(userId);
         if (!userToBlock) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "User not found" 
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
             });
         }
 
         const currentUser = await User.findById(currentUserId);
         if (currentUser.blockedUsers.includes(userId)) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "User is already blocked" 
+            return res.status(400).json({
+                success: false,
+                message: "User is already blocked"
             });
         }
 
         currentUser.blockedUsers.push(userId);
         await currentUser.save();
 
-        io.emit('user-blocked', { 
-            blockerId: currentUserId, 
-            blockedId: userId 
+        io.emit('user-blocked', {
+            blockerId: currentUserId,
+            blockedId: userId
         });
 
-        res.status(200).json({ 
-            success: true, 
+        res.status(200).json({
+            success: true,
             message: "User blocked successfully",
             blockedUserId: userId
         });
 
     } catch (error) {
         console.error("Error blocking user:", error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Internal server error" 
+        res.status(500).json({
+            success: false,
+            message: "Internal server error"
         });
     }
 };
@@ -571,24 +573,24 @@ export const unblockUser = async (req, res) => {
         const currentUserId = req.user._id;
 
         if (!userId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "User ID is required" 
+            return res.status(400).json({
+                success: false,
+                message: "User ID is required"
             });
         }
 
         if (userId === currentUserId.toString()) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "You cannot unblock yourself" 
+            return res.status(400).json({
+                success: false,
+                message: "You cannot unblock yourself"
             });
         }
 
         const currentUser = await User.findById(currentUserId);
         if (!currentUser.blockedUsers.includes(userId)) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "User is not blocked" 
+            return res.status(400).json({
+                success: false,
+                message: "User is not blocked"
             });
         }
 
@@ -597,22 +599,22 @@ export const unblockUser = async (req, res) => {
         );
         await currentUser.save();
 
-        io.emit('user-unblocked', { 
-            unblockerId: currentUserId, 
-            unblockedId: userId 
+        io.emit('user-unblocked', {
+            unblockerId: currentUserId,
+            unblockedId: userId
         });
 
-        res.status(200).json({ 
-            success: true, 
+        res.status(200).json({
+            success: true,
             message: "User unblocked successfully",
             unblockedUserId: userId
         });
 
     } catch (error) {
         console.error("Error unblocking user:", error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Internal server error" 
+        res.status(500).json({
+            success: false,
+            message: "Internal server error"
         });
     }
 };
@@ -623,15 +625,15 @@ export const getBlockedUsers = async (req, res) => {
         const currentUser = await User.findById(req.user._id)
             .populate('blockedUsers', 'fullName email profilePic');
 
-        res.status(200).json({ 
-            success: true, 
-            blockedUsers: currentUser.blockedUsers 
+        res.status(200).json({
+            success: true,
+            blockedUsers: currentUser.blockedUsers
         });
     } catch (error) {
         console.error("Error getting blocked users:", error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Internal server error" 
+        res.status(500).json({
+            success: false,
+            message: "Internal server error"
         });
     }
 };

@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
 // const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
-const BASE_URL =import.meta.env.MODE === "development" ? "http://localhost:5001": "https://chatappey.onrender.com";
+const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "https://chatappey.onrender.com";
 
 export const useAuthStore = create((set, get) => ({
     authUser: null,
@@ -35,6 +35,12 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.post("/auth/signup", data);
             set({ authUser: res.data });
+
+            // Store token in localStorage
+            if (res.data.token) {
+                localStorage.setItem("token", res.data.token);
+            }
+
             toast.success("Account created successfully");
             get().connectSocket();
         } catch (error) {
@@ -49,6 +55,12 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.post("/auth/login", data);
             set({ authUser: res.data });
+
+            // Store token in localStorage
+            if (res.data.token) {
+                localStorage.setItem("token", res.data.token);
+            }
+
             toast.success("Logged in successfully");
 
             get().connectSocket();
@@ -63,6 +75,10 @@ export const useAuthStore = create((set, get) => ({
         try {
             await axiosInstance.post("/auth/logout");
             set({ authUser: null });
+
+            // Remove token from localStorage
+            localStorage.removeItem("token");
+
             toast.success("Logged out successfully");
             get().disconnectSocket();
         } catch (error) {
@@ -106,7 +122,7 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
-     // Add to your useAuthStore
+    // Add to your useAuthStore
     sendOtp: async (email) => {
         try {
             const res = await axiosInstance.post("/auth/send-otp", { email });
@@ -198,28 +214,28 @@ export const useAuthStore = create((set, get) => ({
     },
 
     // Add to your useAuthStore
-subscribeToBlockEvents: (callback) => {
-    const { socket } = get();
-    if (!socket) return;
+    subscribeToBlockEvents: (callback) => {
+        const { socket } = get();
+        if (!socket) return;
 
-    const handleBlocked = (data) => callback(data);
-    socket.on("user-blocked", handleBlocked);
-    socket.on("user-unblocked", handleBlocked);
+        const handleBlocked = (data) => callback(data);
+        socket.on("user-blocked", handleBlocked);
+        socket.on("user-unblocked", handleBlocked);
 
-    return () => {
-        socket.off("user-blocked", handleBlocked);
-        socket.off("user-unblocked", handleBlocked);
-    };
-},
-checkBlockedStatus: async (userId) => {
-    try {
-        const data = await get().getOneBlockedUser();
-        return data.blockedUsers.some(user => user._id === userId);
-    } catch (error) {
-        console.error("Error checking blocked status:", error);
-        return false;
-    }
-},
+        return () => {
+            socket.off("user-blocked", handleBlocked);
+            socket.off("user-unblocked", handleBlocked);
+        };
+    },
+    checkBlockedStatus: async (userId) => {
+        try {
+            const data = await get().getOneBlockedUser();
+            return data.blockedUsers.some(user => user._id === userId);
+        } catch (error) {
+            console.error("Error checking blocked status:", error);
+            return false;
+        }
+    },
 
     connectSocket: () => {
         const { authUser } = get();
@@ -236,15 +252,15 @@ checkBlockedStatus: async (userId) => {
 
         socket.on("blocked", ({ blockerId, blockedId }) => {
             if (authUser._id === blockerId || authUser._id === blockedId) {
-            // Force recheck of blocked status
-            get().checkBlockedStatus();
+                // Force recheck of blocked status
+                get().checkBlockedStatus();
             }
         });
 
         socket.on("unblocked", ({ unblockerId, unblockedId }) => {
             if (authUser._id === unblockerId || authUser._id === unblockedId) {
-            // Force recheck of blocked status
-            get().checkBlockedStatus();
+                // Force recheck of blocked status
+                get().checkBlockedStatus();
             }
         });
 

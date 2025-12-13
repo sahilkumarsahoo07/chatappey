@@ -36,15 +36,24 @@ import User from "../models/user.model.js";
 
 export const protectRoute = async (req, res, next) => {
   try {
-    const token = req.cookies.jwt;
+    // Check for token in cookies first, then in Authorization header
+    let token = req.cookies.jwt;
+
+    if (!token && req.headers.authorization) {
+      // Check for Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith("Bearer ")) {
+        token = authHeader.substring(7);
+      }
+    }
 
     if (!token) {
-      return res.status(401).json({ message: "Unauthorize - No Token Provided" });
+      return res.status(401).json({ message: "Unauthorized - No Token Provided" });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (!decoded) {
-      return res.status(401).json({ message: "Unauthorize - Invalid Token" });
+      return res.status(401).json({ message: "Unauthorized - Invalid Token" });
     }
 
     const user = await User.findById(decoded.userId).select("-password");
@@ -59,3 +68,4 @@ export const protectRoute = async (req, res, next) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
