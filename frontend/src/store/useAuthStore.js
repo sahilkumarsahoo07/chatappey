@@ -3,6 +3,12 @@ import { create } from "zustand";
 import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
+import {
+    showBrowserNotification,
+    showInAppNotification,
+    playNotificationSound,
+    isDocumentVisible
+} from "../lib/notifications";
 
 // const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
 const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "https://chatappey.onrender.com";
@@ -303,6 +309,41 @@ export const useAuthStore = create((set, get) => ({
             set((state) => ({
                 onlineUsers: state.onlineUsers.filter((id) => id !== userId),
             }));
+        });
+
+        // Global notification listener for when no chat is selected
+        socket.on("newMessage", (newMessage) => {
+            const { authUser } = get();
+
+            // Only show notification if message is for me and I'm not in a chat
+            if (newMessage.receiverId === authUser._id) {
+                // Import useChatStore to check selected user
+                import("./useChatStore").then(({ useChatStore }) => {
+                    const selectedUser = useChatStore.getState().selectedUser;
+                    const users = useChatStore.getState().users;
+
+                    // Only show notification if not viewing this sender's chat
+                    if (selectedUser?._id !== newMessage.senderId) {
+                        const sender = users.find(u => u._id === newMessage.senderId);
+
+                        if (sender) {
+                            playNotificationSound();
+
+                            if (!isDocumentVisible()) {
+                                showBrowserNotification(sender.fullName, {
+                                    body: newMessage.text || "📷 Photo",
+                                    icon: sender.profilePic || "/avatar.png",
+                                    tag: newMessage.senderId,
+                                });
+                            } else {
+                                showInAppNotification(newMessage, sender, () => {
+                                    useChatStore.getState().setSelectedUser(sender);
+                                });
+                            }
+                        }
+                    }
+                });
+            }
         });
 
     },

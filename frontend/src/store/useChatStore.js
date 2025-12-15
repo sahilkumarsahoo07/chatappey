@@ -2,6 +2,13 @@ import { create } from "zustand";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
+import {
+  showBrowserNotification,
+  showInAppNotification,
+  playNotificationSound,
+  isDocumentVisible,
+  requestNotificationPermission
+} from "../lib/notifications";
 
 export const useChatStore = create((set, get) => ({
   messages: [],
@@ -102,6 +109,7 @@ export const useChatStore = create((set, get) => ({
     socket.on("newMessage", (newMessage) => {
       const currentSelectedUser = get().selectedUser;
       const authUser = useAuthStore.getState().authUser;
+      const users = get().users;
 
       // Add message if it's part of the conversation with the selected user
       // (either sent by them to me, or sent by me to them)
@@ -117,6 +125,30 @@ export const useChatStore = create((set, get) => ({
         // If this is a message from the other user, mark it as read immediately
         if (newMessage.senderId === currentSelectedUser?._id) {
           get().markMessagesAsRead(currentSelectedUser._id);
+        }
+      } else if (newMessage.receiverId === authUser._id) {
+        // Message is for me but from a different chat
+        // Show notification
+        const sender = users.find(u => u._id === newMessage.senderId);
+
+        if (sender) {
+          // Play notification sound
+          playNotificationSound();
+
+          if (!isDocumentVisible()) {
+            // Browser is not focused - show browser notification
+            showBrowserNotification(sender.fullName, {
+              body: newMessage.text || "📷 Photo",
+              icon: sender.profilePic || "/avatar.png",
+              tag: newMessage.senderId, // Prevent duplicate notifications
+            });
+          } else {
+            // Browser is focused but viewing different chat - show in-app notification
+            showInAppNotification(newMessage, sender, () => {
+              // When notification is clicked, open that chat
+              get().setSelectedUser(sender);
+            });
+          }
         }
       }
 
@@ -253,6 +285,8 @@ export const useChatStore = create((set, get) => ({
   markMessagesAsRead: async (userId) => {
     try {
       await axiosInstance.put(`/messages/read/${userId}`);
+      // Refresh user list to update unread count and remove highlights
+      get().refreshUsers();
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }

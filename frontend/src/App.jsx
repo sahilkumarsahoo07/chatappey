@@ -16,6 +16,7 @@ import { Loader } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { useThemeStore } from './store/useThemeStore';
 import Otp from './components/Otp';
+import { requestNotificationPermission } from './lib/notifications';
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
@@ -26,6 +27,13 @@ function App() {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // Request notification permission when user is authenticated
+  useEffect(() => {
+    if (authUser) {
+      requestNotificationPermission();
+    }
+  }, [authUser]);
 
   // console.log({ authUser })
 

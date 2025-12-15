@@ -48,6 +48,14 @@ const MessageInput = () => {
         }
     };
 
+    const handleKeyDown = (e) => {
+        // Send message on Enter key (without Shift)
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage(e);
+        }
+    };
+
     return (
         <div className="p-4 w-full border-t border-base-300 bg-base-200">
             {imagePreview && (
@@ -77,6 +85,7 @@ const MessageInput = () => {
                         placeholder="Type a message..."
                         value={text}
                         onChange={(e) => setText(e.target.value)}
+                        onKeyDown={handleKeyDown}
                     />
                     <input
                         type="file"

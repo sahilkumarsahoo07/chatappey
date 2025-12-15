@@ -25,10 +25,26 @@ const Sidebar = () => {
             refreshUsers();
         };
 
+        const handleNewUserSignup = (newUser) => {
+            // Refresh user list when a new user signs up
+            console.log("New user signed up:", newUser);
+            refreshUsers();
+        };
+
+        const handleUserListUpdate = (data) => {
+            // Refresh user list when any user connects
+            console.log("User list updated, user connected:", data.userId);
+            refreshUsers();
+        };
+
         socket.on("newMessage", handleNewMessage);
+        socket.on("newUserSignup", handleNewUserSignup);
+        socket.on("userListUpdate", handleUserListUpdate);
 
         return () => {
             socket.off("newMessage", handleNewMessage);
+            socket.off("newUserSignup", handleNewUserSignup);
+            socket.off("userListUpdate", handleUserListUpdate);
         };
     }, [refreshUsers]);
 
@@ -94,10 +110,25 @@ const Sidebar = () => {
         };
     };
 
-    // Get unread count (placeholder - you can implement real logic)
+    // Get unread count from user object (comes from backend)
     const getUnreadCount = (user) => {
-        // This is a placeholder - implement your unread logic
-        return 0;
+        return user.unreadCount || 0;
+    };
+
+    // Check if user is new (created within 24 hours and NO chat history at all)
+    const isNewUser = (user) => {
+        if (!user.createdAt) return false;
+
+        const accountAge = Date.now() - new Date(user.createdAt).getTime();
+        const oneDayInMs = 24 * 60 * 60 * 1000;
+
+        // User is new if:
+        // 1. Account is less than 24 hours old
+        // 2. No chat history exists at all (no lastMessage)
+        const isAccountNew = accountAge < oneDayInMs;
+        const hasNoChatHistory = !user.lastMessage;
+
+        return isAccountNew && hasNoChatHistory;
     };
 
     // Sort users by most recent message timestamp
@@ -160,14 +191,8 @@ const Sidebar = () => {
                         const unreadCount = getUnreadCount(user);
                         const isOnline = onlineUsers.includes(user._id);
 
-                        // Check if message is recent (within last 5 minutes) for highlighting
-                        const isRecentMessage = user.lastMessage &&
-                            (new Date() - new Date(user.lastMessage.createdAt)) < 5 * 60 * 1000;
-
-                        // Check if last message is from the other user (not from me)
-                        const isNewFromOther = user.lastMessage &&
-                            user.lastMessage.senderId !== authUser._id &&
-                            isRecentMessage;
+                        // Highlight if there are unread messages AND user is not currently selected
+                        const hasUnreadMessages = unreadCount > 0 && selectedUser?._id !== user._id;
 
                         return (
                             <button
@@ -175,7 +200,7 @@ const Sidebar = () => {
                                 onClick={() => setSelectedUser(user)}
                                 className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all ${selectedUser?._id === user._id
                                     ? "bg-base-200"
-                                    : isNewFromOther
+                                    : hasUnreadMessages
                                         ? "bg-primary/5"
                                         : ""
                                     }`}
@@ -197,11 +222,19 @@ const Sidebar = () => {
                                     <div className="w-full flex flex-col">
                                         {/* Name and Timestamp Row */}
                                         <div className="w-full flex items-baseline justify-between mb-1">
-                                            <span className={`text-[15px] text-base-content truncate pr-2 ${isNewFromOther ? "font-bold" : "font-semibold"
-                                                }`}>
-                                                {user.fullName}
-                                            </span>
-                                            <span className={`text-xs flex-shrink-0 ${isNewFromOther ? "text-primary font-semibold" : "text-base-content/50"
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                <span className={`text-[15px] text-base-content truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
+                                                    }`}>
+                                                    {user.fullName}
+                                                </span>
+                                                {/* NEW Badge for newly created accounts */}
+                                                {isNewUser(user) && (
+                                                    <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
+                                                        NEW
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className={`text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
                                                 }`}>
                                                 {timestamp}
                                             </span>
@@ -209,7 +242,7 @@ const Sidebar = () => {
                                         {/* Last Message Row */}
                                         <div className="w-full flex items-center justify-between">
                                             <div className="flex items-center gap-1 flex-1 min-w-0">
-                                                <p className={`text-[13px] truncate flex-1 text-left ${isNewFromOther
+                                                <p className={`text-[13px] truncate flex-1 text-left ${hasUnreadMessages
                                                     ? "text-base-content font-semibold"
                                                     : "text-base-content/60"
                                                     }`}>
@@ -304,8 +337,16 @@ const Sidebar = () => {
 
                                         {/* User Info */}
                                         <div className="flex-1 min-w-0 text-left">
-                                            <div className="font-semibold text-[15px] text-base-content truncate">
-                                                {user.fullName}
+                                            <div className="flex items-center gap-2">
+                                                <div className="font-semibold text-[15px] text-base-content truncate">
+                                                    {user.fullName}
+                                                </div>
+                                                {/* NEW Badge for newly created accounts */}
+                                                {isNewUser(user) && (
+                                                    <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
+                                                        NEW
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-xs text-base-content/60">
                                                 {user.hasBlockedMe ? "Unavailable" : (isOnline ? "Online" : "Offline")}

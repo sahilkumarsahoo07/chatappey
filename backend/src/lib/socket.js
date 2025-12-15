@@ -101,6 +101,9 @@ io.on("connection", (socket) => {
 
     // Notify the user that they're online (for updating pending messages to delivered)
     socket.emit("userOnline", { userId });
+
+    // Notify all clients to refresh their user list (for new users to appear)
+    io.emit("userListUpdate", { userId });
   }
 
   // Notify all clients about current online users

@@ -25,6 +25,13 @@ export const getUsersForSidebar = async (req, res) => {
                     .sort({ createdAt: -1 })
                     .select('text image createdAt senderId status');
 
+                // Count unread messages from this user
+                const unreadCount = await Message.countDocuments({
+                    senderId: user._id,
+                    receiverId: loggedInUserId,
+                    status: { $ne: 'read' }
+                });
+
                 // Check if I blocked this user
                 const isBlockedByMe = myBlockedUsers.includes(user._id.toString());
 
@@ -39,6 +46,8 @@ export const getUsersForSidebar = async (req, res) => {
                     lastMessage: lastMessage || null,
                     isBlockedByMe,
                     hasBlockedMe,
+                    createdAt: user.createdAt, // Include createdAt for new user badge
+                    unreadCount, // Include unread message count
                 };
             })
         );

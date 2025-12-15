@@ -183,12 +183,15 @@ const ChatContainer = () => {
 
             <div
               className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id
-                ? 'bg-primary text-primary-content shadow-lg'
-                : 'bg-base-200 text-base-content shadow-md'
+                ? 'bg-primary text-primary-content'
+                : 'bg-base-100 text-base-content border border-base-300'
                 }`}
               style={{
-                borderRadius: '18px',
-                padding: '12px 16px',
+                borderRadius: message.senderId === authUser._id
+                  ? '18px 18px 4px 18px'
+                  : '18px 18px 18px 4px',
+                padding: '10px 14px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
               }}
             >
               {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[250px] rounded-md mb-2" />)}
