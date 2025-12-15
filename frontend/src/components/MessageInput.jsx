@@ -33,18 +33,25 @@ const MessageInput = () => {
         e.preventDefault();
         if (!text.trim() && !imagePreview) return;
 
-        try {
-            await sendMessage({
-                text: text.trim(),
-                image: imagePreview,
-            });
+        // Store message data before clearing
+        const messageData = {
+            text: text.trim(),
+            image: imagePreview,
+        };
 
-            // Clear form
-            setText("");
-            setImagePreview(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
+        // Clear form IMMEDIATELY for instant feedback
+        setText("");
+        setImagePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
+        // Send message in background
+        try {
+            await sendMessage(messageData);
         } catch (error) {
             console.error("Failed to send message:", error);
+            // Optionally restore the message on error
+            setText(messageData.text);
+            setImagePreview(messageData.image);
         }
     };
 
