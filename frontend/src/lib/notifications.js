@@ -7,6 +7,8 @@ export const requestNotificationPermission = async () => {
     return false;
   }
 
+  console.log("Current notification permission:", Notification.permission);
+
   if (Notification.permission === "granted") {
     console.log("✅ Notification permission already granted");
     return true;
@@ -14,9 +16,24 @@ export const requestNotificationPermission = async () => {
 
   if (Notification.permission !== "denied") {
     console.log("🔔 Requesting notification permission...");
-    const permission = await Notification.requestPermission();
-    console.log("🔔 Permission result:", permission);
-    return permission === "granted";
+    try {
+      const permission = await Notification.requestPermission();
+      console.log("🔔 Permission result:", permission);
+
+      if (permission === "granted") {
+        // Test notification
+        console.log("✅ Testing notification...");
+        new Notification("ChatAppey Notifications Enabled!", {
+          body: "You will now receive message and call notifications",
+          icon: "/avatar.png",
+        });
+      }
+
+      return permission === "granted";
+    } catch (error) {
+      console.error("Error requesting notification permission:", error);
+      return false;
+    }
   }
 
   console.log("❌ Notification permission denied");
@@ -25,17 +42,36 @@ export const requestNotificationPermission = async () => {
 
 // Show browser notification (when tab is not focused)
 export const showBrowserNotification = (title, options = {}) => {
-  if (Notification.permission === "granted") {
+  console.log("=== showBrowserNotification called ===");
+  console.log("Title:", title);
+  console.log("Options:", options);
+  console.log("Notification permission:", Notification.permission);
+  console.log("Document visibility:", document.visibilityState);
+  console.log("Document hidden:", document.hidden);
+
+  if (Notification.permission !== "granted") {
+    console.error("❌ Cannot show notification - permission not granted");
+    console.log("Current permission:", Notification.permission);
+    return null;
+  }
+
+  try {
+    console.log("✅ Creating browser notification...");
     const notification = new Notification(title, {
-      icon: "/logo.png", // Make sure you have a logo in public folder
-      badge: "/logo.png",
+      icon: "/avatar.png",
+      badge: "/avatar.png",
       ...options,
     });
+
+    console.log("✅ Notification created successfully");
 
     // Auto close after 5 seconds
     setTimeout(() => notification.close(), 5000);
 
     return notification;
+  } catch (error) {
+    console.error("❌ Error creating notification:", error);
+    return null;
   }
 };
 

@@ -73,8 +73,8 @@ export const useWebRTC = () => {
         }
     };
 
-    const rejectCall = (callerId) => {
-        socket.emit('call:reject', { to: callerId });
+    const rejectCall = (callerId, roomID) => {
+        socket.emit('call:reject', { to: callerId, roomID });
         useCallStore.getState().clearIncomingCall();
         toast.info('Call declined');
     };

@@ -12,6 +12,7 @@ import ProfilePage from './pages/ProfilePage';
 import ContactPage from './pages/ContactPage';
 import NotificationPage from './pages/NotificationPage';
 import LoginHelp from './pages/LoginHelp';
+import CallHistoryPage from './pages/CallHistoryPage';
 import { useAuthStore } from './store/useAuthStore';
 import { Loader } from 'lucide-react';
 
@@ -58,6 +59,7 @@ function App() {
         <Route path='/settings' element={<SettingsPage />} />
         <Route path='/contacts' element={authUser ? <ContactPage /> : <Navigate to="/login" />} />
         <Route path='/notifications' element={authUser ? <NotificationPage /> : <Navigate to="/login" />} />
+        <Route path='/calls' element={authUser ? <CallHistoryPage /> : <Navigate to="/login" />} />
         <Route path='/otp' element={<Otp />} />
         <Route path='/profile' element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
 

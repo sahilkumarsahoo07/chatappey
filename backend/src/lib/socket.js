@@ -69,6 +69,7 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
+import Call from "../models/call.model.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -90,6 +91,9 @@ export function getReceiverSocketId(userId) {
 
 // Used to store online users
 const userSocketMap = {}; // { userId: socketId }
+
+// Track active calls for updating call records
+const activeCallsMap = {}; // { roomID: { caller, receiver, callType, startTime } }
 
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
@@ -146,7 +150,7 @@ io.on("connection", (socket) => {
   });
 
   // Call signaling events
-  socket.on("call:initiate", ({ to, from, fromData, callType, roomID }) => {
+  socket.on("call:initiate", async ({ to, from, fromData, callType, roomID }) => {
     console.log('=== CALL:INITIATE RECEIVED ON SERVER ===');
     console.log(`From: ${fromData?.fullName} (${from})`);
     console.log(`To: ${to}`);
@@ -156,6 +160,29 @@ io.on("connection", (socket) => {
     const receiverSocketId = getReceiverSocketId(to);
     console.log(`Receiver socket ID: ${receiverSocketId}`);
     console.log(`Receiver online: ${receiverSocketId ? 'YES' : 'NO'}`);
+
+    // Save initial call record
+    try {
+      await Call.create({
+        caller: from,
+        receiver: to,
+        callType,
+        status: "unanswered",
+        roomID,
+        duration: 0,
+      });
+      console.log('✅ Call record created in database');
+
+      // Track active call
+      activeCallsMap[roomID] = {
+        caller: from,
+        receiver: to,
+        callType,
+        initiatedAt: Date.now(),
+      };
+    } catch (error) {
+      console.error('❌ Error creating call record:', error);
+    }
 
     if (receiverSocketId) {
       console.log(`✅ Emitting call:incoming to receiver socket ${receiverSocketId}`);
@@ -171,24 +198,83 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("call:answer", ({ to, roomID }) => {
+  socket.on("call:answer", async ({ to, roomID }) => {
     console.log(`Call answered to ${to}, room: ${roomID}`);
+
+    // Update call record with startTime and status
+    try {
+      const call = await Call.findOne({ roomID });
+      if (call) {
+        call.status = "completed";
+        call.startTime = new Date();
+        await call.save();
+        console.log('✅ Call record updated with startTime');
+      }
+    } catch (error) {
+      console.error('❌ Error updating call record:', error);
+    }
+
     const callerSocketId = getReceiverSocketId(to);
     if (callerSocketId) {
       io.to(callerSocketId).emit("call:answered", { roomID });
     }
   });
 
-  socket.on("call:reject", ({ to }) => {
+  socket.on("call:reject", async ({ to, roomID }) => {
     console.log(`Call rejected to ${to}`);
+
+    // Update call record status to rejected
+    try {
+      const call = await Call.findOne({ roomID });
+      if (call) {
+        call.status = "rejected";
+        await call.save();
+        console.log('✅ Call record updated to rejected');
+      }
+
+      // Remove from active calls
+      delete activeCallsMap[roomID];
+    } catch (error) {
+      console.error('❌ Error updating call record:', error);
+    }
+
     const callerSocketId = getReceiverSocketId(to);
     if (callerSocketId) {
       io.to(callerSocketId).emit("call:rejected");
     }
   });
 
-  socket.on("call:end", ({ to }) => {
-    console.log(`Call ended to ${to}`);
+  socket.on("call:end", async ({ to, roomID, duration }) => {
+    console.log(`Call ended to ${to}, duration: ${duration}`);
+
+    // Update call record with endTime and duration
+    try {
+      const call = await Call.findOne({ roomID });
+      if (call) {
+        call.endTime = new Date();
+
+        // If duration is provided, use it; otherwise calculate from startTime
+        if (duration !== undefined) {
+          call.duration = duration;
+        } else if (call.startTime) {
+          call.duration = Math.floor((call.endTime - call.startTime) / 1000);
+        }
+
+        // Set status based on whether call was answered
+        if (call.status === "unanswered") {
+          call.status = "missed";
+        }
+
+        await call.save();
+        console.log('✅ Call record updated with endTime and duration');
+      }
+
+      // Remove from active calls
+      delete activeCallsMap[roomID];
+    } catch (error) {
+      console.error('❌ Error updating call record:', error);
+    }
+
     const targetSocketId = getReceiverSocketId(to);
     if (targetSocketId) {
       io.to(targetSocketId).emit("call:ended");

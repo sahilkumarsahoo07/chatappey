@@ -68,7 +68,7 @@ const IncomingCallNotification = () => {
             ringtoneRef.current.pause();
             ringtoneRef.current.currentTime = 0;
         }
-        rejectCall(incomingCall.from);
+        rejectCall(incomingCall.from, incomingCall.roomID);
     };
 
     return (

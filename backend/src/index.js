@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import messageRoutes from './routes/message.route.js'
 import friendRequestRoutes from './routes/friendRequest.route.js'
 import notificationRoutes from './routes/notification.route.js'
+import callRoutes from './routes/call.routes.js'
 
 import { connectDB } from './lib/db.js'
 import cookieParser from "cookie-parser";
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes)
 app.use("/api/messages", messageRoutes)
 app.use("/api/friends", friendRequestRoutes)
 app.use("/api/notifications", notificationRoutes)
+app.use("/api/call", callRoutes)
 
 server.listen(PORT, () => {
   console.log(`Server is running on this PORT http://localhost:${PORT}`)

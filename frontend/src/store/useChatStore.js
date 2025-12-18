@@ -169,7 +169,7 @@ export const useChatStore = create((set, get) => ({
           get().markMessagesAsRead(currentSelectedUser._id);
         }
       } else if (newMessage.receiverId === authUser._id) {
-        // Message is for me but from a different chat
+        // Message is for me but from a different chat OR browser is not visible
         // Show notification
         const sender = users.find(u => u._id === newMessage.senderId);
 
@@ -177,14 +177,21 @@ export const useChatStore = create((set, get) => ({
           // Play notification sound
           playNotificationSound();
 
-          if (!isDocumentVisible()) {
-            // Browser is not focused - show browser notification
+          console.log('Document visible:', isDocumentVisible());
+          console.log('Notification permission:', Notification.permission);
+
+          // ALWAYS show browser notification when tab is not visible
+          // Document visibility check handles both minimized and background tabs
+          if (!isDocumentVisible() || document.hidden) {
+            // Browser is not focused/visible - show browser notification
+            console.log('Showing browser notification for:', sender.fullName);
             showBrowserNotification(sender.fullName, {
               body: newMessage.text || "📷 Photo",
               icon: sender.profilePic || "/avatar.png",
               tag: newMessage.senderId, // Prevent duplicate notifications
+              requireInteraction: false,
             });
-          } else {
+          } else if (currentSelectedUser?._id !== newMessage.senderId) {
             // Browser is focused but viewing different chat - show in-app notification
             showInAppNotification(newMessage, sender, () => {
               // When notification is clicked, open that chat

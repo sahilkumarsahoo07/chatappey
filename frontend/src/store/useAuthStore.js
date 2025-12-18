@@ -312,6 +312,20 @@ export const useAuthStore = create((set, get) => ({
             console.log('Room ID:', roomID);
             console.log('Current auth user:', get().authUser?.fullName);
 
+            // Show browser notification for incoming call
+            playNotificationSound();
+
+            const callTypeText = callType === 'video' ? 'Video Call' : 'Voice Call';
+
+            if (!isDocumentVisible()) {
+                showBrowserNotification(`Incoming ${callTypeText}`, {
+                    body: `${fromData?.fullName || 'Someone'} is calling you...`,
+                    icon: fromData?.profilePic || '/avatar.png',
+                    tag: 'incoming-call',
+                    requireInteraction: true, // Keep notification until user interacts
+                });
+            }
+
             import("./useCallStore").then(({ useCallStore }) => {
                 const callStore = useCallStore.getState();
                 console.log('Setting incoming call in store...');

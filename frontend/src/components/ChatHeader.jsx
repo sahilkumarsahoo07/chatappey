@@ -168,24 +168,33 @@ const ChatHeader = () => {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 md:gap-2">
                         <button
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'audio')}
-                            className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content"
+                            className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
+                                    ? 'text-gray-700 hover:bg-gray-200'
+                                    : 'text-primary-content hover:bg-primary-content/10'
+                                }`}
                             title="Voice Call"
                         >
-                            <Phone size={20} />
+                            <Phone size={18} className="md:w-5 md:h-5" />
                         </button>
                         <button
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'video')}
-                            className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content"
+                            className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
+                                    ? 'text-gray-700 hover:bg-gray-200'
+                                    : 'text-primary-content hover:bg-primary-content/10'
+                                }`}
                             title="Video Call"
                         >
-                            <Video size={20} />
+                            <Video size={18} className="md:w-5 md:h-5" />
                         </button>
                         <button
                             onClick={() => setSelectedUser(null)}
-                            className="hidden md:block p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content"
+                            className={`hidden md:block p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
+                                    ? 'text-gray-700 hover:bg-gray-200'
+                                    : 'text-primary-content hover:bg-primary-content/10'
+                                }`}
                         >
                             <X size={20} />
                         </button>
@@ -266,14 +275,20 @@ const ChatHeader = () => {
                             {/* Action buttons */}
                             <div className="flex gap-3 mt-5 w-full px-4">
                                 <button
-                                    onClick={() => toast("Voice call feature coming soon! 📞")}
+                                    onClick={() => {
+                                        initiateCall(selectedUser._id, selectedUser, 'audio');
+                                        setDrawerOpen(false);
+                                    }}
                                     className="flex-1 p-3 rounded-xl bg-primary text-primary-content font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm active:scale-95 duration-200"
                                 >
                                     <Phone size={18} />
                                     Call
                                 </button>
                                 <button
-                                    onClick={() => toast("Video call feature coming soon! 📹")}
+                                    onClick={() => {
+                                        initiateCall(selectedUser._id, selectedUser, 'video');
+                                        setDrawerOpen(false);
+                                    }}
                                     className="flex-1 p-3 rounded-xl bg-base-100 text-base-content font-semibold hover:bg-base-200 transition-colors flex items-center justify-center gap-2 border border-base-300 shadow-sm active:scale-95 duration-200"
                                 >
                                     <Video size={18} />

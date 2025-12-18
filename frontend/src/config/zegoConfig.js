@@ -47,24 +47,41 @@ export const validateZegoConfig = () => {
 export const getCallConfig = (userID, userName, callType = 'video') => {
     const isAudioOnly = callType === 'audio';
 
+    // Detect if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+
     return {
         turnOnMicrophoneWhenJoining: true,
         turnOnCameraWhenJoining: !isAudioOnly, // Turn off camera for audio calls
         showMyCameraToggleButton: !isAudioOnly, // Hide camera button for audio calls
         showMyMicrophoneToggleButton: true,
-        showAudioVideoSettingsButton: true,
-        showScreenSharingButton: !isAudioOnly, // Hide screen sharing for audio calls
-        showTextChat: true,
-        showUserList: true,
+        showAudioVideoSettingsButton: !isMobile, // Hide on mobile for cleaner UI
+        showScreenSharingButton: !isMobile && !isAudioOnly, // Hide screen sharing on mobile and for audio calls
+        showTextChat: false, // Disable chat for cleaner UI
+        showUserList: false, // Hide user list
         maxUsers: 2,
-        layout: "Auto",
+        layout: isMobile ? "Sidebar" : "Auto", // Better layout for mobile
         showLayoutButton: false,
+        showNonVideoUser: true,
+        showOnlyAudioUser: true,
+        showPinButton: !isMobile,
+        showRoomTimer: !isMobile,
+
+        // Mobile video optimization
+        videoResolutionDefault: isMobile ? "360p" : "720p",
+
         scenario: {
             mode: "OneONoneCall",
             config: {
                 role: "Host",
             },
         },
+
+        // Responsive styling
+        branding: {
+            logoURL: ""
+        },
+        showLeavingView: true,
     };
 };
 

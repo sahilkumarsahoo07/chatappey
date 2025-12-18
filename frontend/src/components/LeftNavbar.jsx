@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { THEMES } from "../constants";
 import { useAuthStore } from "../store/useAuthStore";
-import { LogOut, MessageCircleHeart, Palette, User, Settings, MessageSquare, Users, Bell } from "lucide-react";
+import { LogOut, MessageCircleHeart, Palette, User, Settings, MessageSquare, Users, Bell, Phone } from "lucide-react";
 import { useThemeStore } from "../store/useThemeStore";
 import { useNotificationStore } from "../store/useNotificationStore";
 import defaultImg from '../public/avatar.png';
@@ -57,6 +57,20 @@ const LeftNavbar = () => {
                     </div>
                     <span className="absolute left-full ml-3 px-3 py-1.5 bg-base-content text-base-100 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-[60]">
                         Contacts
+                    </span>
+                </Link>
+
+                {/* Calls */}
+                <Link
+                    to="/calls"
+                    className="w-full flex justify-center group relative"
+                    title="Calls"
+                >
+                    <div className="size-11 md:size-12 rounded-2xl bg-primary-content/10 backdrop-blur-sm flex items-center justify-center hover:bg-primary-content/20 transition-all duration-200">
+                        <Phone className="w-5 h-5 md:w-6 md:h-6 text-primary-content" />
+                    </div>
+                    <span className="absolute left-full ml-3 px-3 py-1.5 bg-base-content text-base-100 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-[60]">
+                        Calls
                     </span>
                 </Link>
 

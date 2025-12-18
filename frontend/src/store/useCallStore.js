@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import toast from 'react-hot-toast';
+import { axiosInstance } from '../lib/axios';
+import { useAuthStore } from './useAuthStore';
 
 export const useCallStore = create((set, get) => ({
     // State
@@ -15,6 +17,8 @@ export const useCallStore = create((set, get) => ({
     roomID: null, // ZegoCloud room ID
     zegoInstance: null, // ZegoCloud instance reference
     isMinimized: false, // Track if call window is minimized
+    callHistory: [], // Array of call records
+    isLoadingHistory: false, // Loading state for call history
 
     // Actions
     setIncomingCall: (callData) => set({ incomingCall: callData, callStatus: 'ringing' }),
@@ -65,35 +69,54 @@ export const useCallStore = create((set, get) => ({
         set({ isMinimized: !isMinimized });
     },
 
-    endCall: () => {
-        const { callStartTime, callStatus, zegoInstance } = get();
+    endCall: async () => {
+        const { zegoInstance, roomID, callStartTime, receiver, caller } = get();
 
-        // Calculate call duration if call was connected
-        if (callStartTime && callStatus === 'connected') {
-            const duration = Math.floor((Date.now() - callStartTime) / 1000);
-            const mins = Math.floor(duration / 60);
-            const secs = duration % 60;
-            const durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
+        console.log('=== ENDING CALL ===');
 
-            // Show call summary
-            toast.success(`Call ended • Duration: ${durationText}`, {
-                duration: 4000,
-                icon: '📞'
+        // Calculate call duration
+        let duration = 0;
+        if (callStartTime) {
+            duration = Math.floor((Date.now() - callStartTime) / 1000);
+        }
+
+        // Emit call end event to backend with duration
+        const { socket, authUser } = useAuthStore.getState();
+        const targetId = receiver?._id || caller?._id;
+
+        if (socket && targetId && roomID) {
+            socket.emit('call:end', {
+                to: targetId,
+                roomID,
+                duration
             });
         }
 
-        // Clean up ZegoCloud instance and media streams
+        // CRITICAL: Stop all media tracks IMMEDIATELY
         if (zegoInstance) {
             try {
-                console.log('Stopping all media tracks...');
+                console.log('🛑 Stopping all media tracks...');
 
-                // Stop all media tracks to release camera/microphone
+                // Method 1: Stop all getUserMedia streams via browser API
+                navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+                    .then(stream => {
+                        stream.getTracks().forEach(track => {
+                            console.log('Stopping getUserMedia track:', track.kind, track.label);
+                            track.stop();
+                        });
+                    })
+                    .catch(() => {
+                        // Ignore errors, streams might already be stopped
+                    });
+
+                // Method 2: Query and stop all media elements
                 const stopAllMediaTracks = () => {
-                    // Get all active media streams
-                    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-                        .then(() => {
-                            // Get all video and audio elements
+                    return new Promise((resolve) => {
+                        // Use setTimeout to ensure DOM has updated
+                        setTimeout(() => {
                             const mediaElements = document.querySelectorAll('video, audio');
+                            console.log(`Found ${mediaElements.length} media elements`);
+
                             mediaElements.forEach(element => {
                                 if (element.srcObject) {
                                     const tracks = element.srcObject.getTracks();
@@ -103,22 +126,39 @@ export const useCallStore = create((set, get) => ({
                                     });
                                     element.srcObject = null;
                                 }
+                                // Remove the element to force cleanup
+                                if (element.parentNode) {
+                                    element.pause();
+                                    element.removeAttribute('src');
+                                    element.load();
+                                }
                             });
-                        })
-                        .catch(() => {
-                            // Ignore errors, streams might already be stopped
-                        });
+                            resolve();
+                        }, 100);
+                    });
                 };
 
-                stopAllMediaTracks();
+                await stopAllMediaTracks();
 
-                // Destroy the ZegoCloud instance
+                // Method 3: Destroy the ZegoCloud instance (this should release all resources)
                 console.log('Destroying ZegoCloud instance...');
-                zegoInstance.destroy();
+                try {
+                    await zegoInstance.destroy();
+                } catch (error) {
+                    console.log('ZegoCloud destroy error (might be already destroyed):', error);
+                }
 
-                console.log('✅ Cleanup complete');
+                // Additional cleanup: Stop all active media stream tracks globally
+                setTimeout(() => {
+                    navigator.mediaDevices.enumerateDevices().then(() => {
+                        // This refreshes the device list and helps release locked devices
+                        console.log('✅ Media devices refreshed');
+                    });
+                }, 200);
+
+                console.log('✅ All media cleanup complete');
             } catch (error) {
-                console.error('Error during cleanup:', error);
+                console.error('Error during media cleanup:', error);
             }
         }
 
@@ -136,5 +176,19 @@ export const useCallStore = create((set, get) => ({
             zegoInstance: null,
             isMinimized: false
         });
+    },
+
+    // Fetch call history from backend
+    fetchCallHistory: async (filter = 'all') => {
+        set({ isLoadingHistory: true });
+        try {
+            const res = await axiosInstance.get(`/call/history?filter=${filter}`);
+            set({ callHistory: res.data.calls });
+        } catch (error) {
+            console.error('Error fetching call history:', error);
+            toast.error(error.response?.data?.error || 'Failed to fetch call history');
+        } finally {
+            set({ isLoadingHistory: false });
+        }
     }
 }));
