@@ -305,15 +305,26 @@ export const useAuthStore = create((set, get) => ({
         });
 
         // Call event listeners
-        socket.on("call:incoming", ({ from, fromData, callType, offer }) => {
-            console.log("Incoming call from:", fromData.fullName);
+        socket.on("call:incoming", ({ from, fromData, callType, roomID }) => {
+            console.log('=== INCOMING CALL RECEIVED ===');
+            console.log('From User:', fromData?.fullName, '(', from, ')');
+            console.log('Call Type:', callType);
+            console.log('Room ID:', roomID);
+            console.log('Current auth user:', get().authUser?.fullName);
+
             import("./useCallStore").then(({ useCallStore }) => {
-                useCallStore.getState().setIncomingCall({
+                const callStore = useCallStore.getState();
+                console.log('Setting incoming call in store...');
+
+                callStore.setIncomingCall({
                     from,
                     fromData,
                     callType,
-                    offer
+                    roomID
                 });
+
+                console.log('✅ Incoming call set in store');
+                console.log('Incoming call state:', useCallStore.getState().incomingCall);
             });
         });
 

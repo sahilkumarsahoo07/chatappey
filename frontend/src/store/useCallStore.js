@@ -7,28 +7,23 @@ export const useCallStore = create((set, get) => ({
     callType: null, // 'audio' or 'video'
     caller: null,
     receiver: null,
-    localStream: null,
-    remoteStream: null,
-    remoteStreamUpdate: 0,
-    peer: null,
     incomingCall: null,
     callStatus: 'idle', // 'idle', 'ringing', 'connecting', 'connected'
     isMuted: false,
-    isMuted: false,
     isVideoOff: false,
-    callStartTime: null, // Track when call started
-    connectionState: 'new', // 'new', 'checking', 'connected', 'failed', 'disconnected', 'closed'
+    callStartTime: null,
+    roomID: null, // ZegoCloud room ID
+    zegoInstance: null, // ZegoCloud instance reference
+    isMinimized: false, // Track if call window is minimized
 
     // Actions
     setIncomingCall: (callData) => set({ incomingCall: callData, callStatus: 'ringing' }),
 
     clearIncomingCall: () => set({ incomingCall: null, callStatus: 'idle' }),
 
-    setLocalStream: (stream) => set({ localStream: stream }),
+    setRoomID: (roomID) => set({ roomID }),
 
-    setRemoteStream: (stream) => set({ remoteStream: stream, remoteStreamUpdate: Date.now() }),
-
-    setPeer: (peer) => set({ peer }),
+    setZegoInstance: (instance) => set({ zegoInstance: instance }),
 
     setCallStatus: (status) => {
         set({ callStatus: status });
@@ -38,45 +33,40 @@ export const useCallStore = create((set, get) => ({
         }
     },
 
-    setConnectionState: (state) => set({ connectionState: state }),
-
-    startCall: (user, callType) => set({
+    startCall: (user, callType, roomID) => set({
         isInCall: true,
         callType,
         receiver: user,
-        callStatus: 'connecting'
+        callStatus: 'connecting',
+        roomID
     }),
 
-    acceptCall: (caller, callType) => set({
+    acceptCall: (caller, callType, roomID) => set({
         isInCall: true,
         callType,
         caller,
         callStatus: 'connecting',
-        incomingCall: null
+        incomingCall: null,
+        roomID
     }),
 
     toggleMute: () => {
-        const { localStream, isMuted } = get();
-        if (localStream) {
-            localStream.getAudioTracks().forEach(track => {
-                track.enabled = isMuted;
-            });
-            set({ isMuted: !isMuted });
-        }
+        const { isMuted } = get();
+        set({ isMuted: !isMuted });
     },
 
     toggleVideo: () => {
-        const { localStream, isVideoOff } = get();
-        if (localStream) {
-            localStream.getVideoTracks().forEach(track => {
-                track.enabled = isVideoOff;
-            });
-            set({ isVideoOff: !isVideoOff });
-        }
+        const { isVideoOff } = get();
+        set({ isVideoOff: !isVideoOff });
+    },
+
+    toggleMinimize: () => {
+        const { isMinimized } = get();
+        set({ isMinimized: !isMinimized });
     },
 
     endCall: () => {
-        const { localStream, remoteStream, peer, callStartTime, callStatus } = get();
+        const { callStartTime, callStatus, zegoInstance } = get();
 
         // Calculate call duration if call was connected
         if (callStartTime && callStatus === 'connected') {
@@ -92,17 +82,13 @@ export const useCallStore = create((set, get) => ({
             });
         }
 
-        // Stop all tracks
-        if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
-        }
-        if (remoteStream) {
-            remoteStream.getTracks().forEach(track => track.stop());
-        }
-
-        // Destroy peer connection
-        if (peer) {
-            peer.destroy();
+        // Clean up ZegoCloud instance
+        if (zegoInstance) {
+            try {
+                zegoInstance.destroy();
+            } catch (error) {
+                console.error('Error destroying Zego instance:', error);
+            }
         }
 
         set({
@@ -110,14 +96,14 @@ export const useCallStore = create((set, get) => ({
             callType: null,
             caller: null,
             receiver: null,
-            localStream: null,
-            remoteStream: null,
-            peer: null,
             callStatus: 'idle',
             isMuted: false,
             isVideoOff: false,
             incomingCall: null,
-            callStartTime: null
+            callStartTime: null,
+            roomID: null,
+            zegoInstance: null,
+            isMinimized: false
         });
     }
 }));

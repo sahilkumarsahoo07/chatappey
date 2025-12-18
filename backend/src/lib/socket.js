@@ -146,24 +146,36 @@ io.on("connection", (socket) => {
   });
 
   // Call signaling events
-  socket.on("call:initiate", ({ to, from, fromData, callType, offer }) => {
-    console.log(`Call initiated from ${from} to ${to}`);
+  socket.on("call:initiate", ({ to, from, fromData, callType, roomID }) => {
+    console.log('=== CALL:INITIATE RECEIVED ON SERVER ===');
+    console.log(`From: ${fromData?.fullName} (${from})`);
+    console.log(`To: ${to}`);
+    console.log(`Call Type: ${callType}`);
+    console.log(`Room ID: ${roomID}`);
+
     const receiverSocketId = getReceiverSocketId(to);
+    console.log(`Receiver socket ID: ${receiverSocketId}`);
+    console.log(`Receiver online: ${receiverSocketId ? 'YES' : 'NO'}`);
+
     if (receiverSocketId) {
+      console.log(`✅ Emitting call:incoming to receiver socket ${receiverSocketId}`);
       io.to(receiverSocketId).emit("call:incoming", {
         from,
         fromData,
         callType,
-        offer
+        roomID
       });
+      console.log('✅ call:incoming event emitted successfully');
+    } else {
+      console.log('❌ Receiver is not online or not connected');
     }
   });
 
-  socket.on("call:answer", ({ to, answer }) => {
-    console.log(`Call answered to ${to}`);
+  socket.on("call:answer", ({ to, roomID }) => {
+    console.log(`Call answered to ${to}, room: ${roomID}`);
     const callerSocketId = getReceiverSocketId(to);
     if (callerSocketId) {
-      io.to(callerSocketId).emit("call:answered", { answer });
+      io.to(callerSocketId).emit("call:answered", { roomID });
     }
   });
 
@@ -183,12 +195,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("ice-candidate", ({ to, candidate }) => {
-    const targetSocketId = getReceiverSocketId(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("ice-candidate", { candidate });
-    }
-  });
+
 
   socket.on("disconnect", () => {
     console.log("A user disconnected:", socket.id);

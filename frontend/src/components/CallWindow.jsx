@@ -1,301 +1,320 @@
-import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Minimize2, Maximize2 } from 'lucide-react';
-import { useCallStore } from '../store/useCallStore';
-import { useWebRTC } from '../hooks/useWebRTC';
 import { useEffect, useRef, useState } from 'react';
+import { ZegoUIKitPrebuilt } from '@zegocloud/zego-uikit-prebuilt';
+import { useCallStore } from '../store/useCallStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { ZEGO_CONFIG, getCallConfig } from '../config/zegoConfig';
+import { Minimize, Maximize, X } from 'lucide-react';
 
 const CallWindow = () => {
     const {
         isInCall,
         callType,
-        caller,
-        receiver,
-        localStream,
-        remoteStream,
-        remoteStreamUpdate,
-        callStatus,
-        isMuted,
-        isVideoOff,
-        connectionState,
-        toggleMute,
-        toggleVideo
+        roomID,
+        endCall,
+        setZegoInstance,
+        setCallStatus,
+        isMinimized,
+        toggleMinimize
     } = useCallStore();
 
-    const { endCall } = useWebRTC();
     const { authUser } = useAuthStore();
-    const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const remoteAudioRef = useRef(null);
-    const [callDuration, setCallDuration] = useState(0);
-    const [isMinimized, setIsMinimized] = useState(false);
+    const containerRef = useRef(null);
+    const zegoInstanceRef = useRef(null);
 
-    // Outgoing call ringing tone (what caller hears)
-    const [outgoingRingTone] = useState(() => {
-        const audio = new Audio();
-        // Simple repeating beep pattern for outgoing call
-        audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-        return audio;
-    });
-
-    // Set up video streams
     useEffect(() => {
-        if (localStream && localVideoRef.current) {
-            localVideoRef.current.srcObject = localStream;
+        if (!isInCall || !roomID || !containerRef.current || !authUser) {
+            return;
         }
-    }, [localStream]);
 
-    useEffect(() => {
-        if (remoteStream) {
-            // Set video stream
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-            }
-            // IMPORTANT: Set audio stream separately and ensure it plays
-            if (remoteAudioRef.current) {
-                remoteAudioRef.current.srcObject = remoteStream;
-                remoteAudioRef.current.volume = 1.0; // Max volume
-                // Force play with user interaction
-                remoteAudioRef.current.play().catch(e => {
-                    console.log('Audio autoplay blocked, will play on user interaction:', e);
-                    // Try again after a short delay
-                    setTimeout(() => {
-                        remoteAudioRef.current.play().catch(err => console.log('Audio play retry failed:', err));
-                    }, 100);
+        const initializeCall = async () => {
+            try {
+                console.log('Initializing ZegoCloud call...', { roomID, callType });
+
+                // Get configuration
+                const appID = ZEGO_CONFIG.appID;
+                const serverSecret = ZEGO_CONFIG.serverSecret;
+                const userID = authUser._id.toString();
+                const userName = authUser.fullName || 'User';
+
+                console.log('ZegoCloud config:', {
+                    appID,
+                    appIDType: typeof appID,
+                    serverSecretLength: serverSecret?.length,
+                    serverSecretType: typeof serverSecret,
+                    userID,
+                    userName,
+                    roomID
                 });
+
+                // Validate credentials with detailed checks
+                if (!appID) {
+                    throw new Error('ZegoCloud AppID is missing. Please check your .env file.');
+                }
+
+                if (typeof appID !== 'number') {
+                    throw new Error(`ZegoCloud AppID must be a number, got ${typeof appID}`);
+                }
+
+                if (!serverSecret) {
+                    throw new Error('ZegoCloud ServerSecret is missing. Please check your .env file.');
+                }
+
+                if (typeof serverSecret !== 'string') {
+                    throw new Error(`ZegoCloud ServerSecret must be a string, got ${typeof serverSecret}`);
+                }
+
+                if (serverSecret.length < 32) {
+                    throw new Error('ZegoCloud ServerSecret appears to be invalid (too short)');
+                }
+
+                console.log('Generating kit token with validated config...');
+
+                // Create ZegoCloud instance with token
+                const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+                    appID,
+                    serverSecret,
+                    roomID,
+                    userID,
+                    userName
+                );
+
+                if (!kitToken) {
+                    throw new Error('Failed to generate kit token');
+                }
+
+                console.log('✅ Kit token generated successfully');
+
+                // Create instance
+                const zp = ZegoUIKitPrebuilt.create(kitToken);
+                zegoInstanceRef.current = zp;
+                setZegoInstance(zp);
+
+                // Get call configuration
+                const callConfig = getCallConfig(userID, userName);
+
+                // Configure based on call type
+                if (callType === 'audio') {
+                    callConfig.turnOnCameraWhenJoining = false;
+                    callConfig.showMyCameraToggleButton = false;
+                }
+
+                // Add event listeners
+                callConfig.onJoinRoom = () => {
+                    console.log('✅ Successfully joined ZegoCloud room:', roomID);
+                    setCallStatus('connected');
+                };
+
+                callConfig.onLeaveRoom = () => {
+                    console.log('Left ZegoCloud room');
+                    endCall();
+                };
+
+                callConfig.onUserLeave = (users) => {
+                    console.log('User left:', users);
+                    if (users && users.length > 0) {
+                        endCall();
+                    }
+                };
+
+                // Pass the container element to joinRoom
+                callConfig.container = containerRef.current;
+
+                console.log('Joining room with config...');
+
+                // Join the room
+                await zp.joinRoom(callConfig);
+
+                console.log('✅ Room join initiated successfully');
+
+            } catch (error) {
+                console.error('❌ Error initializing ZegoCloud call:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    code: error.code,
+                    stack: error.stack
+                });
+                endCall();
             }
-        }
-    }, [remoteStream, remoteStreamUpdate]);
-
-    // Call duration timer
-    useEffect(() => {
-        if (callStatus === 'connected') {
-            const interval = setInterval(() => {
-                setCallDuration(prev => prev + 1);
-            }, 1000);
-            return () => clearInterval(interval);
-        } else {
-            setCallDuration(0);
-        }
-    }, [callStatus]);
-
-    // Play outgoing ringing tone when caller is waiting (only for caller, not receiver)
-    useEffect(() => {
-        if (callStatus === 'connecting' && receiver) {
-            // This is the caller (has receiver), play outgoing ring
-            outgoingRingTone.loop = true;
-            outgoingRingTone.volume = 0.5;
-            outgoingRingTone.play().catch(e => console.log('Outgoing ring tone error:', e));
-        } else {
-            outgoingRingTone.pause();
-            outgoingRingTone.currentTime = 0;
-        }
-
-        return () => {
-            outgoingRingTone.pause();
-            outgoingRingTone.currentTime = 0;
         };
-    }, [callStatus, receiver, outgoingRingTone]);
 
-    if (!isInCall) return null;
+        initializeCall();
 
-    // Use a persistent layout strategy:
-    // Always render the heavy media elements (audio/video) in a hidden container or fixed position
-    // and overlay the UI (minimized or full) on top, or reposition them with CSS.
-    // However, moving DOM elements can still interrupt playback in some browsers.
-    // The safest way is to keep the structure flat or use portals, but for simple toggle,
-    // we can just use CSS classes to change appearance instead of completely different DOM trees.
+        // Cleanup on unmount
+        return () => {
+            if (zegoInstanceRef.current) {
+                try {
+                    console.log('Cleaning up ZegoCloud instance...');
+                    zegoInstanceRef.current.destroy();
+                } catch (error) {
+                    console.error('Error destroying Zego instance:', error);
+                }
+                zegoInstanceRef.current = null;
+            }
+        };
+    }, [isInCall, roomID, authUser, callType, endCall, setZegoInstance, setCallStatus]);
 
-    const otherUser = receiver || caller;
-    const formatDuration = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const handleCancel = () => {
+        console.log('User cancelled call');
+        endCall();
     };
 
-    const renderContent = () => {
-        if (isMinimized) {
-            return (
-                <div className="fixed bottom-4 right-4 z-[9999] w-80 bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden">
-                    <div className="bg-gradient-to-r from-primary to-secondary p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-white/30">
-                                    <img
-                                        src={otherUser?.profilePic || '/avatar.png'}
-                                        alt={otherUser?.fullName}
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                                <div className="text-white">
-                                    <h3 className="font-semibold text-sm">{otherUser?.fullName}</h3>
-                                    <p className="text-xs opacity-80">
-                                        {callStatus === 'connecting' ? 'Connecting...' : formatDuration(callDuration)}
-                                    </p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setIsMinimized(false)}
-                                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                                title="Maximize"
-                            >
-                                <Maximize2 size={18} className="text-white" />
-                            </button>
-                        </div>
-
-                        <div className="flex items-center gap-2 mt-3">
-                            <button
-                                onClick={toggleMute}
-                                className={`flex-1 py-2 rounded-lg transition-all ${isMuted ? 'bg-error' : 'bg-white/20 hover:bg-white/30'
-                                    }`}
-                            >
-                                {isMuted ? <MicOff size={18} className="text-white mx-auto" /> : <Mic size={18} className="text-white mx-auto" />}
-                            </button>
-
-                            <button
-                                onClick={endCall}
-                                className="flex-1 py-2 rounded-lg bg-error hover:bg-error/80 transition-all"
-                            >
-                                <PhoneOff size={18} className="text-white mx-auto" />
-                            </button>
-
-                            {callType === 'video' && (
-                                <button
-                                    onClick={toggleVideo}
-                                    className={`flex-1 py-2 rounded-lg transition-all ${isVideoOff ? 'bg-error' : 'bg-white/20 hover:bg-white/30'
-                                        }`}
-                                >
-                                    {isVideoOff ? <VideoOff size={18} className="text-white mx-auto" /> : <Video size={18} className="text-white mx-auto" />}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    {/* Video preview area for minimized view - we use the main video element but style it here if needed, 
-                        BUT to avoid re-renders we will just show a placeholder or handle it via CSS visibility in the main block */}
-                </div>
-            );
-        }
-
-        return (
-            <div className="fixed inset-0 z-[9999] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-                {/* Controls and Overlay UI */}
-                <div className="absolute inset-0 z-10 pointer-events-none">
-                    {/* Info Overlay */}
-                    <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md rounded-2xl px-6 py-3 pointer-events-auto">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-white/30">
-                                <img
-                                    src={otherUser?.profilePic || '/avatar.png'}
-                                    alt={otherUser?.fullName}
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
-                            <div>
-                                <h3 className="text-white font-semibold">{otherUser?.fullName}</h3>
-                                <p className="text-white/70 text-sm">
-                                    {callStatus === 'connecting' ? (receiver ? 'Ringing...' : 'Connecting...') : formatDuration(callDuration)}
-                                </p>
-                                <p className="text-xs text-white/50 mt-1 uppercase tracking-wider">
-                                    {connectionState}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Minimize Button */}
-                    <button
-                        onClick={() => setIsMinimized(true)}
-                        className="absolute top-4 right-4 bg-black/50 backdrop-blur-md p-3 rounded-full hover:bg-black/70 transition-all pointer-events-auto"
-                        title="Minimize"
-                    >
-                        <Minimize2 size={20} className="text-white" />
-                    </button>
-
-                    {/* Controls */}
-                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 pointer-events-auto">
-                        <div className="bg-black/50 backdrop-blur-md rounded-full px-6 py-4 flex items-center gap-4 shadow-2xl">
-                            <button
-                                onClick={toggleMute}
-                                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${isMuted ? 'bg-error' : 'bg-white/20 hover:bg-white/30'
-                                    }`}
-                            >
-                                {isMuted ? <MicOff size={24} className="text-white" /> : <Mic size={24} className="text-white" />}
-                            </button>
-                            <button
-                                onClick={endCall}
-                                className="w-16 h-16 rounded-full bg-error hover:bg-error/80 flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg"
-                            >
-                                <PhoneOff size={28} className="text-white" />
-                            </button>
-                            {callType === 'video' && (
-                                <button
-                                    onClick={toggleVideo}
-                                    className={`w-14 h-14 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${isVideoOff ? 'bg-error' : 'bg-white/20 hover:bg-white/30'
-                                        }`}
-                                >
-                                    {isVideoOff ? <VideoOff size={24} className="text-white" /> : <Video size={24} className="text-white" />}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+    if (!isInCall) {
+        return null;
+    }
 
     return (
         <>
-            {/* PERSISTENT MEDIA ELEMENTS */}
-            {/* Remote Audio - Always active */}
-            <audio ref={remoteAudioRef} autoPlay playsInline />
+            {/* Minimized Floating Window - Teams Style */}
+            {isMinimized && <MinimizedCallWindow />}
 
-            {/* Video Containers - Positioned based on state but always mounted if in video call */}
-            {callType === 'video' && (
-                <>
-                    {/* Remote Video */}
-                    <div
-                        className={`fixed transition-all duration-300 ease-in-out bg-black overflow-hidden ${isMinimized
-                            ? 'bottom-20 right-4 w-72 h-40 rounded-lg z-[9998] shadow-lg border border-gray-700'
-                            : 'inset-0 z-0'
-                            }`}
-                    >
-                        {remoteStream ? (
-                            <video
-                                ref={remoteVideoRef}
-                                autoPlay
-                                playsInline
-                                className="w-full h-full object-cover"
-                            />
-                        ) : (
-                            // Placeholder when no remote video
-                            <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                                <p className="text-white/50 text-sm">Waiting for video...</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Local Video - PiP */}
-                    {localStream && (
-                        <div
-                            className={`fixed transition-all duration-300 ease-in-out bg-gray-900 overflow-hidden shadow-xl border border-white/20 ${isMinimized
-                                ? 'hidden' // Hide local video in minimized mode to save space/complexity
-                                : 'top-4 right-16 w-48 h-36 rounded-xl z-20' // Adjusted right position to not overlap minimize btn
-                                }`}
-                        >
-                            <video
-                                ref={localVideoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="w-full h-full object-cover transform scale-x-[-1]"
-                            />
-                        </div>
-                    )}
-                </>
+            {/* Minimize Button Overlay - Top Right (only visible when not minimized) */}
+            {!isMinimized && (
+                <button
+                    onClick={toggleMinimize}
+                    className="fixed top-4 right-4 z-[10000] bg-gray-800 hover:bg-gray-700 text-white p-3 rounded-lg shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                    title="Minimize call"
+                >
+                    <Minimize size={20} />
+                    <span className="text-sm font-medium">Minimize</span>
+                </button>
             )}
 
-            {/* UI Layer */}
-            {renderContent()}
+            {/* Full Screen Call Window - Always mounted, but hidden when minimized */}
+            <div
+                ref={containerRef}
+                style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    zIndex: 9999,
+                    backgroundColor: '#000',
+                    display: isMinimized ? 'none' : 'block'
+                }}
+            />
         </>
+    );
+};
+
+// Minimized Call Window Component (Teams Style)
+const MinimizedCallWindow = () => {
+    const { receiver, caller, callType, toggleMinimize, endCall } = useCallStore();
+    const [position, setPosition] = useState({ x: window.innerWidth - 360, y: window.innerHeight - 200 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+    const participant = receiver || caller;
+
+    const handleMouseDown = (e) => {
+        setIsDragging(true);
+        setDragStart({
+            x: e.clientX - position.x,
+            y: e.clientY - position.y
+        });
+    };
+
+    const handleMouseMove = (e) => {
+        if (isDragging) {
+            setPosition({
+                x: e.clientX - dragStart.x,
+                y: e.clientY - dragStart.y
+            });
+        }
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+
+    useEffect(() => {
+        if (isDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+            };
+        }
+    }, [isDragging, dragStart]);
+
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                left: `${position.x}px`,
+                top: `${position.y}px`,
+                width: '320px',
+                zIndex: 9999,
+                cursor: isDragging ? 'grabbing' : 'grab'
+            }}
+            className="select-none"
+        >
+            {/* Main minimized window */}
+            <div className="bg-[#292929] rounded-lg shadow-2xl overflow-hidden border border-gray-700">
+                {/* Header - Draggable */}
+                <div
+                    onMouseDown={handleMouseDown}
+                    className="bg-[#1f1f1f] px-4 py-3 flex items-center justify-between"
+                >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                            {participant?.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="text-white text-sm font-medium truncate">
+                                {participant?.fullName || 'User'}
+                            </div>
+                            <div className="text-gray-400 text-xs">
+                                {callType === 'video' ? 'Video call' : 'Audio call'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Window controls */}
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={toggleMinimize}
+                            className="p-2 hover:bg-gray-700 rounded transition-colors"
+                            title="Maximize"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-gray-300">
+                                <rect x="2" y="2" width="8" height="8" stroke="currentColor" strokeWidth="1.5" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={endCall}
+                            className="p-2 hover:bg-red-600 rounded transition-colors"
+                            title="End call"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-gray-300">
+                                <path d="M2 2L10 10M2 10L10 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Preview area */}
+                <div className="bg-[#1a1a1a] h-32 flex items-center justify-center">
+                    <div className="text-gray-400 text-center">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-semibold mx-auto mb-2">
+                            {participant?.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                        </div>
+                        <div className="text-xs">Call in progress...</div>
+                    </div>
+                </div>
+
+                {/* Controls footer */}
+                <div className="bg-[#1f1f1f] px-4 py-2 flex items-center justify-center gap-2">
+                    <button
+                        onClick={toggleMinimize}
+                        className="flex-1 bg-[#464646] hover:bg-[#5a5a5a] text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                    >
+                        Return to call
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 };
 

@@ -59,7 +59,7 @@ const IncomingCallNotification = () => {
             ringtoneRef.current.pause();
             ringtoneRef.current.currentTime = 0;
         }
-        answerCall(incomingCall.offer, incomingCall.fromData, incomingCall.callType);
+        answerCall(incomingCall.fromData, incomingCall.callType, incomingCall.roomID);
     };
 
     const handleReject = () => {
