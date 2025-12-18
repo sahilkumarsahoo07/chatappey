@@ -142,8 +142,23 @@ const CallWindow = () => {
         return () => {
             if (zegoInstanceRef.current) {
                 try {
-                    console.log('Cleaning up ZegoCloud instance...');
+                    console.log('Cleaning up ZegoCloud instance on unmount...');
+
+                    // Stop all media tracks
+                    const mediaElements = document.querySelectorAll('video, audio');
+                    mediaElements.forEach(element => {
+                        if (element.srcObject) {
+                            const tracks = element.srcObject.getTracks();
+                            tracks.forEach(track => {
+                                console.log('Stopping track on unmount:', track.kind);
+                                track.stop();
+                            });
+                            element.srcObject = null;
+                        }
+                    });
+
                     zegoInstanceRef.current.destroy();
+                    console.log('✅ Cleanup on unmount complete');
                 } catch (error) {
                     console.error('Error destroying Zego instance:', error);
                 }

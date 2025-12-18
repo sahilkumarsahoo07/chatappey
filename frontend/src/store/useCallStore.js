@@ -82,12 +82,43 @@ export const useCallStore = create((set, get) => ({
             });
         }
 
-        // Clean up ZegoCloud instance
+        // Clean up ZegoCloud instance and media streams
         if (zegoInstance) {
             try {
+                console.log('Stopping all media tracks...');
+
+                // Stop all media tracks to release camera/microphone
+                const stopAllMediaTracks = () => {
+                    // Get all active media streams
+                    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+                        .then(() => {
+                            // Get all video and audio elements
+                            const mediaElements = document.querySelectorAll('video, audio');
+                            mediaElements.forEach(element => {
+                                if (element.srcObject) {
+                                    const tracks = element.srcObject.getTracks();
+                                    tracks.forEach(track => {
+                                        console.log('Stopping track:', track.kind, track.label);
+                                        track.stop();
+                                    });
+                                    element.srcObject = null;
+                                }
+                            });
+                        })
+                        .catch(() => {
+                            // Ignore errors, streams might already be stopped
+                        });
+                };
+
+                stopAllMediaTracks();
+
+                // Destroy the ZegoCloud instance
+                console.log('Destroying ZegoCloud instance...');
                 zegoInstance.destroy();
+
+                console.log('✅ Cleanup complete');
             } catch (error) {
-                console.error('Error destroying Zego instance:', error);
+                console.error('Error during cleanup:', error);
             }
         }
 
