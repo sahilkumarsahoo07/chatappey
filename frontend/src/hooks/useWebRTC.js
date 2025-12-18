@@ -8,6 +8,8 @@ export const useWebRTC = () => {
     const { setPeer, setRemoteStream, setLocalStream, endCall, setCallStatus, startCall } = useCallStore();
     const peerConnectionRef = useRef(null);
 
+    const targetUserRef = useRef(null);
+
     const createPeerConnection = () => {
         const configuration = {
             iceServers: [
@@ -19,8 +21,12 @@ export const useWebRTC = () => {
         const pc = new RTCPeerConnection(configuration);
 
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                console.log('ICE candidate:', event.candidate);
+            if (event.candidate && targetUserRef.current) {
+                console.log('Sending ICE candidate to:', targetUserRef.current);
+                socket.emit('ice-candidate', {
+                    to: targetUserRef.current,
+                    candidate: event.candidate
+                });
             }
         };
 
@@ -61,6 +67,7 @@ export const useWebRTC = () => {
             console.log('Local stream tracks:', stream.getTracks());
             setLocalStream(stream);
             startCall(receiverData, callType);
+            targetUserRef.current = receiverId;
 
             // Create peer connection
             const pc = createPeerConnection();
@@ -113,6 +120,7 @@ export const useWebRTC = () => {
             console.log('Local stream tracks (answering):', stream.getTracks());
             setLocalStream(stream);
             useCallStore.getState().acceptCall(caller, callType);
+            targetUserRef.current = caller._id;
 
             // Create peer connection
             const pc = createPeerConnection();
@@ -166,6 +174,7 @@ export const useWebRTC = () => {
             peerConnectionRef.current.close();
             peerConnectionRef.current = null;
         }
+        targetUserRef.current = null;
 
         endCall();
     };
@@ -205,14 +214,29 @@ export const useWebRTC = () => {
             endCall();
         };
 
+        const handleNewICECandidate = async ({ candidate }) => {
+            console.log('Received ICE candidate');
+            const pc = peerConnectionRef.current;
+            if (pc) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    console.log('Added ICE candidate success');
+                } catch (e) {
+                    console.error('Error adding ICE candidate:', e);
+                }
+            }
+        };
+
         socket.on('call:answered', handleCallAnswered);
         socket.on('call:ended', handleCallEnded);
         socket.on('call:rejected', handleCallRejected);
+        socket.on('ice-candidate', handleNewICECandidate);
 
         return () => {
             socket.off('call:answered', handleCallAnswered);
             socket.off('call:ended', handleCallEnded);
             socket.off('call:rejected', handleCallRejected);
+            socket.off('ice-candidate', handleNewICECandidate);
         };
     }, [socket]);
 
