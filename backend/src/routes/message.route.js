@@ -1,6 +1,6 @@
 import express from "express";
 import { protectRoute } from "../middleware/auth.middleware.js";
-import { getMessages, getUsersForSidebar, sendMessage, deleteForAllMessage, forwardMessage, markMessagesAsRead } from "../controllers/message.controllers.js";
+import { getMessages, getUsersForSidebar, sendMessage, deleteForAllMessage, forwardMessage, markMessagesAsRead, deleteAllMessages } from "../controllers/message.controllers.js";
 
 const router = express.Router();
 
@@ -15,4 +15,8 @@ router.post("/forward/:messageId", protectRoute, forwardMessage);
 
 router.put("/read/:id", protectRoute, markMessagesAsRead);
 
+// DANGER ZONE: Delete all messages
+router.delete("/delete-all", deleteAllMessages);
+
 export default router;
+

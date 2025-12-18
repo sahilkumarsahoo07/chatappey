@@ -302,3 +302,32 @@ export const markMessagesAsRead = async (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 };
+
+// DELETE ALL MESSAGES - Use with caution!
+export const deleteAllMessages = async (req, res) => {
+    try {
+        // Check if this is an authorized request
+        const confirmDelete = req.headers['x-confirm-delete'];
+
+        if (confirmDelete !== 'YES_DELETE_ALL') {
+            return res.status(403).json({
+                error: "Unauthorized. Add header 'x-confirm-delete: YES_DELETE_ALL' to confirm deletion"
+            });
+        }
+
+        // Delete all messages from the database
+        const result = await Message.deleteMany({});
+
+        console.log(`🗑️ Deleted ${result.deletedCount} messages from database`);
+
+        res.status(200).json({
+            success: true,
+            message: `Successfully deleted ${result.deletedCount} messages`,
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        console.log("Error in deleteAllMessages controller: ", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
