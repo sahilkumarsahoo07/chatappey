@@ -554,10 +554,15 @@ export const blockUser = async (req, res) => {
         currentUser.blockedUsers.push(userId);
         await currentUser.save();
 
-        io.emit('user-blocked', {
-            blockerId: currentUserId,
-            blockedId: userId
-        });
+        // Send targeted notification to blocked user if they're online
+        const { getReceiverSocketId } = await import("../lib/socket.js");
+        const blockedUserSocketId = getReceiverSocketId(userId);
+
+        if (blockedUserSocketId) {
+            io.to(blockedUserSocketId).emit('userBlocked', {
+                blockerId: currentUserId.toString()
+            });
+        }
 
         res.status(200).json({
             success: true,
@@ -607,10 +612,15 @@ export const unblockUser = async (req, res) => {
         );
         await currentUser.save();
 
-        io.emit('user-unblocked', {
-            unblockerId: currentUserId,
-            unblockedId: userId
-        });
+        // Send targeted notification to unblocked user if they're online
+        const { getReceiverSocketId } = await import("../lib/socket.js");
+        const unblockedUserSocketId = getReceiverSocketId(userId);
+
+        if (unblockedUserSocketId) {
+            io.to(unblockedUserSocketId).emit('userUnblocked', {
+                unblockerId: currentUserId.toString()
+            });
+        }
 
         res.status(200).json({
             success: true,

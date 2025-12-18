@@ -174,12 +174,12 @@ const MessageInput = () => {
 
             {/* Input Form */}
             <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <div className="flex-1 flex flex-col gap-2">
+                <div className="flex-1 flex flex-col gap-2 min-w-0">
                     {/* Main Input Area */}
-                    <div className="flex items-center gap-2 bg-base-100 rounded-2xl p-2 border border-base-300">
+                    <div className="flex items-center gap-2 rounded-2xl p-2 border border-base-300">
                         <textarea
                             ref={textareaRef}
-                            className="flex-1 bg-transparent px-3 py-2 outline-none resize-none message-textarea"
+                            className="flex-1 bg-transparent px-3 py-2 outline-none resize-none message-textarea min-w-0"
                             placeholder="Type a message..."
                             value={text}
                             onChange={handleTextChange}
@@ -188,7 +188,7 @@ const MessageInput = () => {
                         />
 
                         {/* Action Buttons Row */}
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             {/* Emoji Picker */}
                             <EmojiPickerComponent
                                 onEmojiSelect={(emoji) => setText(prev => prev + emoji)}
@@ -200,7 +200,7 @@ const MessageInput = () => {
                             {/* Image Button */}
                             <button
                                 type="button"
-                                className="btn btn-circle btn-ghost action-button hover-lift"
+                                className="btn btn-circle btn-ghost action-button hover-lift flex-shrink-0"
                                 onClick={() => fileInputRef.current?.click()}
                                 title="Add image"
                             >
@@ -221,7 +221,7 @@ const MessageInput = () => {
                 {/* Send Button */}
                 <button
                     type="submit"
-                    className="btn btn-circle btn-lg send-button"
+                    className="btn btn-circle btn-lg send-button flex-shrink-0"
                     disabled={!text.trim() && !imagePreview && !gifPreview}
                     title="Send message"
                 >

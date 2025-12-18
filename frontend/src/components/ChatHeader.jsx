@@ -2,6 +2,7 @@ import { Copy, Info, Mail, Phone, Star, Video, X, Ban, Link, Bell, Shield, Chevr
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import { useThemeStore } from "../store/useThemeStore";
+import { useWebRTC } from "../hooks/useWebRTC";
 import defaultImg from '../public/avatar.png'
 import { Avatar, Button, Divider, Drawer, IconButton, ListItem, ListItemIcon, ListItemText, Typography, List, Dialog, DialogTitle, DialogContent, Grid } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -11,6 +12,7 @@ import axios from "axios";
 const ChatHeader = () => {
     const { selectedUser, setSelectedUser, messages } = useChatStore();
     const { authUser, onlineUsers, getOneBlockedUser, blockUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
+    const { initiateCall } = useWebRTC();
     const { theme } = useThemeStore();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [blockedUsers, setBlockedUsers] = useState([]);
@@ -167,10 +169,18 @@ const ChatHeader = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content">
+                        <button
+                            onClick={() => initiateCall(selectedUser._id, selectedUser, 'audio')}
+                            className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content"
+                            title="Voice Call"
+                        >
                             <Phone size={20} />
                         </button>
-                        <button className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content">
+                        <button
+                            onClick={() => initiateCall(selectedUser._id, selectedUser, 'video')}
+                            className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content"
+                            title="Video Call"
+                        >
                             <Video size={20} />
                         </button>
                         <button

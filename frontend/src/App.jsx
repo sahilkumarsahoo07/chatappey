@@ -19,6 +19,8 @@ import { Toaster } from 'react-hot-toast';
 import { useThemeStore } from './store/useThemeStore';
 import Otp from './components/Otp';
 import { requestNotificationPermission } from './lib/notifications';
+import IncomingCallNotification from './components/IncomingCallNotification';
+import CallWindow from './components/CallWindow';
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
@@ -65,6 +67,10 @@ function App() {
         position="top-right"
         reverseOrder={false}
       />
+
+      {/* Call Components */}
+      <IncomingCallNotification />
+      <CallWindow />
     </div>
   )
 }

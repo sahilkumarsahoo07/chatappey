@@ -145,6 +145,44 @@ io.on("connection", (socket) => {
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
 
+  // Call signaling events
+  socket.on("call:initiate", ({ to, from, fromData, callType, offer }) => {
+    console.log(`Call initiated from ${from} to ${to}`);
+    const receiverSocketId = getReceiverSocketId(to);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("call:incoming", {
+        from,
+        fromData,
+        callType,
+        offer
+      });
+    }
+  });
+
+  socket.on("call:answer", ({ to, answer }) => {
+    console.log(`Call answered to ${to}`);
+    const callerSocketId = getReceiverSocketId(to);
+    if (callerSocketId) {
+      io.to(callerSocketId).emit("call:answered", { answer });
+    }
+  });
+
+  socket.on("call:reject", ({ to }) => {
+    console.log(`Call rejected to ${to}`);
+    const callerSocketId = getReceiverSocketId(to);
+    if (callerSocketId) {
+      io.to(callerSocketId).emit("call:rejected");
+    }
+  });
+
+  socket.on("call:end", ({ to }) => {
+    console.log(`Call ended to ${to}`);
+    const targetSocketId = getReceiverSocketId(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call:ended");
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("A user disconnected:", socket.id);
     if (userId && userSocketMap[userId] === socket.id) {

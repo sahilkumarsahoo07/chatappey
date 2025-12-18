@@ -1,7 +1,7 @@
 /* Modern Message Input Styling */
 
 .message-input-container {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+    background: transparent;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -15,19 +15,18 @@
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, 
-        transparent 0%, 
-        rgba(99, 102, 241, 0.5) 50%, 
-        transparent 100%
-    );
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(99, 102, 241, 0.5) 50%,
+            transparent 100%);
 }
 
 /* Input Field Styling */
 .message-textarea {
-    background: rgba(255, 255, 255, 0.05);
+    background: transparent;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: none;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     resize: none;
     min-height: 44px;
@@ -36,9 +35,9 @@
 }
 
 .message-textarea:focus {
-    border-color: rgba(99, 102, 241, 0.5);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    box-shadow: none;
+    background: transparent;
 }
 
 /* Action Buttons */
@@ -123,6 +122,7 @@
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -162,6 +162,7 @@
         opacity: 0;
         transform: scale(0.95) translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: scale(1) translateY(0);
@@ -225,9 +226,12 @@
 
 /* Pulse Animation for Active States */
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.7;
     }
@@ -257,23 +261,9 @@
         max-width: 350px;
         right: -16px;
     }
-    
-    .message-textarea {
-        font-size: 16px; /* Prevents zoom on iOS */
-    }
-}
 
-/* Dark Mode Enhancements */
-@media (prefers-color-scheme: dark) {
-    .message-input-container {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.08) 100%);
-    }
-    
     .message-textarea {
-        background: rgba(0, 0, 0, 0.3);
-    }
-    
-    .preview-container {
-        background: rgba(0, 0, 0, 0.4);
+        font-size: 16px;
+        /* Prevents zoom on iOS */
     }
 }

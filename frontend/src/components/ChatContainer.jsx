@@ -245,7 +245,7 @@ const ChatContainer = () => {
               }}
             >
               {/* Replied Message Display */}
-              {message.replyTo && message.replyToMessage && (
+              {message.replyTo && message.replyToMessage && message.text !== "This message was deleted" && (
                 <div
                   className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
                   onClick={(e) => {
@@ -264,7 +264,7 @@ const ChatContainer = () => {
                     {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
                   </p>
                   <div className="flex items-center gap-2">
-                    {message.replyToMessage.image && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={scrollToBottom} />}
+                    {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={scrollToBottom} />}
                     <p className="text-xs opacity-70 truncate max-w-[150px]">
                       {message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}
                     </p>

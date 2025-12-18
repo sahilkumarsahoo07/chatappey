@@ -220,208 +220,210 @@ const NotificationPage = () => {
     };
 
     return (
-        <div className="container mx-auto px-4 pt-20 max-w-4xl h-full">
-            <div className="space-y-6">
-                {/* Header */}
-                <div className="flex flex-col gap-1">
-                    <h2 className="text-2xl font-bold flex items-center gap-2">
-                        <Bell className="w-6 h-6" />
-                        Notifications
-                    </h2>
-                    <p className="text-sm text-base-content/70">
-                        Manage your friend requests and notifications
-                    </p>
-                </div>
+        <div className="h-screen bg-base-200 pl-16 md:pl-20 overflow-auto">
+            <div className="container mx-auto px-4 pt-20 pb-8 max-w-4xl">
+                <div className="space-y-6">
+                    {/* Header */}
+                    <div className="flex flex-col gap-1">
+                        <h2 className="text-2xl font-bold flex items-center gap-2">
+                            <Bell className="w-6 h-6" />
+                            Notifications
+                        </h2>
+                        <p className="text-sm text-base-content/70">
+                            Manage your friend requests and notifications
+                        </p>
+                    </div>
 
-                {/* Tabs */}
-                <div className="tabs tabs-boxed bg-base-200 p-1">
-                    <button
-                        className={`tab gap-2 ${activeTab === "requests" ? "tab-active" : ""}`}
-                        onClick={() => setActiveTab("requests")}
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        Friend Requests
-                        {friendRequestNotifications.length > 0 && (
-                            <span className="badge badge-primary badge-sm">
-                                {friendRequestNotifications.length}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        className={`tab gap-2 ${activeTab === "messages" ? "tab-active" : ""}`}
-                        onClick={() => setActiveTab("messages")}
-                    >
-                        <MessageSquare className="w-4 h-4" />
-                        Request Messages
-                        {requestMessageNotifications.length > 0 && (
-                            <span className="badge badge-primary badge-sm">
-                                {requestMessageNotifications.length}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        className={`tab gap-2 ${activeTab === "other" ? "tab-active" : ""}`}
-                        onClick={() => setActiveTab("other")}
-                    >
-                        <Bell className="w-4 h-4" />
-                        Other
-                        {otherNotifications.filter(n => !n.isRead).length > 0 && (
-                            <span className="badge badge-primary badge-sm">
-                                {otherNotifications.filter(n => !n.isRead).length}
-                            </span>
-                        )}
-                    </button>
-                </div>
-
-                {/* Delete controls for Other tab */}
-                {activeTab === "other" && otherNotifications.length > 0 && (
-                    <div className="flex items-center justify-between p-3 bg-base-200 rounded-lg">
-                        <div className="flex items-center gap-3">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="checkbox checkbox-primary checkbox-sm"
-                                    checked={selectedNotifications.size === otherNotifications.length && otherNotifications.length > 0}
-                                    onChange={handleSelectAll}
-                                />
-                                <span className="text-sm font-medium">
-                                    Select All ({selectedNotifications.size}/{otherNotifications.length})
-                                </span>
-                            </label>
-                        </div>
+                    {/* Tabs */}
+                    <div className="tabs tabs-boxed bg-base-200 p-1">
                         <button
-                            onClick={handleDeleteSelected}
-                            disabled={selectedNotifications.size === 0 || isDeleting}
-                            className="btn btn-sm btn-error gap-2"
+                            className={`tab gap-2 ${activeTab === "requests" ? "tab-active" : ""}`}
+                            onClick={() => setActiveTab("requests")}
                         >
-                            {isDeleting ? (
-                                <>
-                                    <Loader className="w-4 h-4 animate-spin" />
-                                    Deleting...
-                                </>
-                            ) : (
-                                <>
-                                    <Trash2 className="w-4 h-4" />
-                                    Delete ({selectedNotifications.size})
-                                </>
+                            <UserPlus className="w-4 h-4" />
+                            Friend Requests
+                            {friendRequestNotifications.length > 0 && (
+                                <span className="badge badge-primary badge-sm">
+                                    {friendRequestNotifications.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            className={`tab gap-2 ${activeTab === "messages" ? "tab-active" : ""}`}
+                            onClick={() => setActiveTab("messages")}
+                        >
+                            <MessageSquare className="w-4 h-4" />
+                            Request Messages
+                            {requestMessageNotifications.length > 0 && (
+                                <span className="badge badge-primary badge-sm">
+                                    {requestMessageNotifications.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            className={`tab gap-2 ${activeTab === "other" ? "tab-active" : ""}`}
+                            onClick={() => setActiveTab("other")}
+                        >
+                            <Bell className="w-4 h-4" />
+                            Other
+                            {otherNotifications.filter(n => !n.isRead).length > 0 && (
+                                <span className="badge badge-primary badge-sm">
+                                    {otherNotifications.filter(n => !n.isRead).length}
+                                </span>
                             )}
                         </button>
                     </div>
-                )}
 
-                {/* Content */}
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <Loader className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {/* Friend Requests Tab */}
-                        {activeTab === "requests" && (
-                            <>
-                                {friendRequestNotifications.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <UserPlus className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
-                                        <h3 className="text-lg font-semibold text-base-content/70">
-                                            No pending friend requests
-                                        </h3>
-                                        <p className="text-sm text-base-content/50 mt-2">
-                                            When someone sends you a friend request, it will appear here
-                                        </p>
-                                    </div>
+                    {/* Delete controls for Other tab */}
+                    {activeTab === "other" && otherNotifications.length > 0 && (
+                        <div className="flex items-center justify-between p-3 bg-base-200 rounded-lg">
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox checkbox-primary checkbox-sm"
+                                        checked={selectedNotifications.size === otherNotifications.length && otherNotifications.length > 0}
+                                        onChange={handleSelectAll}
+                                    />
+                                    <span className="text-sm font-medium">
+                                        Select All ({selectedNotifications.size}/{otherNotifications.length})
+                                    </span>
+                                </label>
+                            </div>
+                            <button
+                                onClick={handleDeleteSelected}
+                                disabled={selectedNotifications.size === 0 || isDeleting}
+                                className="btn btn-sm btn-error gap-2"
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <Loader className="w-4 h-4 animate-spin" />
+                                        Deleting...
+                                    </>
                                 ) : (
-                                    friendRequestNotifications.map(renderNotificationCard)
+                                    <>
+                                        <Trash2 className="w-4 h-4" />
+                                        Delete ({selectedNotifications.size})
+                                    </>
                                 )}
-                            </>
-                        )}
+                            </button>
+                        </div>
+                    )}
 
-                        {/* Request Messages Tab */}
-                        {activeTab === "messages" && (
-                            <>
-                                {requestMessageNotifications.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <MessageSquare className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
-                                        <h3 className="text-lg font-semibold text-base-content/70">
-                                            No request messages
-                                        </h3>
-                                        <p className="text-sm text-base-content/50 mt-2">
-                                            Messages from friend requests will appear here
-                                        </p>
-                                    </div>
-                                ) : (
-                                    requestMessageNotifications.map(renderNotificationCard)
-                                )}
-                            </>
-                        )}
+                    {/* Content */}
+                    {isLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader className="w-8 h-8 animate-spin text-primary" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {/* Friend Requests Tab */}
+                            {activeTab === "requests" && (
+                                <>
+                                    {friendRequestNotifications.length === 0 ? (
+                                        <div className="text-center py-12">
+                                            <UserPlus className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
+                                            <h3 className="text-lg font-semibold text-base-content/70">
+                                                No pending friend requests
+                                            </h3>
+                                            <p className="text-sm text-base-content/50 mt-2">
+                                                When someone sends you a friend request, it will appear here
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        friendRequestNotifications.map(renderNotificationCard)
+                                    )}
+                                </>
+                            )}
 
-                        {/* Other Notifications Tab */}
-                        {activeTab === "other" && (
-                            <>
-                                {otherNotifications.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <Bell className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
-                                        <h3 className="text-lg font-semibold text-base-content/70">
-                                            No notifications
-                                        </h3>
-                                        <p className="text-sm text-base-content/50 mt-2">
-                                            Updates about your friend requests will appear here
-                                        </p>
-                                    </div>
-                                ) : (
-                                    otherNotifications.map(notification => (
-                                        <div
-                                            key={notification._id}
-                                            className={`card bg-base-100 shadow-md border ${notification.isRead ? 'border-base-300' : 'border-primary'
-                                                } hover:shadow-lg transition-all duration-200`}
-                                        >
-                                            <div className="card-body p-4">
-                                                <div className="flex items-start gap-4">
-                                                    {/* Checkbox */}
-                                                    <input
-                                                        type="checkbox"
-                                                        className="checkbox checkbox-primary mt-1"
-                                                        checked={selectedNotifications.has(notification._id)}
-                                                        onChange={() => handleToggleNotification(notification._id)}
-                                                    />
+                            {/* Request Messages Tab */}
+                            {activeTab === "messages" && (
+                                <>
+                                    {requestMessageNotifications.length === 0 ? (
+                                        <div className="text-center py-12">
+                                            <MessageSquare className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
+                                            <h3 className="text-lg font-semibold text-base-content/70">
+                                                No request messages
+                                            </h3>
+                                            <p className="text-sm text-base-content/50 mt-2">
+                                                Messages from friend requests will appear here
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        requestMessageNotifications.map(renderNotificationCard)
+                                    )}
+                                </>
+                            )}
 
-                                                    <div className="avatar">
-                                                        <div className="w-12 h-12 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                                                            <img
-                                                                src={notification.fromUserId?.profilePic || defaultImg}
-                                                                alt={notification.fromUserId?.fullName}
-                                                            />
+                            {/* Other Notifications Tab */}
+                            {activeTab === "other" && (
+                                <>
+                                    {otherNotifications.length === 0 ? (
+                                        <div className="text-center py-12">
+                                            <Bell className="w-16 h-16 mx-auto text-base-content/30 mb-4" />
+                                            <h3 className="text-lg font-semibold text-base-content/70">
+                                                No notifications
+                                            </h3>
+                                            <p className="text-sm text-base-content/50 mt-2">
+                                                Updates about your friend requests will appear here
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        otherNotifications.map(notification => (
+                                            <div
+                                                key={notification._id}
+                                                className={`card bg-base-100 shadow-md border ${notification.isRead ? 'border-base-300' : 'border-primary'
+                                                    } hover:shadow-lg transition-all duration-200`}
+                                            >
+                                                <div className="card-body p-4">
+                                                    <div className="flex items-start gap-4">
+                                                        {/* Checkbox */}
+                                                        <input
+                                                            type="checkbox"
+                                                            className="checkbox checkbox-primary mt-1"
+                                                            checked={selectedNotifications.has(notification._id)}
+                                                            onChange={() => handleToggleNotification(notification._id)}
+                                                        />
+
+                                                        <div className="avatar">
+                                                            <div className="w-12 h-12 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                                                                <img
+                                                                    src={notification.fromUserId?.profilePic || defaultImg}
+                                                                    alt={notification.fromUserId?.fullName}
+                                                                />
+                                                            </div>
                                                         </div>
-                                                    </div>
 
-                                                    <div
-                                                        className="flex-1 min-w-0 cursor-pointer"
-                                                        onClick={() => !notification.isRead && markAsRead(notification._id)}
-                                                    >
-                                                        <h3 className="font-bold text-base truncate">
-                                                            {notification.fromUserId?.fullName}
-                                                        </h3>
-                                                        <p className="text-sm text-base-content/70">
-                                                            {notification.type === "request_accepted"
-                                                                ? "Accepted your friend request"
-                                                                : "Rejected your friend request"}
-                                                        </p>
-                                                        <p className="text-xs text-base-content/50 mt-2">
-                                                            {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
-                                                        </p>
-                                                    </div>
+                                                        <div
+                                                            className="flex-1 min-w-0 cursor-pointer"
+                                                            onClick={() => !notification.isRead && markAsRead(notification._id)}
+                                                        >
+                                                            <h3 className="font-bold text-base truncate">
+                                                                {notification.fromUserId?.fullName}
+                                                            </h3>
+                                                            <p className="text-sm text-base-content/70">
+                                                                {notification.type === "request_accepted"
+                                                                    ? "Accepted your friend request"
+                                                                    : "Rejected your friend request"}
+                                                            </p>
+                                                            <p className="text-xs text-base-content/50 mt-2">
+                                                                {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                                                            </p>
+                                                        </div>
 
-                                                    {!notification.isRead && (
-                                                        <div className="w-2 h-2 bg-primary rounded-full"></div>
-                                                    )}
+                                                        {!notification.isRead && (
+                                                            <div className="w-2 h-2 bg-primary rounded-full"></div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))
-                                )}
-                            </>
-                        )}
-                    </div>
-                )}
+                                        ))
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

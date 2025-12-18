@@ -277,18 +277,60 @@ export const useAuthStore = create((set, get) => ({
             console.error("Socket reconnection error:", error);
         });
 
-        socket.on("blocked", ({ blockerId, blockedId }) => {
-            if (authUser._id === blockerId || authUser._id === blockedId) {
-                // Force recheck of blocked status
-                get().checkBlockedStatus();
-            }
+        // Handle being blocked by another user
+        socket.on("userBlocked", ({ blockerId }) => {
+            console.log("You have been blocked by:", blockerId);
+
+            // Refresh users list to update block status and UI
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+
+                // If currently chatting with the blocker, clear selected user
+                const selectedUser = useChatStore.getState().selectedUser;
+                if (selectedUser?._id === blockerId) {
+                    useChatStore.getState().setSelectedUser(null);
+                    toast.info("This user is no longer available");
+                }
+            });
         });
 
-        socket.on("unblocked", ({ unblockerId, unblockedId }) => {
-            if (authUser._id === unblockerId || authUser._id === unblockedId) {
-                // Force recheck of blocked status
-                get().checkBlockedStatus();
-            }
+        // Handle being unblocked by another user
+        socket.on("userUnblocked", ({ unblockerId }) => {
+            console.log("You have been unblocked by:", unblockerId);
+
+            // Refresh users list to update block status and UI
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+            });
+        });
+
+        // Call event listeners
+        socket.on("call:incoming", ({ from, fromData, callType, offer }) => {
+            console.log("Incoming call from:", fromData.fullName);
+            import("./useCallStore").then(({ useCallStore }) => {
+                useCallStore.getState().setIncomingCall({
+                    from,
+                    fromData,
+                    callType,
+                    offer
+                });
+            });
+        });
+
+        socket.on("call:rejected", () => {
+            console.log("Call was rejected");
+            toast.error("Call was rejected");
+            import("./useCallStore").then(({ useCallStore }) => {
+                useCallStore.getState().endCall();
+            });
+        });
+
+        socket.on("call:ended", () => {
+            console.log("Call ended by other user");
+            toast("Call ended", { icon: "📞" });
+            import("./useCallStore").then(({ useCallStore }) => {
+                useCallStore.getState().endCall();
+            });
         });
 
         socket.on("getOnlineUsers", (userIds) => {
