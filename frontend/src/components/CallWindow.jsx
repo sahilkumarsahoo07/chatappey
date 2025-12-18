@@ -15,6 +15,7 @@ const CallWindow = () => {
         callStatus,
         isMuted,
         isVideoOff,
+        connectionState,
         toggleMute,
         toggleVideo
     } = useCallStore();
@@ -192,6 +193,9 @@ const CallWindow = () => {
                                 <p className="text-white/70 text-sm">
                                     {callStatus === 'connecting' ? (receiver ? 'Ringing...' : 'Connecting...') : formatDuration(callDuration)}
                                 </p>
+                                <p className="text-xs text-white/50 mt-1 uppercase tracking-wider">
+                                    {connectionState}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -249,8 +253,8 @@ const CallWindow = () => {
                     {/* Remote Video */}
                     <div
                         className={`fixed transition-all duration-300 ease-in-out bg-black overflow-hidden ${isMinimized
-                                ? 'bottom-20 right-4 w-72 h-40 rounded-lg z-[9998] shadow-lg border border-gray-700'
-                                : 'inset-0 z-0'
+                            ? 'bottom-20 right-4 w-72 h-40 rounded-lg z-[9998] shadow-lg border border-gray-700'
+                            : 'inset-0 z-0'
                             }`}
                     >
                         {remoteStream ? (
@@ -272,8 +276,8 @@ const CallWindow = () => {
                     {localStream && (
                         <div
                             className={`fixed transition-all duration-300 ease-in-out bg-gray-900 overflow-hidden shadow-xl border border-white/20 ${isMinimized
-                                    ? 'hidden' // Hide local video in minimized mode to save space/complexity
-                                    : 'top-4 right-16 w-48 h-36 rounded-xl z-20' // Adjusted right position to not overlap minimize btn
+                                ? 'hidden' // Hide local video in minimized mode to save space/complexity
+                                : 'top-4 right-16 w-48 h-36 rounded-xl z-20' // Adjusted right position to not overlap minimize btn
                                 }`}
                         >
                             <video

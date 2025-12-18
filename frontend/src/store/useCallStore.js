@@ -13,8 +13,10 @@ export const useCallStore = create((set, get) => ({
     incomingCall: null,
     callStatus: 'idle', // 'idle', 'ringing', 'connecting', 'connected'
     isMuted: false,
+    isMuted: false,
     isVideoOff: false,
     callStartTime: null, // Track when call started
+    connectionState: 'new', // 'new', 'checking', 'connected', 'failed', 'disconnected', 'closed'
 
     // Actions
     setIncomingCall: (callData) => set({ incomingCall: callData, callStatus: 'ringing' }),
@@ -34,6 +36,8 @@ export const useCallStore = create((set, get) => ({
             set({ callStartTime: Date.now() });
         }
     },
+
+    setConnectionState: (state) => set({ connectionState: state }),
 
     startCall: (user, callType) => set({
         isInCall: true,

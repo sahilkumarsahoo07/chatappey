@@ -26,7 +26,13 @@ const IncomingCallNotification = () => {
             if (ringtoneRef.current) {
                 ringtoneRef.current.loop = true;
                 ringtoneRef.current.volume = 0.7;
-                ringtoneRef.current.play().catch(e => console.log('Ringtone error:', e));
+                const playPromise = ringtoneRef.current.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        // Auto-play was prevented. This is normal in recent browsers.
+                        console.log('Ringtone autoplay prevented which is expected:', error.message);
+                    });
+                }
             }
         } else {
             setRinging(false);
