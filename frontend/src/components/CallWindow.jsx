@@ -89,14 +89,13 @@ const CallWindow = () => {
                 zegoInstanceRef.current = zp;
                 setZegoInstance(zp);
 
-                // Get call configuration
-                const callConfig = getCallConfig(userID, userName);
+                // Get call configuration with proper callType
+                const callConfig = getCallConfig(userID, userName, callType);
 
-                // Configure based on call type
-                if (callType === 'audio') {
-                    callConfig.turnOnCameraWhenJoining = false;
-                    callConfig.showMyCameraToggleButton = false;
-                }
+                console.log('Call config for', callType, 'call:', {
+                    turnOnCameraWhenJoining: callConfig.turnOnCameraWhenJoining,
+                    showMyCameraToggleButton: callConfig.showMyCameraToggleButton
+                });
 
                 // Add event listeners
                 callConfig.onJoinRoom = () => {

@@ -44,14 +44,16 @@ export const validateZegoConfig = () => {
 };
 
 // Default call configuration matching user requirements
-export const getCallConfig = (userID, userName) => {
+export const getCallConfig = (userID, userName, callType = 'video') => {
+    const isAudioOnly = callType === 'audio';
+
     return {
         turnOnMicrophoneWhenJoining: true,
-        turnOnCameraWhenJoining: true,
-        showMyCameraToggleButton: true,
+        turnOnCameraWhenJoining: !isAudioOnly, // Turn off camera for audio calls
+        showMyCameraToggleButton: !isAudioOnly, // Hide camera button for audio calls
         showMyMicrophoneToggleButton: true,
         showAudioVideoSettingsButton: true,
-        showScreenSharingButton: true,
+        showScreenSharingButton: !isAudioOnly, // Hide screen sharing for audio calls
         showTextChat: true,
         showUserList: true,
         maxUsers: 2,
