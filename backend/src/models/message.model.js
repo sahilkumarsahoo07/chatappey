@@ -22,7 +22,7 @@ const messageSchema = new mongoose.Schema(
             type: [mongoose.Schema.Types.ObjectId],
             ref: "User",
         },
-         isForwarded: {
+        isForwarded: {
             type: Boolean,
             default: false
         },
@@ -39,6 +39,20 @@ const messageSchema = new mongoose.Schema(
             enum: ["sent", "delivered", "read"],
             default: "sent"
         },
+        replyTo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Message",
+            default: null
+        },
+        replyToMessage: {
+            text: String,
+            image: String,
+            senderId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User"
+            },
+            senderName: String
+        }
     },
     { timestamps: true }
 )

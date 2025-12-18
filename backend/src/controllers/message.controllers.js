@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
+import FriendRequest from "../models/friendRequest.model.js";
 
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
@@ -9,9 +10,10 @@ export const getUsersForSidebar = async (req, res) => {
         const loggedInUserId = req.user._id;
         const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
 
-        // Get logged-in user's blocked users list
-        const loggedInUser = await User.findById(loggedInUserId).select('blockedUsers');
+        // Get logged-in user's blocked users list and friends list
+        const loggedInUser = await User.findById(loggedInUserId).select('blockedUsers friends');
         const myBlockedUsers = loggedInUser.blockedUsers.map(id => id.toString());
+        const myFriends = loggedInUser.friends.map(id => id.toString());
 
         // Get last message and block status for each user
         const usersWithLastMessage = await Promise.all(
@@ -41,11 +43,25 @@ export const getUsersForSidebar = async (req, res) => {
                     blockedId => blockedId.toString() === loggedInUserId.toString()
                 );
 
+                // Check if we are friends
+                const isFriend = myFriends.includes(user._id.toString());
+
+                // Check for pending friend request
+                const pendingRequest = await FriendRequest.findOne({
+                    $or: [
+                        { senderId: loggedInUserId, receiverId: user._id, status: 'pending' },
+                        { senderId: user._id, receiverId: loggedInUserId, status: 'pending' }
+                    ]
+                });
+
                 return {
                     ...user.toObject(),
                     lastMessage: lastMessage || null,
                     isBlockedByMe,
                     hasBlockedMe,
+                    isFriend,
+                    hasPendingRequest: !!pendingRequest,
+                    pendingRequestSentByMe: pendingRequest?.senderId.toString() === loggedInUserId.toString(),
                     createdAt: user.createdAt, // Include createdAt for new user badge
                     unreadCount, // Include unread message count
                 };
@@ -80,9 +96,19 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        const { text, image } = req.body;
+        const { text, image, replyTo } = req.body;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
+
+        // Check if users are friends
+        const sender = await User.findById(senderId).select('blockedUsers friends');
+        const isFriend = sender.friends.some(friendId => friendId.toString() === receiverId.toString());
+
+        if (!isFriend) {
+            return res.status(403).json({
+                error: "Cannot send message. You must be friends to chat."
+            });
+        }
 
         // Check if sender is blocked by receiver
         const receiver = await User.findById(receiverId).select('blockedUsers');
@@ -93,19 +119,31 @@ export const sendMessage = async (req, res) => {
         }
 
         // Check if receiver is blocked by sender
-        const sender = await User.findById(senderId).select('blockedUsers');
         if (sender && sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
             return res.status(403).json({
                 error: "Cannot send message. You have blocked this user."
             });
         }
 
-
         let imageUrl;
         if (image) {
             // Upload base64 image to cloudinary
             const uploadResponse = await cloudinary.uploader.upload(image);
             imageUrl = uploadResponse.secure_url;
+        }
+
+        // Handle reply data if present
+        let replyToMessageData = null;
+        if (replyTo) {
+            const originalMessage = await Message.findById(replyTo).populate('senderId', 'fullName');
+            if (originalMessage) {
+                replyToMessageData = {
+                    text: originalMessage.text,
+                    image: originalMessage.image,
+                    senderId: originalMessage.senderId._id,
+                    senderName: originalMessage.senderId.fullName
+                };
+            }
         }
 
         // Check if receiver is online
@@ -118,9 +156,12 @@ export const sendMessage = async (req, res) => {
             text,
             image: imageUrl,
             status: initialStatus,
+            replyTo: replyTo || null,
+            replyToMessage: replyToMessageData
         });
 
         await newMessage.save();
+
 
         if (receiverSocketId) {
             // Send new message to receiver

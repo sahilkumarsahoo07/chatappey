@@ -16,6 +16,7 @@
     "@mui/material": "^7.1.0",
     "@tailwindcss/vite": "^4.1.4",
     "axios": "^1.8.4",
+    "date-fns": "^4.1.0",
     "emoji-picker-react": "^4.12.2",
     "init": "^0.1.2",
     "lucide-react": "^0.503.0",

@@ -16,6 +16,10 @@ export const useChatStore = create((set, get) => ({
   selectedUser: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  friendRequests: [],
+  sentRequests: [],
+  isFriendRequestsLoading: false,
+  replyingToMessage: null,
 
   getUsers: async () => {
     set({ isUsersLoading: true });
@@ -56,14 +60,47 @@ export const useChatStore = create((set, get) => ({
   },
 
   sendMessage: async (messageData) => {
-    const { selectedUser, messages, users } = get();
+    const { selectedUser, messages, users, replyingToMessage } = get();
+    const authUser = useAuthStore.getState().authUser;
+
+    // Create optimistic message to show instantly
+    const optimisticMessage = {
+      _id: `temp-${Date.now()}`, // Temporary ID
+      text: messageData.text,
+      image: messageData.image,
+      senderId: authUser._id,
+      receiverId: selectedUser._id,
+      createdAt: new Date().toISOString(),
+      status: 'sending', // Temporary status
+      replyTo: replyingToMessage?._id || null,
+      replyToMessage: replyingToMessage ? {
+        text: replyingToMessage.text,
+        image: replyingToMessage.image,
+        senderId: replyingToMessage.senderId,
+        senderName: replyingToMessage.senderId === authUser._id ? authUser.fullName : selectedUser.fullName
+      } : null
+    };
+
+    // Add message to UI INSTANTLY
+    set({ messages: [...messages, optimisticMessage] });
+
     try {
       const res = await axiosInstance.post(
         `/messages/send/${selectedUser._id}`,
-        messageData
+        {
+          ...messageData,
+          replyTo: replyingToMessage?._id || null
+        }
       );
       const newMessage = res.data;
-      set({ messages: [...messages, newMessage] });
+
+
+      // Replace optimistic message with real one from server
+      set({
+        messages: messages.map(msg =>
+          msg._id === optimisticMessage._id ? newMessage : msg
+        ).concat(newMessage._id === optimisticMessage._id ? [] : [newMessage])
+      });
 
       // Instantly update sidebar by modifying users list locally
       const updatedUsers = users.map(user => {
@@ -90,8 +127,13 @@ export const useChatStore = create((set, get) => ({
       });
 
       set({ users: sortedUsers });
+
+      // Clear reply state after sending
+      set({ replyingToMessage: null });
     } catch (error) {
-      toast.error(error.response.data.message);
+      // Remove optimistic message on error
+      set({ messages: messages.filter(msg => msg._id !== optimisticMessage._id) });
+      toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
 
@@ -304,5 +346,81 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  // Friend Request Actions
+  sendFriendRequest: async (userId, message = "") => {
+    try {
+      const endpoint = message ? `/friends/request-message/${userId}` : `/friends/request/${userId}`;
+      const res = await axiosInstance.post(endpoint, { message });
+
+      toast.success("Friend request sent");
+
+      // Refresh users to update friend status
+      get().refreshUsers();
+
+      return res.data;
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to send friend request");
+      throw error;
+    }
+  },
+
+  acceptFriendRequest: async (requestId) => {
+    try {
+      const res = await axiosInstance.put(`/friends/accept/${requestId}`);
+
+      toast.success("Friend request accepted");
+
+      // Refresh friend requests and users
+      get().fetchFriendRequests();
+      get().refreshUsers();
+
+      return res.data;
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to accept friend request");
+      throw error;
+    }
+  },
+
+  rejectFriendRequest: async (requestId) => {
+    try {
+      const res = await axiosInstance.put(`/friends/reject/${requestId}`);
+
+      toast.success("Friend request rejected");
+
+      // Refresh friend requests
+      get().fetchFriendRequests();
+
+      return res.data;
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to reject friend request");
+      throw error;
+    }
+  },
+
+  fetchFriendRequests: async () => {
+    set({ isFriendRequestsLoading: true });
+    try {
+      const res = await axiosInstance.get("/friends/requests");
+      set({ friendRequests: res.data });
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to fetch friend requests");
+    } finally {
+      set({ isFriendRequestsLoading: false });
+    }
+  },
+
+  fetchSentRequests: async () => {
+    try {
+      const res = await axiosInstance.get("/friends/sent");
+      set({ sentRequests: res.data });
+    } catch (error) {
+      console.error("Failed to fetch sent requests:", error);
+    }
+  },
+
   setSelectedUser: (selectedUser) => set({ selectedUser }),
+
+  setReplyingToMessage: (message) => set({ replyingToMessage: message }),
+
+  clearReplyingToMessage: () => set({ replyingToMessage: null }),
 }));

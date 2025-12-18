@@ -688,8 +688,3 @@
     color: #9CA3AF;
     transition: color 0.3s ease;
 }
-
-/* Ensure smooth scrolling */
-.messages-container {
-    scroll-behavior: smooth;
-}

@@ -1,24 +1,41 @@
-import { Copy, Info, Mail, Phone, Star, Video, X, Ban } from "lucide-react";
+import { Copy, Info, Mail, Phone, Star, Video, X, Ban, Link, Bell, Shield, ChevronRight } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+import { useThemeStore } from "../store/useThemeStore";
 import defaultImg from '../public/avatar.png'
-import { Avatar, Button, Divider, Drawer, IconButton, ListItem, ListItemIcon, ListItemText, Typography, List } from "@mui/material";
+import { Avatar, Button, Divider, Drawer, IconButton, ListItem, ListItemIcon, ListItemText, Typography, List, Dialog, DialogTitle, DialogContent, Grid } from "@mui/material";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import axios from "axios";
 
 const ChatHeader = () => {
-    const { selectedUser, setSelectedUser } = useChatStore();
+    const { selectedUser, setSelectedUser, messages } = useChatStore();
     const { authUser, onlineUsers, getOneBlockedUser, blockUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
+    const { theme } = useThemeStore();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [blockedUsers, setBlockedUsers] = useState([]);
     const [isBlocked, setIsBlocked] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+    const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+
+    // Filter shared media
+    const allMedia = messages ? messages.filter(msg => msg.image).reverse() : [];
+    const sharedMedia = allMedia.slice(0, 6);
+
+    // Filter shared links
+    const sharedLinks = messages ? messages.reduce((acc, msg) => {
+        if (msg.text) {
+            const links = msg.text.match(/(https?:\/\/[^\s]+)/g);
+            if (links) acc.push(...links.map(link => ({ link, date: msg.createdAt })));
+        }
+        return acc;
+    }, []).reverse().slice(0, 5) : [];
 
     useEffect(() => {
         const checkBlockedStatus = async () => {
             try {
-                const data = await getOneBlockedUser(); // Call the function and store the result
-                setIsBlocked(data.blockedUsers.some(user => user._id === selectedUser._id)); // Use the result
+                const data = await getOneBlockedUser();
+                setIsBlocked(data.blockedUsers.some(user => user._id === selectedUser._id));
             } catch (error) {
                 console.error("Error checking blocked status:", error);
             }
@@ -39,7 +56,6 @@ const ChatHeader = () => {
             return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
         };
 
-        // Use server-side lastLogout if available
         if (selectedUser.lastLogout) {
             const lastSeen = new Date(selectedUser.lastLogout);
             const now = new Date();
@@ -62,6 +78,7 @@ const ChatHeader = () => {
 
         return "Last seen recently";
     };
+
     useEffect(() => {
         const checkStatus = async () => {
             const blocked = await getOneBlockedUser().then(data =>
@@ -72,7 +89,6 @@ const ChatHeader = () => {
         checkStatus();
     }, [selectedUser._id]);
 
-    // Listen for block/unblock events
     useEffect(() => {
         const unsubscribe = subscribeToBlockEvents(async ({ blockerId, blockedId }) => {
             if (authUser._id === blockerId || authUser._id === blockedId) {
@@ -87,18 +103,15 @@ const ChatHeader = () => {
 
     const handelBlockUser = async (userId) => {
         try {
-            // Optimistically update UI
             setIsBlocked(true);
             await blockUser(userId);
         } catch (error) {
-            // Revert on error
             setIsBlocked(false);
             console.error("Error blocking user:", error);
             toast.error(error.response?.data?.message || "Failed to block user");
         }
     };
 
-    // Unblock user function
     const handelUnblockUser = async (userId) => {
         try {
             await unblockUser(userId);
@@ -110,15 +123,11 @@ const ChatHeader = () => {
         }
     };
 
-
-
-
     return (
         <>
             <div className="chat-header-modern">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={toggleDrawer(true)}>
-                        {/* Back button for mobile */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -131,7 +140,6 @@ const ChatHeader = () => {
                             </svg>
                         </button>
 
-                        {/* Avatar with online indicator */}
                         <div className="relative">
                             <div className="size-11 md:size-12 rounded-full relative ring-2 ring-primary-content/30 overflow-hidden">
                                 <img src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)} alt={selectedUser.fullName} className="w-full h-full object-cover" />
@@ -141,10 +149,9 @@ const ChatHeader = () => {
                             )}
                         </div>
 
-                        {/* User info */}
                         <div className="flex-1 min-w-0">
-                            <h3 className="font-bold truncate text-base md:text-lg text-primary-content">{selectedUser.fullName}</h3>
-                            <p className="text-xs md:text-sm truncate flex items-center gap-1.5 text-primary-content/90">
+                            <h3 className={`font-bold truncate text-base md:text-lg ${theme === 'light' ? 'text-gray-900' : 'text-primary-content'}`}>{selectedUser.fullName}</h3>
+                            <p className={`text-xs md:text-sm truncate flex items-center gap-1.5 ${theme === 'light' ? 'text-gray-700' : 'text-primary-content opacity-90'}`}>
                                 {(selectedUser.hasBlockedMe || isBlocked) ? (
                                     "Unavailable"
                                 ) : onlineUsers.includes(selectedUser._id) ? (
@@ -159,7 +166,6 @@ const ChatHeader = () => {
                         </div>
                     </div>
 
-                    {/* Action buttons */}
                     <div className="flex items-center gap-2">
                         <button className="hidden md:flex p-2.5 rounded-xl hover:bg-primary-content/10 transition-colors text-primary-content">
                             <Phone size={20} />
@@ -176,184 +182,329 @@ const ChatHeader = () => {
                     </div>
                 </div>
             </div>
+
             <Drawer
                 anchor="right"
                 open={drawerOpen}
                 onClose={toggleDrawer(false)}
-                sx={{
-                    '& .MuiDrawer-paper': {
+                PaperProps={{
+                    className: "bg-base-100 text-base-content",
+                    'data-theme': theme,
+                    sx: {
                         width: { xs: '100%', sm: 400 },
-                        boxSizing: 'border-box',
-                    },
+                    }
                 }}
             >
-                <div className="h-full flex flex-col bg-base-100">
-                    {/* Header */}
-                    <div className="p-5 flex justify-between items-center bg-primary text-primary-content">
+                <div className="h-full flex flex-col bg-base-100 text-base-content">
+                    <div className="p-5 flex justify-between items-center bg-base-100 border-b border-base-200">
                         <h6 className="text-lg font-bold">
                             Contact Info
                         </h6>
-                        <button onClick={toggleDrawer(false)} className="hover:bg-base-content/20 p-2 rounded-full transition-colors">
+                        <button onClick={toggleDrawer(false)} className="hover:bg-base-200 p-2 rounded-full transition-colors">
                             <X size={22} />
                         </button>
                     </div>
 
-                    {/* Profile Section */}
-                    <div className="p-6 flex flex-col items-center relative bg-base-200">
-                        {/* Status badge */}
-                        {!isBlocked && !selectedUser.hasBlockedMe && (
-                            <div className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${onlineUsers.includes(selectedUser._id)
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-gray-100 text-gray-600'
-                                }`}>
-                                <span className={`w-2 h-2 rounded-full ${onlineUsers.includes(selectedUser._id) ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-                                    }`}></span>
-                                {onlineUsers.includes(selectedUser._id) ? 'Active' : 'Offline'}
-                            </div>
-                        )}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <div className="p-6 flex flex-col items-center relative bg-base-100">
+                            {!isBlocked && !selectedUser.hasBlockedMe && (
+                                <div className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-sm border border-base-200 ${onlineUsers.includes(selectedUser._id)
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-base-200 text-base-content/70'
+                                    }`}>
+                                    <span className={`w-2 h-2 rounded-full ${onlineUsers.includes(selectedUser._id) ? 'bg-green-500 animate-pulse' : 'bg-base-content/40'
+                                        }`}></span>
+                                    {onlineUsers.includes(selectedUser._id) ? 'Active' : 'Offline'}
+                                </div>
+                            )}
 
-                        {/* Avatar with gradient ring */}
-                        <div className="w-32 h-32 mb-5 rounded-full p-1 gradient-purple-blue">
-                            <div className="w-full h-full rounded-full overflow-hidden bg-white">
-                                <img src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)} alt={selectedUser.fullName} className="w-full h-full object-cover" />
+                            <div className="w-32 h-32 mb-5 rounded-full p-1 bg-base-200 border-4 border-base-200 shadow-xl overflow-hidden relative">
+                                <div className="absolute inset-0 rounded-full border-2 border-primary/20 z-10"></div>
+                                <img src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)} alt={selectedUser.fullName} className="w-full h-full object-cover rounded-full" />
+                            </div>
+
+                            <h5 className="text-2xl font-bold mb-1 text-center">
+                                {selectedUser.fullName}
+                            </h5>
+
+                            {/* Email with copy */}
+                            <div className="w-full mt-4 px-4 py-3 rounded-xl bg-base-200/50 border border-base-200 hover:border-primary/30 transition-colors">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <div className="p-2.5 rounded-lg bg-base-100 text-primary overflow-hidden relative">
+                                            <Mail size={18} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-medium opacity-60 mb-0.5">Email</p>
+                                            <p className="text-sm truncate font-medium">
+                                                {selectedUser.email}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(selectedUser.email);
+                                            toast.success('Email copied!');
+                                        }}
+                                        className="p-2 rounded-lg hover:bg-base-300 text-primary transition-colors"
+                                    >
+                                        <Copy size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Action buttons */}
+                            <div className="flex gap-3 mt-5 w-full px-4">
+                                <button
+                                    onClick={() => toast("Voice call feature coming soon! 📞")}
+                                    className="flex-1 p-3 rounded-xl bg-primary text-primary-content font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm active:scale-95 duration-200"
+                                >
+                                    <Phone size={18} />
+                                    Call
+                                </button>
+                                <button
+                                    onClick={() => toast("Video call feature coming soon! 📹")}
+                                    className="flex-1 p-3 rounded-xl bg-base-100 text-base-content font-semibold hover:bg-base-200 transition-colors flex items-center justify-center gap-2 border border-base-300 shadow-sm active:scale-95 duration-200"
+                                >
+                                    <Video size={18} />
+                                    Video
+                                </button>
                             </div>
                         </div>
 
-                        <h5 className="text-2xl font-bold mb-1 text-center text-gray-900">
-                            {selectedUser.fullName}
-                        </h5>
+                        {/* About Section */}
+                        <div className="px-6 py-4 bg-base-100 border-b border-base-200">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="p-1.5 rounded-lg bg-base-200 text-primary">
+                                    <Info size={14} />
+                                </div>
+                                <h6 className="text-sm font-bold">About</h6>
+                            </div>
+                            <p className="text-sm opacity-80 leading-relaxed">
+                                {selectedUser.about || "Hey there! I'm using ChatAppey 💬"}
+                            </p>
+                        </div>
 
-                        {/* Email with copy */}
-                        <div className="w-full mt-4 px-4 py-3 rounded-xl bg-white border border-purple-100 hover:border-purple-200 transition-colors">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <div className="p-2 rounded-lg gradient-purple-blue">
-                                        <Mail size={16} className="text-white" />
+                        {sharedMedia.length > 0 && (
+                            <div className="px-6 py-4 bg-base-100 border-b border-base-200">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h6 className="text-sm font-bold flex items-center gap-2">
+                                        <span>🖼️</span> Shared Media
+                                    </h6>
+                                    <button
+                                        onClick={() => setMediaGalleryOpen(true)}
+                                        className="text-xs text-primary hover:underline"
+                                    >
+                                        View All
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {sharedMedia.map((msg) => (
+                                        <div key={msg._id} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity border border-base-300">
+                                            <img src={msg.image} alt="Shared" className="w-full h-full object-cover" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {sharedLinks.length > 0 && (
+                            <div className="px-6 py-4 bg-base-100 border-b border-base-200">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h6 className="text-sm font-bold flex items-center gap-2">
+                                        <Link size={16} /> Shared Links
+                                    </h6>
+                                    <button className="text-xs text-primary hover:underline">View All</button>
+                                </div>
+                                <div className="space-y-3">
+                                    {sharedLinks.map((item, idx) => (
+                                        <a href={item.link} key={idx} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-colors group">
+                                            <div className="p-2 rounded-lg bg-base-200 group-hover:bg-base-300">
+                                                <Link size={14} className="opacity-70" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm text-primary font-medium truncate">{item.link}</p>
+                                                <p className="text-xs opacity-50">{new Date(item.date).toLocaleDateString()}</p>
+                                            </div>
+                                            <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="px-6 py-4 bg-base-100 border-b border-base-200">
+                            <h6 className="text-sm font-bold mb-3">Chat Settings</h6>
+                            <div className="flex items-center justify-between py-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-base-200">
+                                        <Bell size={18} className="opacity-70" />
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-medium text-gray-500 mb-0.5">Email</p>
-                                        <p className="text-sm text-gray-900 truncate font-medium">
-                                            {selectedUser.email}
+                                    <span className="text-sm font-medium">Mute Notifications</span>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    className="toggle toggle-primary toggle-sm"
+                                    checked={isMuted}
+                                    onChange={() => {
+                                        setIsMuted(!isMuted);
+                                        toast.success(!isMuted ? "Notifications muted" : "Notifications unmuted");
+                                    }}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between py-2 cursor-pointer hover:bg-base-100" onClick={() => toast("Encryption info verified 🔒")}>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-base-200">
+                                        <Shield size={18} className="opacity-70" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium">Encryption</span>
+                                        <span className="text-xs text-green-500 flex items-center gap-1">
+                                            Messages are end-to-end encrypted
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-4 py-4 m-4 bg-base-200/50 rounded-xl border border-base-300">
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-medium opacity-60 mb-1">Member Since</p>
+                                        <p className="text-sm font-semibold">
+                                            {new Date(selectedUser.createdAt).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })}
                                         </p>
                                     </div>
+                                    <div className="p-2 rounded-lg bg-base-100">
+                                        <Star size={16} className="text-yellow-500" />
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(selectedUser.email);
-                                        toast.success('Email copied!');
-                                    }}
-                                    className="p-2 rounded-lg hover:bg-purple-50 text-purple-600 transition-colors"
-                                >
-                                    <Copy size={18} />
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* Action buttons */}
-                        <div className="flex gap-3 mt-5 w-full px-4">
-                            <button className="flex-1 p-3 rounded-xl gradient-purple-blue text-white font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-                                <Phone size={18} />
-                                Call
-                            </button>
-                            <button className="flex-1 p-3 rounded-xl bg-purple-100 text-purple-700 font-semibold hover:bg-purple-200 transition-colors flex items-center justify-center gap-2">
-                                <Video size={18} />
-                                Video
-                            </button>
-                        </div>
-                    </div>
+                                <div className="h-px bg-base-300"></div>
 
-                    {/* About Section */}
-                    <div className="px-6 py-4 bg-white">
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="p-1.5 rounded-lg gradient-purple-blue">
-                                <Info size={14} className="text-white" />
-                            </div>
-                            <h6 className="text-sm font-bold text-gray-900">About</h6>
-                        </div>
-                        <p className="text-sm text-gray-600 leading-relaxed">
-                            {selectedUser.about || "Hey there! I'm using ChatAppey 💬"}
-                        </p>
-                    </div>
-
-                    {/* Details Section */}
-                    <div className="px-6 py-4 mx-4 my-2 bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl border border-purple-100">
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 mb-1">Member Since</p>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                        {new Date(selectedUser.createdAt).toLocaleDateString('en-US', {
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })}
-                                    </p>
-                                </div>
-                                <div className="p-2 rounded-lg bg-white/60">
-                                    <Info size={16} className="text-purple-600" />
-                                </div>
-                            </div>
-
-                            <div className="h-px bg-purple-200"></div>
-
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 mb-1">Status</p>
-                                    <div className="flex items-center gap-2">
-                                        {(isBlocked || selectedUser.hasBlockedMe) ? (
-                                            <>
-                                                <div className="w-2 h-2 rounded-full bg-gray-400" />
-                                                <span className="text-sm font-semibold text-gray-700">Unavailable</span>
-                                            </>
-                                        ) : onlineUsers.includes(selectedUser._id) ? (
-                                            <>
-                                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                                <span className="text-sm font-semibold text-green-700">Online</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className="w-2 h-2 rounded-full bg-gray-400" />
-                                                <span className="text-sm font-semibold text-gray-700">
-                                                    {formatLastSeen()}
-                                                </span>
-                                            </>
-                                        )}
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-medium opacity-60 mb-1">Status</p>
+                                        <div className="flex items-center gap-2">
+                                            {(isBlocked || selectedUser.hasBlockedMe) ? (
+                                                <>
+                                                    <div className="w-2 h-2 rounded-full bg-gray-400" />
+                                                    <span className="text-sm font-semibold opacity-70">Unavailable</span>
+                                                </>
+                                            ) : onlineUsers.includes(selectedUser._id) ? (
+                                                <>
+                                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                                    <span className="text-sm font-semibold text-green-500">Online</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="w-2 h-2 rounded-full bg-gray-400" />
+                                                    <span className="text-sm font-semibold opacity-70">
+                                                        {formatLastSeen()}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Block/Unblock Section */}
-                    <div className="mt-auto p-5 space-y-3">
-                        {isBlocked ? (
-                            <div className="px-5 py-4 bg-red-50 rounded-xl border-2 border-red-200">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Ban size={18} className="text-red-600" />
-                                    <h6 className="text-sm font-bold text-red-900">Blocked User</h6>
+                        <div className="p-5 space-y-3">
+                            {isBlocked ? (
+                                <div className="px-5 py-4 bg-error/10 rounded-xl border-2 border-error/20">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Ban size={18} className="text-error" />
+                                        <h6 className="text-sm font-bold text-error">Blocked User</h6>
+                                    </div>
+                                    <p className="text-sm text-error/80 mb-3">
+                                        You won't receive messages from this user.
+                                    </p>
+                                    <button
+                                        onClick={() => handelUnblockUser(selectedUser._id)}
+                                        className="w-full py-2.5 px-4 rounded-xl bg-base-100 text-error font-semibold hover:bg-base-200 transition-colors border-2 border-error/20"
+                                    >
+                                        Unblock User
+                                    </button>
                                 </div>
-                                <p className="text-sm text-red-700 mb-3">
-                                    You won't receive messages from this user.
-                                </p>
+                            ) : (
                                 <button
-                                    onClick={() => handelUnblockUser(selectedUser._id)}
-                                    className="w-full py-2.5 px-4 rounded-xl bg-white text-red-600 font-semibold hover:bg-red-100 transition-colors border-2 border-red-200"
+                                    onClick={() => handelBlockUser(selectedUser._id)}
+                                    className="w-full py-3 px-4 rounded-xl border-2 border-error text-error font-semibold hover:bg-error/10 transition-colors flex items-center justify-center gap-2"
                                 >
-                                    Unblock User
+                                    <Ban size={18} />
+                                    Block User
                                 </button>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={() => handelBlockUser(selectedUser._id)}
-                                className="w-full py-3 px-4 rounded-xl border-2 border-red-400 text-red-600 font-semibold hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Ban size={18} />
-                                Block User
-                            </button>
-                        )}
+                            )}
+                        </div>
+
+                        <div className="p-4 flex flex-col items-center justify-center opacity-50 space-y-1 mb-2">
+                            <Shield size={12} />
+                            <p className="text-[10px] text-center max-w-[200px]">
+                                Your personal messages are end-to-end encrypted. No one outside of this chat, not even ChatAppey, can read or listen to them.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </Drawer>
+
+            <Dialog
+                open={mediaGalleryOpen}
+                onClose={() => setMediaGalleryOpen(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    className: "bg-base-100 text-base-content rounded-xl border border-base-300 m-4 max-h-[80vh]",
+                    'data-theme': theme,
+                    style: { backgroundColor: 'transparent', boxShadow: 'none' }
+                }}
+                slotProps={{
+                    backdrop: {
+                        className: "bg-black/60 backdrop-blur-sm"
+                    }
+                }}
+            >
+                <div className="bg-base-100 text-base-content p-0 overflow-hidden h-[80vh] flex flex-col">
+                    <div className="p-4 border-b border-base-300 flex justify-between items-center bg-base-200/50">
+                        <h3 className="font-bold text-lg">Shared Media</h3>
+                        <button
+                            onClick={() => setMediaGalleryOpen(false)}
+                            className="p-2 hover:bg-base-300 rounded-full transition-colors"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                    <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {allMedia.map((msg) => (
+                                <div key={msg._id} className="aspect-square rounded-lg overflow-hidden border border-base-300 relative group">
+                                    <img src={msg.image} alt="Gallery" className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <button
+                                            className="p-2 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm text-white transition-colors"
+                                            onClick={() => window.open(msg.image, '_blank')}
+                                            title="Open original"
+                                        >
+                                            <Link size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {allMedia.length === 0 && (
+                            <div className="h-full flex flex-col items-center justify-center opacity-50 py-10">
+                                <span className="text-4xl mb-2">🖼️</span>
+                                <p>No shared media yet</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </Dialog>
         </>
     );
 };

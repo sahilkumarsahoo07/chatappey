@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
+import { useThemeStore } from "../store/useThemeStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Search, MessageCircle, Edit, X, Check, CheckCheck } from "lucide-react";
 import defaultImg from '../public/avatar.png'
@@ -8,6 +9,7 @@ import defaultImg from '../public/avatar.png'
 const Sidebar = () => {
     const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers } = useChatStore();
     const { onlineUsers = [], authUser } = useAuthStore();
+    const { theme } = useThemeStore();
     const [searchQuery, setSearchQuery] = useState("");
     const [showNewChatModal, setShowNewChatModal] = useState(false);
 
@@ -140,7 +142,9 @@ const Sidebar = () => {
         });
     }, [users]);
 
+    // Filter to only show friends and apply search query
     const filteredUsers = sortedUsers
+        .filter((user) => user.isFriend) // Only show friends
         .filter((user) => user.fullName.toLowerCase().includes(searchQuery.toLowerCase()));
 
     // Handle starting a new chat
@@ -223,8 +227,8 @@ const Sidebar = () => {
                                         {/* Name and Timestamp Row */}
                                         <div className="w-full flex items-baseline justify-between mb-1">
                                             <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                <span className={`text-[15px] text-base-content truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
-                                                    }`}>
+                                                <span className={`text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
+                                                    } ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`}>
                                                     {user.fullName}
                                                 </span>
                                                 {/* NEW Badge for newly created accounts */}
@@ -243,8 +247,8 @@ const Sidebar = () => {
                                         <div className="w-full flex items-center justify-between">
                                             <div className="flex items-center gap-1 flex-1 min-w-0">
                                                 <p className={`text-[13px] truncate flex-1 text-left ${hasUnreadMessages
-                                                    ? "text-base-content font-semibold"
-                                                    : "text-base-content/60"
+                                                    ? `font-semibold ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`
+                                                    : `${theme === 'light' ? 'text-gray-600' : 'text-base-content opacity-70'}`
                                                     }`}>
                                                     {lastMessageData.text}
                                                 </p>
@@ -275,8 +279,9 @@ const Sidebar = () => {
 
                     {filteredUsers.length === 0 && (
                         <div className="text-center text-base-content/40 py-8 px-4">
-                            <Search className="size-12 mx-auto mb-3 opacity-30" />
-                            <p className="text-sm">No chats found</p>
+                            <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
+                            <p className="text-sm font-semibold mb-1">No chats yet</p>
+                            <p className="text-xs">Add friends to start chatting</p>
                         </div>
                     )}
                 </div>
@@ -359,7 +364,8 @@ const Sidebar = () => {
                             {filteredUsers.length === 0 && (
                                 <div className="text-center text-base-content/40 py-12 px-4">
                                     <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
-                                    <p className="text-sm">No contacts found</p>
+                                    <p className="text-sm font-semibold mb-1">No friends yet</p>
+                                    <p className="text-xs">Go to Contacts to add friends</p>
                                 </div>
                             )}
                         </div>

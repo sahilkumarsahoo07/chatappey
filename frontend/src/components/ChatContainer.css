@@ -1,0 +1,381 @@
+/* ===================================
+   CHAT CONTAINER MODERN STYLING
+   =================================== */
+
+/* Animated Gradient Background */
+.messages-container {
+    background: linear-gradient(135deg,
+            rgba(99, 102, 241, 0.03) 0%,
+            rgba(168, 85, 247, 0.03) 50%,
+            rgba(236, 72, 153, 0.03) 100%);
+    background-size: 200% 200%;
+    animation: gradientShift 15s ease infinite;
+    position: relative;
+}
+
+.messages-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+        radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+@keyframes gradientShift {
+
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #4f46e5, #9333ea);
+}
+
+/* ===================================
+   MESSAGE BUBBLES
+   =================================== */
+
+/* Base Chat Bubble Styling */
+.chat-bubble {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: messageSlideIn 0.3s ease-out;
+    word-wrap: break-word;
+    max-width: 70%;
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Sent Messages (User) - Theme-Aware Enhancement */
+.chat-bubble-primary {
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.15),
+        0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chat-bubble-primary:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.2),
+        0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Enhance received messages with better shadow */
+.chat-start .chat-bubble {
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.08),
+        0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-start .chat-bubble:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.12),
+        0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* ===================================
+   MESSAGE CONTENT ENHANCEMENTS
+   =================================== */
+
+/* Image in Message */
+.chat-bubble img {
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+/* Forwarded Message Badge */
+.forwarded-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    opacity: 0.7;
+    margin-bottom: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Message Text */
+.chat-bubble p {
+    margin: 0;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+/* ===================================
+   STATUS INDICATORS
+   =================================== */
+
+.message-status-icon {
+    transition: all 0.3s ease;
+}
+
+/* Read Status - Blue Ticks */
+.tick-read {
+    color: #3B82F6 !important;
+    filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.5));
+}
+
+/* Delivered Status - Gray Ticks */
+.tick-delivered {
+    color: #9CA3AF !important;
+}
+
+/* Sent Status - Gray Tick */
+.tick-sent {
+    color: #9CA3AF !important;
+}
+
+/* Status Container */
+.status-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 4px;
+    gap: 4px;
+}
+
+/* ===================================
+   TIMESTAMPS & HEADERS
+   =================================== */
+
+.chat-header time {
+    font-size: 11px;
+    opacity: 0.6;
+    font-weight: 500;
+}
+
+/* Date Separator */
+.date-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 20px 0;
+    position: relative;
+}
+
+.date-separator::before,
+.date-separator::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.1), transparent);
+}
+
+.date-separator span {
+    padding: 4px 16px;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin: 0 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* ===================================
+   AVATARS
+   =================================== */
+
+.chat-image {
+    transition: all 0.3s ease;
+}
+
+.chat-image:hover {
+    transform: scale(1.05);
+}
+
+.chat-image .avatar {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ===================================
+   MENU BUTTON
+   =================================== */
+
+.menu-button {
+    transition: all 0.3s ease;
+    border-radius: 9999px;
+}
+
+.menu-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Dark mode menu button */
+@media (prefers-color-scheme: dark) {
+    .menu-button:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+}
+
+/* ===================================
+   DELETED MESSAGE
+   =================================== */
+
+.deleted-message {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+/* ===================================
+   RESPONSIVE DESIGN
+   =================================== */
+
+@media (max-width: 768px) {
+    .chat-bubble {
+        font-size: 14px;
+    }
+
+    .chat-bubble img {
+        max-width: 200px !important;
+    }
+
+    .messages-container {
+        padding: 12px !important;
+    }
+}
+
+/* ===================================
+   LOADING STATES
+   =================================== */
+
+.message-skeleton {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* ===================================
+   ACCESSIBILITY
+   =================================== */
+
+.chat-bubble:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+
+    .chat,
+    .chat-bubble,
+    .chat-image,
+    .message-status-icon {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .messages-container {
+        animation: none !important;
+    }
+}
+
+/* ===================================
+   SPECIAL MESSAGE TYPES
+   =================================== */
+
+/* System Messages */
+.system-message {
+    text-align: center;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #64748b;
+    font-style: italic;
+}
+
+/* Emoji-only messages (larger) */
+.emoji-only {
+    font-size: 48px;
+    line-height: 1;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+/* ===================================
+   PERFORMANCE OPTIMIZATIONS
+   =================================== */
+
+.chat-bubble,
+.chat-image {
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+
+/* ===================================
+   REPLY HIGHLIGHT ANIMATION
+   =================================== */
+@keyframes highlight {
+    0% {
+        background-color: rgba(99, 102, 241, 0.2);
+        transform: scale(1.02);
+    }
+
+    50% {
+        background-color: rgba(99, 102, 241, 0.1);
+        transform: scale(1.01);
+    }
+
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
+.highlight-message .chat-bubble {
+    animation: highlight 2s ease-out;
+}

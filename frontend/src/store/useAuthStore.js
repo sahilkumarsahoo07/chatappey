@@ -346,6 +346,86 @@ export const useAuthStore = create((set, get) => ({
             }
         });
 
+        // Friend request socket events
+        socket.on("friendRequestSent", (data) => {
+            // Import notification store dynamically
+            import("./useNotificationStore").then(({ useNotificationStore }) => {
+                useNotificationStore.getState().addNotification(data.notification);
+                useNotificationStore.getState().fetchUnreadCount();
+
+                // Show notification
+                playNotificationSound();
+                if (!isDocumentVisible()) {
+                    showBrowserNotification(data.notification.fromUserId.fullName, {
+                        body: data.notification.message || "Sent you a friend request",
+                        icon: data.notification.fromUserId.profilePic || "/avatar.png",
+                        tag: "friend-request",
+                    });
+                }
+            });
+
+            // Refresh users list to update friend status
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+            });
+        });
+
+        socket.on("friendRequestAccepted", (data) => {
+            import("./useNotificationStore").then(({ useNotificationStore }) => {
+                useNotificationStore.getState().addNotification(data.notification);
+                useNotificationStore.getState().fetchUnreadCount();
+
+                // Show notification
+                playNotificationSound();
+                if (!isDocumentVisible()) {
+                    showBrowserNotification(data.notification.fromUserId.fullName, {
+                        body: "Accepted your friend request",
+                        icon: data.notification.fromUserId.profilePic || "/avatar.png",
+                        tag: "friend-request-accepted",
+                    });
+                }
+            });
+
+            // Refresh users list
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+            });
+        });
+
+        socket.on("friendRequestRejected", (data) => {
+            import("./useNotificationStore").then(({ useNotificationStore }) => {
+                useNotificationStore.getState().addNotification(data.notification);
+                useNotificationStore.getState().fetchUnreadCount();
+            });
+
+            // Refresh users list
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+            });
+        });
+
+        socket.on("newRequestMessage", (data) => {
+            import("./useNotificationStore").then(({ useNotificationStore }) => {
+                useNotificationStore.getState().addNotification(data.notification);
+                useNotificationStore.getState().fetchUnreadCount();
+
+                // Show notification
+                playNotificationSound();
+                if (!isDocumentVisible()) {
+                    showBrowserNotification(data.notification.fromUserId.fullName, {
+                        body: data.notification.message || "Sent you a message with friend request",
+                        icon: data.notification.fromUserId.profilePic || "/avatar.png",
+                        tag: "request-message",
+                    });
+                }
+            });
+
+            // Refresh users list
+            import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().refreshUsers();
+            });
+        });
+
     },
     disconnectSocket: () => {
         if (get().socket?.connected) get().socket.disconnect();

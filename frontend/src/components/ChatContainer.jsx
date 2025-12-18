@@ -1,13 +1,15 @@
 import { useChatStore } from "../store/useChatStore";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import ChatHeader from "./ChatHeader";
 import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { useAuthStore } from "../store/useAuthStore";
+import { useThemeStore } from "../store/useThemeStore";
 import { formatMessageTime } from "../lib/utils";
 import defaultImg from "../public/avatar.png";
-import { Ban, Check, CheckCheck, Download, Forward, MoreVertical, Search, } from "lucide-react";
+import { Ban, Check, CheckCheck, Download, Forward, MoreVertical, Search, UserPlus, Reply } from "lucide-react";
+import "./ChatContainer.css";
 import { Menu, MenuItem, Dialog, DialogTitle, DialogActions, Button, Typography, DialogContent, Avatar, List, ListItem, ListItemAvatar, ListItemText, Divider, Box, InputAdornment, TextField, } from "@mui/material";
 import toast from "react-hot-toast";
 
@@ -19,9 +21,11 @@ const ChatContainer = () => {
   const [isForwardLoading, setIsForwardLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
 
-  const { messages, getMessages, isMessagesLoading, selectedUser, subscribeToMessages, unsubscribeFromMessages, deleteForAllMessage, users, forwardMessage, } = useChatStore();
+  const { messages, getMessages, isMessagesLoading, selectedUser, subscribeToMessages, unsubscribeFromMessages, deleteForAllMessage, users, forwardMessage, sendFriendRequest, setReplyingToMessage } = useChatStore();
   const { authUser, getOneBlockedUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
+  const { theme } = useThemeStore();
   const messageEndRef = useRef(null);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     getMessages(selectedUser._id);
@@ -36,9 +40,15 @@ const ChatContainer = () => {
     unsubscribeFromMessages,
   ]);
 
-  useEffect(() => {
-    if (messageEndRef.current && messages) {
-      messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = () => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (containerRef.current && messages) {
+      scrollToBottom();
     }
   }, [messages]);
 
@@ -140,6 +150,50 @@ const ChatContainer = () => {
     }
   };
 
+  const handleSendFriendRequest = async () => {
+    try {
+      await sendFriendRequest(selectedUser._id);
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+    }
+  };
+
+  // Check if users are friends
+  if (!selectedUser.isFriend) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <UserPlus className="w-12 h-12 mx-auto text-primary mb-4" />
+          <h3 className="text-xl font-bold mb-2">Not Friends Yet</h3>
+          <p className="text-base-content/70 mb-4">
+            You need to be friends with {selectedUser.fullName} to send messages.
+          </p>
+          {selectedUser.hasPendingRequest && selectedUser.pendingRequestSentByMe ? (
+            <div className="text-sm text-base-content/60">
+              Friend request already sent. Waiting for {selectedUser.fullName} to accept.
+            </div>
+          ) : selectedUser.hasPendingRequest && !selectedUser.pendingRequestSentByMe ? (
+            <button
+              onClick={() => window.location.href = '/notifications'}
+              className="btn btn-primary gap-2"
+            >
+              <Check className="w-4 h-4" />
+              Accept Friend Request
+            </button>
+          ) : (
+            <button
+              onClick={handleSendFriendRequest}
+              className="btn btn-primary gap-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              Send Friend Request
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
 
   if (isBlocked) {
     return (
@@ -161,15 +215,14 @@ const ChatContainer = () => {
     );
   }
 
-
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-base-100">
       <ChatHeader />
 
-      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container">{[...messages]
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container">{[...messages]
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
         .map((message) => (
-          <div key={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`} ref={messageEndRef} >
+          <div key={message._id} id={`msg-${message._id}`} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`} ref={messageEndRef} >
             <div className="chat-image avatar ml-2 md:ml-3">
               <div className="size-8 md:size-10 rounded-full border">
                 <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" />
@@ -182,25 +235,50 @@ const ChatContainer = () => {
             </div>
 
             <div
-              className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id
-                ? 'bg-primary text-primary-content'
-                : 'bg-base-100 text-base-content border border-base-300'
+              className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''
                 }`}
               style={{
                 borderRadius: message.senderId === authUser._id
-                  ? '18px 18px 4px 18px'
-                  : '18px 18px 18px 4px',
-                padding: '10px 14px',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                  ? '20px 20px 4px 20px'
+                  : '20px 20px 20px 4px',
+                padding: '12px 16px',
               }}
             >
-              {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[250px] rounded-md mb-2" />)}
+              {/* Replied Message Display */}
+              {message.replyTo && message.replyToMessage && (
+                <div
+                  className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const element = document.getElementById(`msg-${message.replyTo}`);
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      element.classList.add('highlight-message');
+                      setTimeout(() => element.classList.remove('highlight-message'), 2000);
+                    } else {
+                      toast("Original message not loaded", { icon: '🔍' });
+                    }
+                  }}
+                >
+                  <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">
+                    {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {message.replyToMessage.image && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={scrollToBottom} />}
+                    <p className="text-xs opacity-70 truncate max-w-[150px]">
+                      {message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[280px] rounded-xl mb-2" onLoad={scrollToBottom} />)}
               {message.text && (
                 <div className="relative">
                   {/* Show "Forwarded" only if it's forwarded AND not deleted */}
                   {message.isForwarded && message.text !== "This message was deleted" && (
-                    <div className="flex items-center text-xs opacity-60 mb-1">
-                      <Forward className="w-3 h-3 mr-1" />
+                    <div className="forwarded-badge">
+                      <Forward className="w-3 h-3" />
                       <span>Forwarded</span>
                     </div>
                   )}
@@ -213,16 +291,16 @@ const ChatContainer = () => {
 
               {/* Message Status Icons */}
               {message.senderId === authUser._id && (
-                <div className="flex items-center gap-0.5 ml-2 mt-1">
+                <div className="status-container">
                   {message.status === "read" ? (
                     // Double blue tick for read messages
-                    <CheckCheck className="w-4 h-4 tick-read message-status-icon" style={{ color: '#3B82F6' }} />
+                    <CheckCheck className="w-4 h-4 tick-read message-status-icon" />
                   ) : message.status === "delivered" ? (
                     // Double gray tick for delivered messages
-                    <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" style={{ color: '#9CA3AF' }} />
+                    <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" />
                   ) : (
                     // Single gray tick for sent messages
-                    <Check className="w-4 h-4 tick-sent message-status-icon" style={{ color: '#9CA3AF' }} />
+                    <Check className="w-4 h-4 tick-sent message-status-icon" />
                   )}
                 </div>
               )}
@@ -230,7 +308,7 @@ const ChatContainer = () => {
               {/* 3-dot menu button */}
               {message.text !== "This message was deleted" && (
                 <>
-                  <button className="absolute top-0 p-1 opacity-0 group-hover:opacity-100" style={{ right: "-23px" }} onClick={(e) => { e.stopPropagation(); setAnchorEl(e.currentTarget); setOpenMenuId(message._id); }} >
+                  <button className="absolute top-0 p-1 opacity-0 group-hover:opacity-100 menu-button transition-all hover:bg-base-200 rounded-full" style={{ right: "-28px" }} onClick={(e) => { e.stopPropagation(); setAnchorEl(e.currentTarget); setOpenMenuId(message._id); }} >
                     <MoreVertical className="w-4 h-4" />
                   </button>
 
@@ -241,6 +319,9 @@ const ChatContainer = () => {
                     anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                     transformOrigin={{ vertical: "top", horizontal: "right" }}
                     PaperProps={{ sx: { width: 200 } }} >
+                    <MenuItem onClick={() => { setOpenMenuId(null); setReplyingToMessage(message); }} >
+                      <Reply className="mr-2" size={18} /> Reply
+                    </MenuItem>
                     {!message.image && (
                       <MenuItem onClick={() => { handleCopyText(message.text); setOpenMenuId(null); }} >
                         📋 Copy
