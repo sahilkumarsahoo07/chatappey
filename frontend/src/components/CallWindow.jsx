@@ -12,6 +12,7 @@ const CallWindow = () => {
         receiver,
         localStream,
         remoteStream,
+        remoteStreamUpdate,
         callStatus,
         isMuted,
         isVideoOff,
@@ -63,7 +64,7 @@ const CallWindow = () => {
                 });
             }
         }
-    }, [remoteStream]);
+    }, [remoteStream, remoteStreamUpdate]);
 
     // Call duration timer
     useEffect(() => {

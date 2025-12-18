@@ -9,6 +9,7 @@ export const useCallStore = create((set, get) => ({
     receiver: null,
     localStream: null,
     remoteStream: null,
+    remoteStreamUpdate: 0,
     peer: null,
     incomingCall: null,
     callStatus: 'idle', // 'idle', 'ringing', 'connecting', 'connected'
@@ -25,7 +26,7 @@ export const useCallStore = create((set, get) => ({
 
     setLocalStream: (stream) => set({ localStream: stream }),
 
-    setRemoteStream: (stream) => set({ remoteStream: stream }),
+    setRemoteStream: (stream) => set({ remoteStream: stream, remoteStreamUpdate: Date.now() }),
 
     setPeer: (peer) => set({ peer }),
 
