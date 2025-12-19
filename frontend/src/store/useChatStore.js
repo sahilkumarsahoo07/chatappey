@@ -94,12 +94,23 @@ export const useChatStore = create((set, get) => ({
       );
       const newMessage = res.data;
 
-
       // Replace optimistic message with real one from server
+      // Keep original image URL AND createdAt to prevent:
+      // 1. Image reloading (URL change)
+      // 2. Message repositioning/shaking (createdAt change affects sort order)
+      const currentMessages = get().messages;
       set({
-        messages: messages.map(msg =>
-          msg._id === optimisticMessage._id ? newMessage : msg
-        ).concat(newMessage._id === optimisticMessage._id ? [] : [newMessage])
+        messages: currentMessages.map(msg => {
+          if (msg._id === optimisticMessage._id) {
+            return {
+              ...newMessage,
+              // Keep original values to prevent visual glitches
+              image: optimisticMessage.image || newMessage.image,
+              createdAt: optimisticMessage.createdAt // Preserve position in sorted list
+            };
+          }
+          return msg;
+        })
       });
 
       // Instantly update sidebar by modifying users list locally
@@ -131,8 +142,9 @@ export const useChatStore = create((set, get) => ({
       // Clear reply state after sending
       set({ replyingToMessage: null });
     } catch (error) {
-      // Remove optimistic message on error
-      set({ messages: messages.filter(msg => msg._id !== optimisticMessage._id) });
+      // Remove optimistic message on error - use current state
+      const currentMessages = get().messages;
+      set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
       toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
@@ -160,6 +172,13 @@ export const useChatStore = create((set, get) => ({
         (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
 
       if (isMessageForCurrentChat) {
+        // If this message was sent by us, skip it completely
+        // Our sendMessage function already handles the optimistic → real message replacement
+        // Adding it from socket causes race condition flashing (empty bubble then content)
+        if (newMessage.senderId === authUser._id) {
+          return;
+        }
+
         set({
           messages: [...get().messages, newMessage],
         });
@@ -425,7 +444,15 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  setSelectedUser: (selectedUser) => set({ selectedUser }),
+  setSelectedUser: (selectedUser) => {
+    const currentUser = get().selectedUser;
+    // Clear messages when switching to a different user (prevents old messages flash)
+    if (selectedUser && (!currentUser || currentUser._id !== selectedUser._id)) {
+      set({ selectedUser, messages: [] });
+    } else {
+      set({ selectedUser });
+    }
+  },
 
   setReplyingToMessage: (message) => set({ replyingToMessage: message }),
 

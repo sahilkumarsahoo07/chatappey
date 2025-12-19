@@ -76,6 +76,34 @@
     padding-right: env(safe-area-inset-right);
 }
 
+/* Mobile viewport height fix */
+.h-dvh {
+    height: 100dvh;
+}
+
+/* Bottom navbar mobile padding */
+.pb-navbar {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Fix for iOS Safari 100vh issue */
+@supports (height: 100dvh) {
+    .h-screen-fix {
+        height: 100dvh;
+    }
+}
+
+@supports not (height: 100dvh) {
+    .h-screen-fix {
+        height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    }
+}
+
+/* Mobile bottom navbar container */
+.mobile-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
 /* Touch-friendly button sizes */
 .touch-target {
     min-height: 44px;

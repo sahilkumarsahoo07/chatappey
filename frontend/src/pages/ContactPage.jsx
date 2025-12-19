@@ -120,8 +120,8 @@ const ContactPage = () => {
 
     return (
         <>
-            <div className="min-h-screen bg-base-200/30">
-                <div className="container mx-auto px-4 pt-20 pb-8 max-w-7xl">
+            <div className="min-h-[100dvh] bg-base-200/30 pl-0 md:pl-20 pb-14 md:pb-0">
+                <div className="container mx-auto px-4 pt-8 pb-8 max-w-7xl">
                     {/* Header Section */}
                     <div className="mb-8">
                         <div className="flex items-center justify-between mb-4">

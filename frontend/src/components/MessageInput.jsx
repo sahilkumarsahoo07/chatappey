@@ -174,12 +174,12 @@ const MessageInput = () => {
 
             {/* Input Form */}
             <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <div className="flex-1 flex flex-col gap-2 min-w-0">
+                <div className="flex-1 min-w-0">
                     {/* Main Input Area */}
-                    <div className="flex items-center gap-2 rounded-2xl p-2 border border-base-300">
+                    <div className="flex items-center gap-1 md:gap-2 rounded-2xl p-2 border border-base-300 bg-base-100">
                         <textarea
                             ref={textareaRef}
-                            className="flex-1 bg-transparent px-3 py-2 outline-none resize-none message-textarea min-w-0"
+                            className="flex-1 bg-transparent px-2 md:px-3 py-2 outline-none resize-none message-textarea min-w-0 text-sm md:text-base"
                             placeholder="Type a message..."
                             value={text}
                             onChange={handleTextChange}
@@ -187,8 +187,8 @@ const MessageInput = () => {
                             rows={1}
                         />
 
-                        {/* Action Buttons Row */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Action Buttons Row - Hidden on very small screens, show on tap */}
+                        <div className="flex items-center gap-0.5 md:gap-1 flex-shrink-0">
                             {/* Emoji Picker */}
                             <EmojiPickerComponent
                                 onEmojiSelect={(emoji) => setText(prev => prev + emoji)}
@@ -200,11 +200,11 @@ const MessageInput = () => {
                             {/* Image Button */}
                             <button
                                 type="button"
-                                className="btn btn-circle btn-ghost action-button hover-lift flex-shrink-0"
+                                className="btn btn-circle btn-ghost btn-sm md:btn-md action-button hover-lift flex-shrink-0"
                                 onClick={() => fileInputRef.current?.click()}
                                 title="Add image"
                             >
-                                <Image className="w-5 h-5" />
+                                <Image className="w-4 h-4 md:w-5 md:h-5" />
                             </button>
 
                             <input

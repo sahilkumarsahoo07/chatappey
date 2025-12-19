@@ -20,6 +20,8 @@ const ChatContainer = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [isForwardLoading, setIsForwardLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const longPressTimerRef = useRef(null);
+  const longPressMessageRef = useRef(null);
 
   const { messages, getMessages, isMessagesLoading, selectedUser, subscribeToMessages, unsubscribeFromMessages, deleteForAllMessage, users, forwardMessage, sendFriendRequest, setReplyingToMessage } = useChatStore();
   const { authUser, getOneBlockedUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
@@ -90,15 +92,8 @@ const ChatContainer = () => {
     checkBlockedStatus();
   }, [selectedUser._id]);
 
-  if (isMessagesLoading) {
-    return (
-      <div className="flex-1 flex flex-col overflow-auto">
-        <ChatHeader />
-        <MessageSkeleton />
-        <MessageInput />
-      </div>
-    );
-  }
+  // No loading skeleton - transitions should be instant and seamless like WhatsApp
+  // Empty state is shown in the render when messages.length === 0
 
   const handleDeleteForEveryone = async (messageId) => {
     const socket = useAuthStore.getState().socket;
@@ -155,6 +150,23 @@ const ChatContainer = () => {
       await sendFriendRequest(selectedUser._id);
     } catch (error) {
       console.error("Error sending friend request:", error);
+    }
+  };
+
+  // Long press handlers for mobile message menu
+  const handleTouchStart = (e, messageId) => {
+    longPressMessageRef.current = e.currentTarget;
+    longPressTimerRef.current = setTimeout(() => {
+      setAnchorEl(longPressMessageRef.current);
+      setOpenMenuId(messageId);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
   };
 
@@ -216,383 +228,402 @@ const ChatContainer = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-base-100">
+    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-base-100">
       <ChatHeader />
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container">{[...messages]
-        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-        .map((message) => (
-          <div key={message._id} id={`msg-${message._id}`} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`} ref={messageEndRef} >
-            <div className="chat-image avatar ml-2 md:ml-3">
-              <div className="size-8 md:size-10 rounded-full border">
-                <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" />
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container">
+        {/* Empty state when no messages */}
+        {messages.length === 0 && !isMessagesLoading && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <span className="text-4xl">👋</span>
+            </div>
+            <h3 className="text-lg font-semibold text-base-content mb-2">
+              Start a conversation
+            </h3>
+            <p className="text-sm text-base-content/60 max-w-xs">
+              Say hi to {selectedUser.fullName}! Send your first message to get the conversation started.
+            </p>
+          </div>
+        )}
+
+        {[...messages]
+          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+          .map((message) => (
+            <div key={message._id} id={`msg-${message._id}`} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`} ref={messageEndRef} >
+              <div className="chat-image avatar ml-2 md:ml-3">
+                <div className="size-8 md:size-10 rounded-full border">
+                  <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" />
+                </div>
               </div>
-            </div>
-            <div className="chat-header mb-1">
-              <time className="text-xs opacity-50 ml-1">
-                {formatMessageTime(message.createdAt)}
-              </time>
-            </div>
+              <div className="chat-header mb-1">
+                <time className="text-xs opacity-50 ml-1">
+                  {formatMessageTime(message.createdAt)}
+                </time>
+              </div>
 
-            <div
-              className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''
-                }`}
-              style={{
-                borderRadius: message.senderId === authUser._id
-                  ? '20px 20px 4px 20px'
-                  : '20px 20px 20px 4px',
-                padding: '12px 16px',
-              }}
-            >
-              {/* Replied Message Display */}
-              {message.replyTo && message.replyToMessage && message.text !== "This message was deleted" && (
-                <div
-                  className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const element = document.getElementById(`msg-${message.replyTo}`);
-                    if (element) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      element.classList.add('highlight-message');
-                      setTimeout(() => element.classList.remove('highlight-message'), 2000);
-                    } else {
-                      toast("Original message not loaded", { icon: '🔍' });
-                    }
-                  }}
-                >
-                  <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">
-                    {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={scrollToBottom} />}
-                    <p className="text-xs opacity-70 truncate max-w-[150px]">
-                      {message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[280px] rounded-xl mb-2" onLoad={scrollToBottom} />)}
-              {message.text && (
-                <div className="relative">
-                  {/* Show "Forwarded" only if it's forwarded AND not deleted */}
-                  {message.isForwarded && message.text !== "This message was deleted" && (
-                    <div className="forwarded-badge">
-                      <Forward className="w-3 h-3" />
-                      <span>Forwarded</span>
-                    </div>
-                  )}
-                  <div className={`relative ${message.text === "This message was deleted" ? "opacity-50 italic" : ""} `} >
-                    <p className="text-sm md:text-base">{message.text}</p>
-                  </div>
-                </div>
-              )}
-
-
-              {/* Message Status Icons */}
-              {message.senderId === authUser._id && (
-                <div className="status-container">
-                  {message.status === "read" ? (
-                    // Double blue tick for read messages
-                    <CheckCheck className="w-4 h-4 tick-read message-status-icon" />
-                  ) : message.status === "delivered" ? (
-                    // Double gray tick for delivered messages
-                    <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" />
-                  ) : (
-                    // Single gray tick for sent messages
-                    <Check className="w-4 h-4 tick-sent message-status-icon" />
-                  )}
-                </div>
-              )}
-
-              {/* 3-dot menu button */}
-              {message.text !== "This message was deleted" && (
-                <>
-                  <button className="absolute top-0 p-1 opacity-0 group-hover:opacity-100 menu-button transition-all hover:bg-base-200 rounded-full" style={{ right: "-28px" }} onClick={(e) => { e.stopPropagation(); setAnchorEl(e.currentTarget); setOpenMenuId(message._id); }} >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-
-                  {/* MUI Menu */}
-                  <Menu anchorEl={anchorEl}
-                    open={openMenuId === message._id}
-                    onClose={() => setOpenMenuId(null)}
-                    anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                    transformOrigin={{ vertical: "top", horizontal: "right" }}
-                    PaperProps={{ sx: { width: 200 } }} >
-                    <MenuItem onClick={() => { setOpenMenuId(null); setReplyingToMessage(message); }} >
-                      <Reply className="mr-2" size={18} /> Reply
-                    </MenuItem>
-                    {!message.image && (
-                      <MenuItem onClick={() => { handleCopyText(message.text); setOpenMenuId(null); }} >
-                        📋 Copy
-                      </MenuItem>
-                    )}
-                    <MenuItem onClick={() => { setOpenMenuId(null); handleForwardClick(message._id); }} >
-                      📤 Forward
-                    </MenuItem>
-                    {message.senderId === authUser._id && (
-                      <MenuItem sx={{ color: "error.main" }} onClick={() => { setOpenMenuId(null); setDeletePopupMessageId(message._id); }} >
-                        🗑️ Delete
-                      </MenuItem>
-                    )}
-                    {message.image && (
-                      <MenuItem
-                        onClick={async () => {
-                          try {
-                            // Fetch the image first
-                            const response = await fetch(message.image);
-                            const blob = await response.blob();
-
-                            // Create a download link
-                            const url = window.URL.createObjectURL(blob);
-                            const link = document.createElement("a");
-                            link.href = url;
-                            link.download = `message_image_${message._id}.jpg`; // or .png based on your image type
-
-                            // Append to DOM, click and remove
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-
-                            // Clean up by revoking the object URL
-                            window.URL.revokeObjectURL(url);
-
-                            setOpenMenuId(null);
-                          } catch (error) {
-                            console.error("Error downloading image:", error);
-                            toast.error("Failed to download image");
-                          }
-                        }}
-                      >
-                        <Download className="mr-2" />
-                        {/* 📥  */}
-                        Download Image
-                      </MenuItem>
-                    )}
-                  </Menu>
-
-                  {/* Delete confirmation dialog */}
-
-                  <Dialog
-                    open={deletePopupMessageId === message._id}
-                    onClose={() => setDeletePopupMessageId(null)}
-                    PaperProps={{
-                      sx: {
-                        borderRadius: "12px",
-                        width: "90%",
-                        maxWidth: "400px",
-                        "& .MuiDialogTitle-root .MuiIconButton-root": {
-                          display: "none",
-                        },
-                      },
+              <div
+                className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''
+                  }`}
+                style={{
+                  borderRadius: message.senderId === authUser._id
+                    ? '20px 20px 4px 20px'
+                    : '20px 20px 20px 4px',
+                  padding: '12px 16px',
+                }}
+                onTouchStart={(e) => message.text !== "This message was deleted" && handleTouchStart(e, message._id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchMove={handleTouchEnd}
+              >
+                {/* Replied Message Display */}
+                {message.replyTo && message.replyToMessage && message.text !== "This message was deleted" && (
+                  <div
+                    className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const element = document.getElementById(`msg-${message.replyTo}`);
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        element.classList.add('highlight-message');
+                        setTimeout(() => element.classList.remove('highlight-message'), 2000);
+                      } else {
+                        toast("Original message not loaded", { icon: '🔍' });
+                      }
                     }}
                   >
-                    <div className="px-5 pt-3">
-                      <DialogTitle
-                        sx={{
-                          fontSize: "1.25rem",
-                          fontWeight: 700,
-                          px: 0,
-                          py: 1,
-                          color: "text.primary",
-                        }}
-                      >
-                        Delete message?
-                      </DialogTitle>
-                      <DialogContent sx={{ px: 0, py: 1 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          This action cannot be undone.
-                        </Typography>
-                      </DialogContent>
+                    <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">
+                      {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={scrollToBottom} />}
+                      <p className="text-xs opacity-70 truncate max-w-[150px]">
+                        {message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}
+                      </p>
                     </div>
+                  </div>
+                )}
 
-                    <DialogActions
-                      sx={{
-                        flexDirection: "column",
-                        gap: 1,
-                        px: 3,
-                        pb: 3,
-                        pt: 0,
+                {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[280px] rounded-xl mb-2" onLoad={scrollToBottom} />)}
+                {message.text && (
+                  <div className="relative">
+                    {/* Show "Forwarded" only if it's forwarded AND not deleted */}
+                    {message.isForwarded && message.text !== "This message was deleted" && (
+                      <div className="forwarded-badge">
+                        <Forward className="w-3 h-3" />
+                        <span>Forwarded</span>
+                      </div>
+                    )}
+                    <div className={`relative ${message.text === "This message was deleted" ? "opacity-50 italic" : ""} `} >
+                      <p className="text-sm md:text-base">{message.text}</p>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* Message Status Icons */}
+                {message.senderId === authUser._id && (
+                  <div className="status-container">
+                    {message.status === "read" ? (
+                      // Double blue tick for read messages
+                      <CheckCheck className="w-4 h-4 tick-read message-status-icon" />
+                    ) : message.status === "delivered" ? (
+                      // Double gray tick for delivered messages
+                      <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" />
+                    ) : (
+                      // Single gray tick for sent messages
+                      <Check className="w-4 h-4 tick-sent message-status-icon" />
+                    )}
+                  </div>
+                )}
+
+                {/* 3-dot menu button - Hidden on mobile (use long-press instead), visible on desktop hover */}
+                {message.text !== "This message was deleted" && (
+                  <>
+                    <button className="absolute top-0 p-1 hidden md:block md:opacity-0 md:group-hover:opacity-100 menu-button transition-all hover:bg-base-200 rounded-full" style={{ right: "-28px" }} onClick={(e) => { e.stopPropagation(); setAnchorEl(e.currentTarget); setOpenMenuId(message._id); }} >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {/* MUI Menu */}
+                    <Menu anchorEl={anchorEl}
+                      open={openMenuId === message._id}
+                      onClose={() => setOpenMenuId(null)}
+                      anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                      transformOrigin={{ vertical: "top", horizontal: "right" }}
+                      PaperProps={{ sx: { width: 200 } }} >
+                      <MenuItem onClick={() => { setOpenMenuId(null); setReplyingToMessage(message); }} >
+                        <Reply className="mr-2" size={18} /> Reply
+                      </MenuItem>
+                      {!message.image && (
+                        <MenuItem onClick={() => { handleCopyText(message.text); setOpenMenuId(null); }} >
+                          📋 Copy
+                        </MenuItem>
+                      )}
+                      <MenuItem onClick={() => { setOpenMenuId(null); handleForwardClick(message._id); }} >
+                        📤 Forward
+                      </MenuItem>
+                      {message.senderId === authUser._id && (
+                        <MenuItem sx={{ color: "error.main" }} onClick={() => { setOpenMenuId(null); setDeletePopupMessageId(message._id); }} >
+                          🗑️ Delete
+                        </MenuItem>
+                      )}
+                      {message.image && (
+                        <MenuItem
+                          onClick={async () => {
+                            try {
+                              // Fetch the image first
+                              const response = await fetch(message.image);
+                              const blob = await response.blob();
+
+                              // Create a download link
+                              const url = window.URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.href = url;
+                              link.download = `message_image_${message._id}.jpg`; // or .png based on your image type
+
+                              // Append to DOM, click and remove
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+
+                              // Clean up by revoking the object URL
+                              window.URL.revokeObjectURL(url);
+
+                              setOpenMenuId(null);
+                            } catch (error) {
+                              console.error("Error downloading image:", error);
+                              toast.error("Failed to download image");
+                            }
+                          }}
+                        >
+                          <Download className="mr-2" />
+                          {/* 📥  */}
+                          Download Image
+                        </MenuItem>
+                      )}
+                    </Menu>
+
+                    {/* Delete confirmation dialog */}
+
+                    <Dialog
+                      open={deletePopupMessageId === message._id}
+                      onClose={() => setDeletePopupMessageId(null)}
+                      PaperProps={{
+                        sx: {
+                          borderRadius: "12px",
+                          width: "90%",
+                          maxWidth: "400px",
+                          "& .MuiDialogTitle-root .MuiIconButton-root": {
+                            display: "none",
+                          },
+                        },
                       }}
                     >
-                      {message.senderId === authUser._id && (
+                      <div className="px-5 pt-3">
+                        <DialogTitle
+                          sx={{
+                            fontSize: "1.25rem",
+                            fontWeight: 700,
+                            px: 0,
+                            py: 1,
+                            color: "text.primary",
+                          }}
+                        >
+                          Delete message?
+                        </DialogTitle>
+                        <DialogContent sx={{ px: 0, py: 1 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            This action cannot be undone.
+                          </Typography>
+                        </DialogContent>
+                      </div>
+
+                      <DialogActions
+                        sx={{
+                          flexDirection: "column",
+                          gap: 1,
+                          px: 3,
+                          pb: 3,
+                          pt: 0,
+                        }}
+                      >
+                        {message.senderId === authUser._id && (
+                          <Button
+                            fullWidth
+                            variant="contained"
+                            color="error"
+                            size="medium"
+                            onClick={() => {
+                              handleDeleteForEveryone(message._id);
+                              setDeletePopupMessageId(null);
+                            }}
+                            sx={{
+                              py: 1.5,
+                              borderRadius: "8px",
+                              fontWeight: 600,
+                              "&:hover": {
+                                backgroundColor: "error.dark",
+                              },
+                            }}
+                          >
+                            Delete for everyone
+                          </Button>
+                        )}
+
                         <Button
                           fullWidth
-                          variant="contained"
-                          color="error"
+                          variant="text"
                           size="medium"
-                          onClick={() => {
-                            handleDeleteForEveryone(message._id);
-                            setDeletePopupMessageId(null);
-                          }}
+                          onClick={() => setDeletePopupMessageId(null)}
                           sx={{
                             py: 1.5,
                             borderRadius: "8px",
-                            fontWeight: 600,
+                            color: "text.primary",
                             "&:hover": {
-                              backgroundColor: "error.dark",
+                              backgroundColor: "action.hover",
                             },
                           }}
                         >
-                          Delete for everyone
+                          Cancel
                         </Button>
-                      )}
+                      </DialogActions>
+                    </Dialog>
 
-                      <Button
-                        fullWidth
-                        variant="text"
-                        size="medium"
-                        onClick={() => setDeletePopupMessageId(null)}
-                        sx={{
-                          py: 1.5,
-                          borderRadius: "8px",
-                          color: "text.primary",
-                          "&:hover": {
-                            backgroundColor: "action.hover",
-                          },
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </DialogActions>
-                  </Dialog>
-
-                  {/* Forward Message popup  */}
-                  <Dialog
-                    open={forwardPopupMessageId === message._id}
-                    onClose={() => setForwardPopupMessageId(null)}
-                    fullWidth
-                    maxWidth="sm"
-                    PaperProps={{
-                      sx: { borderRadius: "12px" },
-                    }}
-                  >
-                    <DialogTitle
-                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                    {/* Forward Message popup  */}
+                    <Dialog
+                      open={forwardPopupMessageId === message._id}
+                      onClose={() => setForwardPopupMessageId(null)}
+                      fullWidth
+                      maxWidth="sm"
+                      PaperProps={{
+                        sx: { borderRadius: "12px" },
+                      }}
                     >
-                      <Forward size={20} />
-                      <span>Forward Message</span>
-                    </DialogTitle>
-                    <Divider />
-                    <div sx={{ px: 3, py: 2 }}>
-                      <TextField
-                        placeholder="Search contacts..."
-                        variant="outlined"
-                        size="small"
-                        sx={{
-                          mx: 2,
-                          mb: 1,
-                          mt: 2,
-                          width: "94%",
-                          "& .MuiOutlinedInput-root": {
-                            borderRadius: "20px",
-                            backgroundColor: "background.paper",
-                            "& fieldset": {
-                              borderColor: "divider",
-                            },
-                            "&:hover fieldset": {
-                              borderColor: "primary.light",
-                            },
-                          },
-                          "& .MuiInputBase-input": {
-                            py: 1.2,
-                            px: 2,
-                          },
-                        }}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Search size={18} color="#64748b" />
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </div>
-                    <DialogContent>
-                      <List sx={{ width: "100%" }}>
-                        {users
-                          .filter((user) => user._id !== authUser._id)
-                          .map((user) => (
-                            <ListItem
-                              key={user._id}
-                              button
-                              onClick={() => handleForwardMessage(user._id)}
-                              sx={{
-                                "&:hover": {
-                                  backgroundColor: "rgba(99, 102, 241, 0.08)",
-                                },
-                                borderRadius: "8px",
-                                py: 1.5,
-                                px: 2,
-                                mb: 0.5,
-                                transition: "all 0.2s ease",
-                              }}
-                            >
-                              <ListItemAvatar>
-                                <Avatar
-                                  src={user.profilePic || defaultImg}
-                                  alt={user.fullName}
-                                  sx={{
-                                    width: 40,
-                                    height: 40,
-                                    border: "2px solid #e2e8f0"
-                                  }}
-                                />
-                              </ListItemAvatar>
-                              <ListItemText
-                                primary={
-                                  <Typography
-                                    variant="subtitle1"
-                                    sx={{
-                                      fontWeight: 500,
-                                      color: "text.primary"
-                                    }}
-                                  >
-                                    {user.fullName}
-                                  </Typography>
-                                }
-                                secondary={
-                                  <Typography
-                                    variant="body2"
-                                    sx={{
-                                      color: "text.secondary",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 0.5
-                                    }}
-                                  >
-                                    <span>{user.email}</span>
-                                  </Typography>
-                                }
-                                sx={{ ml: 1 }}
-                              />
-                              <Box sx={{
-                                opacity: 0,
-                                transition: "opacity 0.2s ease",
-                                "li:hover &": {
-                                  opacity: 1
-                                }
-                              }}>
-                                <Forward size={18} color="#94a3b8" />
-                              </Box>
-                            </ListItem>
-                          ))}
-                      </List>
-                    </DialogContent>
-                    <DialogActions>
-                      <Button
-                        onClick={() => setForwardPopupMessageId(null)}
-                        sx={{ borderRadius: "8px", px: 3 }}
+                      <DialogTitle
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
                       >
-                        Cancel
-                      </Button>
-                    </DialogActions>
-                  </Dialog>
-                </>
-              )}
+                        <Forward size={20} />
+                        <span>Forward Message</span>
+                      </DialogTitle>
+                      <Divider />
+                      <div sx={{ px: 3, py: 2 }}>
+                        <TextField
+                          placeholder="Search contacts..."
+                          variant="outlined"
+                          size="small"
+                          sx={{
+                            mx: 2,
+                            mb: 1,
+                            mt: 2,
+                            width: "94%",
+                            "& .MuiOutlinedInput-root": {
+                              borderRadius: "20px",
+                              backgroundColor: "background.paper",
+                              "& fieldset": {
+                                borderColor: "divider",
+                              },
+                              "&:hover fieldset": {
+                                borderColor: "primary.light",
+                              },
+                            },
+                            "& .MuiInputBase-input": {
+                              py: 1.2,
+                              px: 2,
+                            },
+                          }}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <Search size={18} color="#64748b" />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </div>
+                      <DialogContent>
+                        <List sx={{ width: "100%" }}>
+                          {users
+                            .filter((user) => user._id !== authUser._id)
+                            .map((user) => (
+                              <ListItem
+                                key={user._id}
+                                button
+                                onClick={() => handleForwardMessage(user._id)}
+                                sx={{
+                                  "&:hover": {
+                                    backgroundColor: "rgba(99, 102, 241, 0.08)",
+                                  },
+                                  borderRadius: "8px",
+                                  py: 1.5,
+                                  px: 2,
+                                  mb: 0.5,
+                                  transition: "all 0.2s ease",
+                                }}
+                              >
+                                <ListItemAvatar>
+                                  <Avatar
+                                    src={user.profilePic || defaultImg}
+                                    alt={user.fullName}
+                                    sx={{
+                                      width: 40,
+                                      height: 40,
+                                      border: "2px solid #e2e8f0"
+                                    }}
+                                  />
+                                </ListItemAvatar>
+                                <ListItemText
+                                  primary={
+                                    <Typography
+                                      variant="subtitle1"
+                                      sx={{
+                                        fontWeight: 500,
+                                        color: "text.primary"
+                                      }}
+                                    >
+                                      {user.fullName}
+                                    </Typography>
+                                  }
+                                  secondary={
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        color: "text.secondary",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 0.5
+                                      }}
+                                    >
+                                      <span>{user.email}</span>
+                                    </Typography>
+                                  }
+                                  sx={{ ml: 1 }}
+                                />
+                                <Box sx={{
+                                  opacity: 0,
+                                  transition: "opacity 0.2s ease",
+                                  "li:hover &": {
+                                    opacity: 1
+                                  }
+                                }}>
+                                  <Forward size={18} color="#94a3b8" />
+                                </Box>
+                              </ListItem>
+                            ))}
+                        </List>
+                      </DialogContent>
+                      <DialogActions>
+                        <Button
+                          onClick={() => setForwardPopupMessageId(null)}
+                          sx={{ borderRadius: "8px", px: 3 }}
+                        >
+                          Cancel
+                        </Button>
+                      </DialogActions>
+                    </Dialog>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
 
       <MessageInput />

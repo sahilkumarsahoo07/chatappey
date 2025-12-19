@@ -154,7 +154,8 @@ const Sidebar = () => {
         setSearchQuery("");
     };
 
-    if (isUsersLoading) return <SidebarSkeleton />;
+    // Only show skeleton on initial load when we have no users yet
+    if (isUsersLoading && users.length === 0) return <SidebarSkeleton />;
 
     return (
         <>

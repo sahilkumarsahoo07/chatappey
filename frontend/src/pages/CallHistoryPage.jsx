@@ -32,7 +32,7 @@ const CallHistoryPage = () => {
     ];
 
     return (
-        <div className="h-screen bg-base-200 pl-16 md:pl-20">
+        <div className="h-[100dvh] bg-base-200 pl-0 md:pl-20 pb-14 md:pb-0">
             <div className="h-full w-full bg-base-100 flex flex-col">
                 {/* Header */}
                 <div className="p-4 border-b border-base-300 bg-base-100">
