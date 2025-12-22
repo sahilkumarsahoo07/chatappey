@@ -1,42 +1,47 @@
 /* Modern Message Input Styling */
 
 .message-input-container {
-    background: transparent;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(to top, oklch(var(--b1)) 0%, oklch(var(--b1) / 0.95) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid oklch(var(--bc) / 0.1);
     position: relative;
+    padding: 12px 16px;
 }
 
 .message-input-container::before {
     content: '';
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
+    left: 5%;
+    right: 5%;
     height: 1px;
     background: linear-gradient(90deg,
             transparent 0%,
-            rgba(99, 102, 241, 0.5) 50%,
+            oklch(var(--p) / 0.4) 50%,
             transparent 100%);
 }
 
 /* Input Field Styling */
 .message-textarea {
     background: transparent;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     border: none;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     resize: none;
-    min-height: 44px;
+    min-height: 24px;
     max-height: 120px;
     overflow-y: auto;
+    line-height: 1.5;
+}
+
+.message-textarea::placeholder {
+    color: oklch(var(--bc) / 0.4);
 }
 
 .message-textarea:focus {
     border: none;
     box-shadow: none;
+    outline: none;
     background: transparent;
 }
 

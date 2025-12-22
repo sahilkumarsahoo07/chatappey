@@ -2,20 +2,32 @@ import { useEffect, useState, useMemo } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
+import { useGroupStore } from "../store/useGroupStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
-import { Search, MessageCircle, Edit, X, Check, CheckCheck } from "lucide-react";
+import CreateGroupModal from "./CreateGroupModal";
+import { Search, MessageCircle, Edit, X, Check, CheckCheck, Users, Plus } from "lucide-react";
 import defaultImg from '../public/avatar.png'
 
 const Sidebar = () => {
     const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers } = useChatStore();
     const { onlineUsers = [], authUser } = useAuthStore();
     const { theme } = useThemeStore();
+    const { groups, selectedGroup, setSelectedGroup, getGroups, subscribeToGroupEvents, unsubscribeFromGroupEvents } = useGroupStore();
     const [searchQuery, setSearchQuery] = useState("");
     const [showNewChatModal, setShowNewChatModal] = useState(false);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [activeTab, setActiveTab] = useState("chats"); // "chats" or "groups"
 
     useEffect(() => {
         getUsers();
-    }, [getUsers]);
+        getGroups();
+    }, [getUsers, getGroups]);
+
+    // Subscribe to group events
+    useEffect(() => {
+        subscribeToGroupEvents();
+        return () => unsubscribeFromGroupEvents();
+    }, [subscribeToGroupEvents, unsubscribeFromGroupEvents]);
 
     // Listen for new messages from ANY user to update the chat list
     useEffect(() => {
@@ -149,10 +161,22 @@ const Sidebar = () => {
 
     // Handle starting a new chat
     const handleStartChat = (user) => {
+        setSelectedGroup(null); // Clear group selection
         setSelectedUser(user);
         setShowNewChatModal(false);
         setSearchQuery("");
     };
+
+    // Handle selecting a group
+    const handleSelectGroup = (group) => {
+        setSelectedUser(null); // Clear user selection
+        setSelectedGroup(group);
+    };
+
+    // Filter groups by search query
+    const filteredGroups = groups.filter(group =>
+        group.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     // Only show skeleton on initial load when we have no users yet
     if (isUsersLoading && users.length === 0) return <SidebarSkeleton />;
@@ -186,106 +210,238 @@ const Sidebar = () => {
                             />
                         </div>
                     </div>
+
+                    {/* Tabs */}
+                    <div className="flex gap-1 mt-3 md:hidden lg:flex">
+                        <button
+                            onClick={() => setActiveTab("chats")}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "chats"
+                                ? "bg-primary text-primary-content"
+                                : "hover:bg-base-200"
+                                }`}
+                        >
+                            <span className="flex items-center justify-center gap-2">
+                                <MessageCircle className="w-4 h-4" />
+                                Chats
+                            </span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("groups")}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "groups"
+                                ? "bg-primary text-primary-content"
+                                : "hover:bg-base-200"
+                                }`}
+                        >
+                            <span className="flex items-center justify-center gap-2">
+                                <Users className="w-4 h-4" />
+                                Groups
+                            </span>
+                        </button>
+                    </div>
                 </div>
 
-                {/* User List */}
-                <div className="overflow-y-auto w-full flex-1 custom-scrollbar">
-                    {filteredUsers.map((user) => {
-                        const lastMessageData = getLastMessage(user);
-                        const timestamp = user.lastMessage ? formatTimestamp(user.lastMessage.createdAt) : "";
-                        const unreadCount = getUnreadCount(user);
-                        const isOnline = onlineUsers.includes(user._id);
+                {/* Create Group Button (when on groups tab) */}
+                {activeTab === "groups" && (
+                    <button
+                        onClick={() => setShowCreateGroupModal(true)}
+                        className="mx-4 mb-2 py-2.5 px-4 bg-primary/10 hover:bg-primary/20 rounded-lg flex items-center gap-2 text-primary transition-colors md:hidden lg:flex"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span className="text-sm font-medium">Create New Group</span>
+                    </button>
+                )}
 
-                        // Highlight if there are unread messages AND user is not currently selected
-                        const hasUnreadMessages = unreadCount > 0 && selectedUser?._id !== user._id;
+                {/* User List (Chats Tab) */}
+                {activeTab === "chats" && (
+                    <div className="overflow-y-auto w-full flex-1 custom-scrollbar">
+                        {filteredUsers.map((user) => {
+                            const lastMessageData = getLastMessage(user);
+                            const timestamp = user.lastMessage ? formatTimestamp(user.lastMessage.createdAt) : "";
+                            const unreadCount = getUnreadCount(user);
+                            const isOnline = onlineUsers.includes(user._id);
 
-                        return (
-                            <button
-                                key={user._id}
-                                onClick={() => setSelectedUser(user)}
-                                className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all ${selectedUser?._id === user._id
-                                    ? "bg-base-200"
-                                    : hasUnreadMessages
-                                        ? "bg-primary/5"
-                                        : ""
-                                    }`}
-                            >
-                                {/* Avatar */}
-                                <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
-                                    <img
-                                        src={user.hasBlockedMe ? defaultImg : (user.profilePic || defaultImg)}
-                                        alt={user.fullName}
-                                        className="size-12 object-cover rounded-full"
-                                    />
-                                    {isOnline && !user.hasBlockedMe && (
-                                        <span className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full ring-2 ring-base-100" />
-                                    )}
-                                </div>
+                            // Highlight if there are unread messages AND user is not currently selected
+                            const hasUnreadMessages = unreadCount > 0 && selectedUser?._id !== user._id;
 
-                                {/* User Info */}
-                                <div className="md:hidden lg:flex flex-1 min-w-0">
-                                    <div className="w-full flex flex-col">
-                                        {/* Name and Timestamp Row */}
-                                        <div className="w-full flex items-baseline justify-between mb-1">
-                                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                <span className={`text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
-                                                    } ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`}>
-                                                    {user.fullName}
+                            return (
+                                <button
+                                    key={user._id}
+                                    onClick={() => {
+                                        setSelectedGroup(null); // Clear group selection first
+                                        setSelectedUser(user);
+                                    }}
+                                    className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all ${selectedUser?._id === user._id
+                                        ? "bg-base-200"
+                                        : hasUnreadMessages
+                                            ? "bg-primary/5"
+                                            : ""
+                                        }`}
+                                >
+                                    {/* Avatar */}
+                                    <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
+                                        <img
+                                            src={user.hasBlockedMe ? defaultImg : (user.profilePic || defaultImg)}
+                                            alt={user.fullName}
+                                            className="size-12 object-cover rounded-full"
+                                        />
+                                        {isOnline && !user.hasBlockedMe && (
+                                            <span className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full ring-2 ring-base-100" />
+                                        )}
+                                    </div>
+
+                                    {/* User Info */}
+                                    <div className="md:hidden lg:flex flex-1 min-w-0">
+                                        <div className="w-full flex flex-col">
+                                            {/* Name and Timestamp Row */}
+                                            <div className="w-full flex items-baseline justify-between mb-1">
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    <span className={`text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
+                                                        } ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`}>
+                                                        {user.fullName}
+                                                    </span>
+                                                    {/* NEW Badge for newly created accounts */}
+                                                    {isNewUser(user) && (
+                                                        <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
+                                                            NEW
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <span className={`text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
+                                                    }`}>
+                                                    {timestamp}
                                                 </span>
-                                                {/* NEW Badge for newly created accounts */}
-                                                {isNewUser(user) && (
-                                                    <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
-                                                        NEW
+                                            </div>
+                                            {/* Last Message Row */}
+                                            <div className="w-full flex items-center justify-between">
+                                                <div className="flex items-center gap-1 flex-1 min-w-0">
+                                                    <p className={`text-[13px] truncate flex-1 text-left ${hasUnreadMessages
+                                                        ? `font-semibold ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`
+                                                        : `${theme === 'light' ? 'text-gray-600' : 'text-base-content opacity-70'}`
+                                                        }`}>
+                                                        {lastMessageData.text}
+                                                    </p>
+                                                    {/* Status indicator for messages sent by me */}
+                                                    {lastMessageData.isMine && lastMessageData.status && (
+                                                        <span className="flex-shrink-0">
+                                                            {lastMessageData.status === "read" ? (
+                                                                <CheckCheck className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
+                                                            ) : lastMessageData.status === "delivered" ? (
+                                                                <CheckCheck className="w-3.5 h-3.5" style={{ color: '#9CA3AF' }} />
+                                                            ) : (
+                                                                <Check className="w-3.5 h-3.5" style={{ color: '#9CA3AF' }} />
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {unreadCount > 0 && (
+                                                    <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center font-semibold">
+                                                        {unreadCount}
                                                     </span>
                                                 )}
                                             </div>
-                                            <span className={`text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
-                                                }`}>
-                                                {timestamp}
-                                            </span>
                                         </div>
-                                        {/* Last Message Row */}
-                                        <div className="w-full flex items-center justify-between">
-                                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                                    </div>
+                                </button>
+                            );
+                        })}
+
+                        {filteredUsers.length === 0 && (
+                            <div className="text-center text-base-content/40 py-8 px-4">
+                                <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
+                                <p className="text-sm font-semibold mb-1">No chats yet</p>
+                                <p className="text-xs">Add friends to start chatting</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Groups List (Groups Tab) */}
+                {activeTab === "groups" && (
+                    <div className="overflow-y-auto w-full flex-1 custom-scrollbar">
+                        {filteredGroups.map((group) => {
+                            const lastMsg = group.lastMessage;
+                            const timestamp = lastMsg ? formatTimestamp(lastMsg.createdAt) : "";
+                            const unreadCount = group.unreadCount || 0;
+
+                            // Highlight if there are unread messages AND group is not currently selected
+                            const hasUnreadMessages = unreadCount > 0 && selectedGroup?._id !== group._id;
+
+                            return (
+                                <button
+                                    key={group._id}
+                                    onClick={() => handleSelectGroup(group)}
+                                    className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all ${selectedGroup?._id === group._id
+                                        ? "bg-base-200"
+                                        : hasUnreadMessages
+                                            ? "bg-primary/5"
+                                            : ""
+                                        }`}
+                                >
+                                    {/* Group Avatar */}
+                                    <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
+                                        <div className="size-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                                            {group.image ? (
+                                                <img
+                                                    src={group.image}
+                                                    alt={group.name}
+                                                    className="size-12 object-cover"
+                                                />
+                                            ) : (
+                                                <Users className="size-6 text-primary" />
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Group Info */}
+                                    <div className="md:hidden lg:flex flex-1 min-w-0">
+                                        <div className="w-full flex flex-col">
+                                            {/* Name and Timestamp Row */}
+                                            <div className="w-full flex items-baseline justify-between mb-1">
+                                                <span className={`text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"} ${theme === 'light' ? 'text-gray-900' : 'text-base-content'
+                                                    }`}>
+                                                    {group.name}
+                                                </span>
+                                                <span className={`text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
+                                                    }`}>
+                                                    {timestamp}
+                                                </span>
+                                            </div>
+                                            {/* Last Message Row */}
+                                            <div className="w-full flex items-center justify-between">
                                                 <p className={`text-[13px] truncate flex-1 text-left ${hasUnreadMessages
                                                     ? `font-semibold ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`
                                                     : `${theme === 'light' ? 'text-gray-600' : 'text-base-content opacity-70'}`
                                                     }`}>
-                                                    {lastMessageData.text}
+                                                    {lastMsg ? (
+                                                        <>
+                                                            <span className="font-medium">{lastMsg.senderName?.split(" ")[0]}: </span>
+                                                            {lastMsg.text || "📷 Photo"}
+                                                        </>
+                                                    ) : (
+                                                        `${group.members?.length || 0} members`
+                                                    )}
                                                 </p>
-                                                {/* Status indicator for messages sent by me */}
-                                                {lastMessageData.isMine && lastMessageData.status && (
-                                                    <span className="flex-shrink-0">
-                                                        {lastMessageData.status === "read" ? (
-                                                            <CheckCheck className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
-                                                        ) : lastMessageData.status === "delivered" ? (
-                                                            <CheckCheck className="w-3.5 h-3.5" style={{ color: '#9CA3AF' }} />
-                                                        ) : (
-                                                            <Check className="w-3.5 h-3.5" style={{ color: '#9CA3AF' }} />
-                                                        )}
+                                                {unreadCount > 0 && (
+                                                    <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center font-semibold">
+                                                        {unreadCount}
                                                     </span>
                                                 )}
                                             </div>
-                                            {unreadCount > 0 && (
-                                                <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center font-semibold">
-                                                    {unreadCount}
-                                                </span>
-                                            )}
                                         </div>
                                     </div>
-                                </div>
-                            </button>
-                        );
-                    })}
+                                </button>
+                            );
+                        })}
 
-                    {filteredUsers.length === 0 && (
-                        <div className="text-center text-base-content/40 py-8 px-4">
-                            <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
-                            <p className="text-sm font-semibold mb-1">No chats yet</p>
-                            <p className="text-xs">Add friends to start chatting</p>
-                        </div>
-                    )}
-                </div>
+                        {filteredGroups.length === 0 && (
+                            <div className="text-center text-base-content/40 py-8 px-4">
+                                <Users className="size-12 mx-auto mb-3 opacity-30" />
+                                <p className="text-sm font-semibold mb-1">No groups yet</p>
+                                <p className="text-xs">Create a group to start chatting</p>
+                            </div>
+                        )}
+                    </div>
+                )}
             </aside>
 
             {/* New Chat Modal */}
@@ -373,6 +529,12 @@ const Sidebar = () => {
                     </div>
                 </div>
             )}
+
+            {/* Create Group Modal */}
+            <CreateGroupModal
+                isOpen={showCreateGroupModal}
+                onClose={() => setShowCreateGroupModal(false)}
+            />
         </>
     );
 };

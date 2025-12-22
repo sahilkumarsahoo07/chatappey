@@ -1,12 +1,12 @@
 import { useRef, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
-import { Image, Send, X, Sparkles, Reply } from "lucide-react";
+import { Image, Send, X, Reply } from "lucide-react";
 import toast from "react-hot-toast";
 import EmojiPickerComponent from "./EmojiPickerComponent";
 import GifPicker from "./GifPicker";
 import "./MessageInput.css";
 
-const MessageInput = () => {
+const MessageInput = ({ onSend, isGroupChat = false }) => {
     const [text, setText] = useState("");
     const [imagePreview, setImagePreview] = useState(null);
     const [gifPreview, setGifPreview] = useState(null);
@@ -69,7 +69,12 @@ const MessageInput = () => {
 
         // Send message in background
         try {
-            await sendMessage(messageData);
+            // Use onSend prop if provided (for group chat), otherwise use default sendMessage
+            if (onSend) {
+                await onSend(messageData);
+            } else {
+                await sendMessage(messageData);
+            }
         } catch (error) {
             console.error("Failed to send message:", error);
             toast.error("Failed to send message");
@@ -173,69 +178,62 @@ const MessageInput = () => {
             )}
 
             {/* Input Form */}
-            <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <div className="flex-1 min-w-0">
-                    {/* Main Input Area */}
-                    <div className="flex items-center gap-1 md:gap-2 rounded-2xl p-2 border border-base-300 bg-base-100">
-                        <textarea
-                            ref={textareaRef}
-                            className="flex-1 bg-transparent px-2 md:px-3 py-2 outline-none resize-none message-textarea min-w-0 text-sm md:text-base"
-                            placeholder="Type a message..."
-                            value={text}
-                            onChange={handleTextChange}
-                            onKeyDown={handleKeyDown}
-                            rows={1}
+            <form onSubmit={handleSendMessage} className="flex items-end gap-3">
+                {/* Main Input Area */}
+                <div className="flex-1 min-w-0 flex items-center gap-2 bg-base-200/80 hover:bg-base-200 rounded-full px-4 py-2 transition-all focus-within:ring-2 focus-within:ring-primary/30 focus-within:bg-base-200">
+                    <textarea
+                        ref={textareaRef}
+                        className="flex-1 bg-transparent py-1.5 outline-none resize-none message-textarea min-w-0 text-sm md:text-base placeholder:text-base-content/40"
+                        placeholder="Type a message..."
+                        value={text}
+                        onChange={handleTextChange}
+                        onKeyDown={handleKeyDown}
+                        rows={1}
+                    />
+
+                    {/* Action Buttons Row */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Emoji Picker */}
+                        <EmojiPickerComponent
+                            onEmojiSelect={(emoji) => setText(prev => prev + emoji)}
                         />
 
-                        {/* Action Buttons Row - Hidden on very small screens, show on tap */}
-                        <div className="flex items-center gap-0.5 md:gap-1 flex-shrink-0">
-                            {/* Emoji Picker */}
-                            <EmojiPickerComponent
-                                onEmojiSelect={(emoji) => setText(prev => prev + emoji)}
-                            />
+                        {/* GIF Picker */}
+                        <GifPicker onGifSelect={handleGifSelect} />
 
-                            {/* GIF Picker */}
-                            <GifPicker onGifSelect={handleGifSelect} />
+                        {/* Image Button */}
+                        <button
+                            type="button"
+                            className="p-2 rounded-full hover:bg-base-300 text-base-content/60 hover:text-base-content transition-all"
+                            onClick={() => fileInputRef.current?.click()}
+                            title="Add image"
+                        >
+                            <Image className="w-5 h-5" />
+                        </button>
 
-                            {/* Image Button */}
-                            <button
-                                type="button"
-                                className="btn btn-circle btn-ghost btn-sm md:btn-md action-button hover-lift flex-shrink-0"
-                                onClick={() => fileInputRef.current?.click()}
-                                title="Add image"
-                            >
-                                <Image className="w-4 h-4 md:w-5 md:h-5" />
-                            </button>
-
-                            <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                ref={fileInputRef}
-                                onChange={handleImageChange}
-                            />
-                        </div>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleImageChange}
+                        />
                     </div>
                 </div>
 
                 {/* Send Button */}
                 <button
                     type="submit"
-                    className="btn btn-circle btn-lg send-button flex-shrink-0"
+                    className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${text.trim() || imagePreview || gifPreview
+                        ? 'bg-gradient-to-r from-primary to-secondary text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95'
+                        : 'bg-base-200 text-base-content/30 cursor-not-allowed'
+                        }`}
                     disabled={!text.trim() && !imagePreview && !gifPreview}
                     title="Send message"
                 >
-                    <Send className="w-5 h-5" />
+                    <Send className={`w-5 h-5 ${text.trim() || imagePreview || gifPreview ? '' : ''}`} />
                 </button>
             </form>
-
-            {/* Typing Indicator Placeholder */}
-            {text.length > 0 && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-base-content/50">
-                    <Sparkles className="w-3 h-3" />
-                    <span>{text.length} character{text.length !== 1 ? 's' : ''}</span>
-                </div>
-            )}
         </div>
     );
 };
