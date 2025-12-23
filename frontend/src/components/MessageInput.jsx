@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { Image, Send, X, Reply, Megaphone } from "lucide-react";
 import toast from "react-hot-toast";
@@ -6,16 +6,50 @@ import EmojiPickerComponent from "./EmojiPickerComponent";
 import GifPicker from "./GifPicker";
 import "./MessageInput.css";
 
-const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announcementOnly = false }) => {
+const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announcementOnly = false, groupMembers = [] }) => {
     const [text, setText] = useState("");
     const [imagePreview, setImagePreview] = useState(null);
     const [gifPreview, setGifPreview] = useState(null);
     const [mediaType, setMediaType] = useState(null); // 'image' or 'gif'
+    const [showMentions, setShowMentions] = useState(false);
+    const [mentionSearch, setMentionSearch] = useState("");
+    const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+    const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+    const [selectedMentions, setSelectedMentions] = useState([]); // Track mentioned user IDs
     const fileInputRef = useRef(null);
     const textareaRef = useRef(null);
+    const mentionsRef = useRef(null);
     const { sendMessage, replyingToMessage, clearReplyingToMessage } = useChatStore();
 
     const isRestricted = isGroupChat && announcementOnly && !isAdmin;
+
+    // Filter members based on search
+    const filteredMembers = groupMembers.filter(member =>
+        member.user?.fullName?.toLowerCase().includes(mentionSearch.toLowerCase())
+    );
+
+    // Reset selected index when filtered list changes
+    useEffect(() => {
+        setSelectedMentionIndex(0);
+    }, [mentionSearch]);
+
+    // Auto-focus input when replying to a message
+    useEffect(() => {
+        if (replyingToMessage && textareaRef.current) {
+            textareaRef.current.focus();
+        }
+    }, [replyingToMessage]);
+
+    // Close mentions dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (mentionsRef.current && !mentionsRef.current.contains(e.target)) {
+                setShowMentions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const handleImageChange = (e) => {
         if (isRestricted) return;
@@ -51,6 +85,53 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
+    // Handle paste event for clipboard images (screenshots)
+    const handlePaste = (e) => {
+        if (isRestricted) return;
+
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith("image/")) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                if (!file) continue;
+
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setImagePreview(reader.result);
+                    setGifPreview(null);
+                    setMediaType('image');
+                    toast.success("Screenshot pasted!");
+                };
+                reader.readAsDataURL(file);
+                break; // Only handle the first image
+            }
+        }
+    };
+
+    const insertMention = (member) => {
+        const beforeMention = text.slice(0, mentionStartIndex);
+        const afterMention = text.slice(textareaRef.current?.selectionStart || text.length);
+        const mentionText = `@${member.user?.fullName} `;
+
+        setText(beforeMention + mentionText + afterMention);
+        setShowMentions(false);
+        setMentionSearch("");
+        setMentionStartIndex(-1);
+
+        // Add to selected mentions if not already present
+        if (!selectedMentions.includes(member.user?._id)) {
+            setSelectedMentions(prev => [...prev, member.user?._id]);
+        }
+
+        // Focus back on textarea
+        setTimeout(() => {
+            textareaRef.current?.focus();
+        }, 0);
+    };
+
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (isRestricted) return;
@@ -60,6 +141,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const messageData = {
             text: text.trim(),
             image: imagePreview || gifPreview,
+            mentions: selectedMentions, // Include mentions
         };
 
         // Clear form IMMEDIATELY for instant feedback
@@ -67,6 +149,8 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         setImagePreview(null);
         setGifPreview(null);
         setMediaType(null);
+        setSelectedMentions([]);
+        clearReplyingToMessage(); // Clear reply preview after sending
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
@@ -94,6 +178,33 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     };
 
     const handleKeyDown = (e) => {
+        // Handle mention navigation
+        if (showMentions && filteredMembers.length > 0) {
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSelectedMentionIndex(prev =>
+                    prev < filteredMembers.length - 1 ? prev + 1 : 0
+                );
+                return;
+            }
+            if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSelectedMentionIndex(prev =>
+                    prev > 0 ? prev - 1 : filteredMembers.length - 1
+                );
+                return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                insertMention(filteredMembers[selectedMentionIndex]);
+                return;
+            }
+            if (e.key === "Escape") {
+                setShowMentions(false);
+                return;
+            }
+        }
+
         // Send message on Enter key (without Shift)
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -103,7 +214,37 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
     const handleTextChange = (e) => {
         if (isRestricted) return;
-        setText(e.target.value);
+        const newText = e.target.value;
+        setText(newText);
+
+        // Detect @ mentions in group chat
+        if (isGroupChat && groupMembers.length > 0) {
+            const cursorPos = e.target.selectionStart;
+            const textBeforeCursor = newText.slice(0, cursorPos);
+
+            // Find the last @ before cursor
+            const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+
+            if (lastAtIndex !== -1) {
+                // Check if @ is at start or preceded by whitespace
+                const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : " ";
+                if (charBeforeAt === " " || charBeforeAt === "\n" || lastAtIndex === 0) {
+                    const searchText = textBeforeCursor.slice(lastAtIndex + 1);
+                    // Only show if no space after the search text
+                    if (!searchText.includes(" ")) {
+                        setShowMentions(true);
+                        setMentionSearch(searchText);
+                        setMentionStartIndex(lastAtIndex);
+                    } else {
+                        setShowMentions(false);
+                    }
+                } else {
+                    setShowMentions(false);
+                }
+            } else {
+                setShowMentions(false);
+            }
+        }
 
         // Auto-resize textarea
         if (textareaRef.current) {
@@ -190,6 +331,41 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         </div>
                     )}
 
+                    {/* Mentions Suggestions Dropdown */}
+                    {showMentions && isGroupChat && filteredMembers.length > 0 && (
+                        <div
+                            ref={mentionsRef}
+                            className="mb-3 bg-base-100 rounded-xl border border-base-300 shadow-lg overflow-hidden max-h-48 overflow-y-auto"
+                        >
+                            <div className="px-3 py-2 text-xs font-semibold text-base-content/60 bg-base-200/50 border-b border-base-300">
+                                Mention a member
+                            </div>
+                            {filteredMembers.map((member, index) => (
+                                <button
+                                    key={member.user?._id}
+                                    type="button"
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-base-200 transition-colors ${index === selectedMentionIndex ? 'bg-primary/10' : ''
+                                        }`}
+                                    onClick={() => insertMention(member)}
+                                >
+                                    <img
+                                        src={member.user?.profilePic || "/avatar.png"}
+                                        alt={member.user?.fullName}
+                                        className="w-8 h-8 rounded-full object-cover"
+                                    />
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-medium text-base-content">
+                                            {member.user?.fullName}
+                                        </p>
+                                        <p className="text-xs text-base-content/50">
+                                            {member.role === "admin" ? "Admin" : "Member"}
+                                        </p>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Input Form */}
                     <form onSubmit={handleSendMessage} className="flex items-end gap-3">
                         {/* Main Input Area */}
@@ -201,6 +377,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 value={text}
                                 onChange={handleTextChange}
                                 onKeyDown={handleKeyDown}
+                                onPaste={handlePaste}
                                 rows={1}
                             />
 

@@ -489,6 +489,7 @@ export const getGroupMessages = async (req, res) => {
         })
             .populate("senderId", "fullName profilePic")
             .populate("readBy", "fullName profilePic")
+            .populate("mentions", "fullName profilePic")
             .sort({ createdAt: 1 });
 
         res.status(200).json(messages);
@@ -502,7 +503,7 @@ export const getGroupMessages = async (req, res) => {
 export const sendGroupMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { text, image, isForwarded } = req.body;
+        const { text, image, isForwarded, mentions } = req.body;
         const senderId = req.user._id;
 
         const group = await Group.findById(groupId);
@@ -531,13 +532,21 @@ export const sendGroupMessage = async (req, res) => {
 
         const sender = await User.findById(senderId).select("fullName");
 
+        // Validate mentions - ensure all mentioned users are group members
+        let validMentions = [];
+        if (mentions && Array.isArray(mentions)) {
+            const memberIds = group.members.map(m => (m.user?._id || m.user || m).toString());
+            validMentions = mentions.filter(id => memberIds.includes(id.toString()));
+        }
+
         const newMessage = new GroupMessage({
             groupId,
             senderId,
             text,
             image: imageUrl,
             readBy: [senderId],
-            isForwarded: isForwarded || false
+            isForwarded: isForwarded || false,
+            mentions: validMentions
         });
 
         await newMessage.save();
@@ -551,9 +560,10 @@ export const sendGroupMessage = async (req, res) => {
         };
         await group.save();
 
-        // Populate sender info
+        // Populate sender info and mentions
         const populatedMessage = await GroupMessage.findById(newMessage._id)
-            .populate("senderId", "fullName profilePic");
+            .populate("senderId", "fullName profilePic")
+            .populate("mentions", "fullName profilePic");
 
         // Notify all group members via socket
         group.members.forEach(member => {
@@ -564,6 +574,16 @@ export const sendGroupMessage = async (req, res) => {
                     groupId,
                     message: populatedMessage
                 });
+
+                // Send special mention notification to mentioned users
+                if (validMentions.includes(memberId.toString())) {
+                    io.to(socketId).emit("group:mentioned", {
+                        groupId,
+                        groupName: group.name,
+                        message: populatedMessage,
+                        mentionedBy: sender.fullName
+                    });
+                }
             }
         });
 

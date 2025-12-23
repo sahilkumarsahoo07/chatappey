@@ -38,7 +38,13 @@ const groupMessageSchema = new mongoose.Schema(
         isForwarded: {
             type: Boolean,
             default: false
-        }
+        },
+        mentions: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User"
+            }
+        ]
     },
     { timestamps: true }
 );

@@ -170,6 +170,37 @@ const GroupChatContainer = () => {
         group.name.toLowerCase().includes(forwardSearchQuery.toLowerCase())
     );
 
+    // Helper to render message text with highlighted mentions
+    const renderMessageWithMentions = (text, mentions, isMyMessage) => {
+        if (!text) return null;
+        if (!mentions || mentions.length === 0) return text;
+
+        // Create a regex to find @mentions
+        const mentionNames = mentions.map(m => m.fullName).filter(Boolean);
+        if (mentionNames.length === 0) return text;
+
+        const mentionPattern = new RegExp(`(@(?:${mentionNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}))`, 'gi');
+        const parts = text.split(mentionPattern);
+
+        return parts.map((part, index) => {
+            const isMention = mentionNames.some(name =>
+                part.toLowerCase() === `@${name.toLowerCase()}`
+            );
+
+            if (isMention) {
+                return (
+                    <span
+                        key={index}
+                        className={`font-semibold ${isMyMessage ? 'text-white/90 bg-white/20' : 'text-primary bg-primary/10'} px-1 rounded`}
+                    >
+                        {part}
+                    </span>
+                );
+            }
+            return part;
+        });
+    };
+
     if (!selectedGroup) return null;
 
     return (
@@ -285,7 +316,7 @@ const GroupChatContainer = () => {
                                                         )}
                                                         {message.text && (
                                                             <p className="whitespace-pre-wrap break-words">
-                                                                {message.text}
+                                                                {renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
                                                             </p>
                                                         )}
                                                         <p
@@ -579,6 +610,7 @@ const GroupChatContainer = () => {
                 isGroupChat={true}
                 isAdmin={isAdmin}
                 announcementOnly={selectedGroup.announcementOnly}
+                groupMembers={selectedGroup?.members || []}
             />
         </div>
     );
