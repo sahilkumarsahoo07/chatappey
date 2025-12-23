@@ -58,7 +58,7 @@ function App() {
         <Route path='/signup' element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />
         <Route path='/login' element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
         <Route path='/loginhelp' element={!authUser ? <LoginHelp /> : <Navigate to="/" />} />
-        <Route path='/settings' element={<SettingsPage />} />
+        <Route path='/settings' element={authUser ? <SettingsPage /> : <Navigate to="/login" />} />
         <Route path='/contacts' element={authUser ? <ContactPage /> : <Navigate to="/login" />} />
         <Route path='/notifications' element={authUser ? <NotificationPage /> : <Navigate to="/login" />} />
         <Route path='/calls' element={authUser ? <CallHistoryPage /> : <Navigate to="/login" />} />
