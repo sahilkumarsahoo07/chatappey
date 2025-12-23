@@ -154,6 +154,15 @@ const Sidebar = () => {
         });
     }, [users]);
 
+    // Calculate total unread counts for badges on tabs
+    const totalChatUnread = useMemo(() => {
+        return users.reduce((acc, user) => acc + (user.unreadCount || 0), 0);
+    }, [users]);
+
+    const totalGroupUnread = useMemo(() => {
+        return groups.reduce((acc, group) => acc + (group.unreadCount || 0), 0);
+    }, [groups]);
+
     // Filter to only show friends and apply search query
     const filteredUsers = sortedUsers
         .filter((user) => user.isFriend) // Only show friends
@@ -215,7 +224,7 @@ const Sidebar = () => {
                     <div className="flex gap-1 mt-3 md:hidden lg:flex">
                         <button
                             onClick={() => setActiveTab("chats")}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "chats"
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all relative ${activeTab === "chats"
                                 ? "bg-primary text-primary-content"
                                 : "hover:bg-base-200"
                                 }`}
@@ -223,11 +232,19 @@ const Sidebar = () => {
                             <span className="flex items-center justify-center gap-2">
                                 <MessageCircle className="w-4 h-4" />
                                 Chats
+                                {totalChatUnread > 0 && (
+                                    <span className={`flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center font-bold transition-all ${activeTab === 'chats'
+                                        ? 'bg-white text-primary'
+                                        : 'bg-primary text-primary-content'
+                                        }`}>
+                                        {totalChatUnread > 99 ? "99+" : totalChatUnread}
+                                    </span>
+                                )}
                             </span>
                         </button>
                         <button
                             onClick={() => setActiveTab("groups")}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab === "groups"
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all relative ${activeTab === "groups"
                                 ? "bg-primary text-primary-content"
                                 : "hover:bg-base-200"
                                 }`}
@@ -235,6 +252,14 @@ const Sidebar = () => {
                             <span className="flex items-center justify-center gap-2">
                                 <Users className="w-4 h-4" />
                                 Groups
+                                {totalGroupUnread > 0 && (
+                                    <span className={`flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center font-bold transition-all ${activeTab === 'groups'
+                                        ? 'bg-white text-primary'
+                                        : 'bg-primary text-primary-content'
+                                        }`}>
+                                        {totalGroupUnread > 99 ? "99+" : totalGroupUnread}
+                                    </span>
+                                )}
                             </span>
                         </button>
                     </div>

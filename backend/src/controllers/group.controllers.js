@@ -4,6 +4,46 @@ import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { io, getReceiverSocketId } from "../lib/socket.js";
 
+// Helper to send system messages to groups
+const sendSystemMessage = async (groupId, text) => {
+    try {
+        const newMessage = new GroupMessage({
+            groupId,
+            text,
+            messageType: "system",
+            readBy: [] // System messages can be special, or just standard readBy
+        });
+
+        await newMessage.save();
+
+        // Update group's lastMessage
+        const group = await Group.findById(groupId);
+        if (group) {
+            group.lastMessage = {
+                text,
+                senderName: "System",
+                createdAt: newMessage.createdAt
+            };
+            await group.save();
+
+            // Notify all group members via socket
+            group.members.forEach(member => {
+                const memberId = member.user || member;
+                const socketId = getReceiverSocketId(memberId.toString());
+                if (socketId) {
+                    io.to(socketId).emit("group:newMessage", {
+                        groupId,
+                        message: newMessage
+                    });
+                }
+            });
+        }
+        return newMessage;
+    } catch (error) {
+        console.error("Error sending system message:", error);
+    }
+};
+
 // Create a new group
 export const createGroup = async (req, res) => {
     try {
@@ -24,26 +64,35 @@ export const createGroup = async (req, res) => {
             imageUrl = uploadResponse.secure_url;
         }
 
-        // Include admin in members list
-        const allMembers = [...new Set([adminId.toString(), ...members])];
+        // Include admin in members list with join dates and roles
+        const allMemberIds = [...new Set([adminId.toString(), ...members])];
+        const membersWithDates = allMemberIds.map(id => ({
+            user: id,
+            joinedAt: new Date(),
+            role: id.toString() === adminId.toString() ? "admin" : "member"
+        }));
 
         const newGroup = new Group({
             name: name.trim(),
             description: description?.trim() || "",
             image: imageUrl,
             admin: adminId,
-            members: allMembers
+            members: membersWithDates
         });
 
         await newGroup.save();
 
+        // Send system message
+        const adminUser = await User.findById(adminId);
+        await sendSystemMessage(newGroup._id, `${adminUser.fullName} created group "${name.trim()}"`);
+
         // Populate member details for response
         const populatedGroup = await Group.findById(newGroup._id)
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic");
+            .populate("members.user", "fullName profilePic");
 
         // Notify all members via socket
-        allMembers.forEach(memberId => {
+        allMemberIds.forEach(memberId => {
             const socketId = getReceiverSocketId(memberId);
             if (socketId) {
                 io.to(socketId).emit("group:created", populatedGroup);
@@ -62,23 +111,42 @@ export const getMyGroups = async (req, res) => {
     try {
         const userId = req.user._id;
 
-        const groups = await Group.find({ members: userId })
+        const groups = await Group.find({
+            $or: [
+                { "members.user": userId },
+                { members: userId } // Support old structure
+            ]
+        })
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic")
+            .populate("members.user", "fullName profilePic")
+            .populate("members", "fullName profilePic") // Also populate old structure
+            .populate({
+                path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            })
             .sort({ updatedAt: -1 });
 
         // Get unread count for each group
         const groupsWithUnread = await Promise.all(
             groups.map(async (group) => {
+                const memberInfo = group.members.find(m =>
+                    (m.user?._id || m.user || m).toString() === userId.toString()
+                );
+                const joinedAt = memberInfo?.joinedAt || new Date(0);
+
                 const unreadCount = await GroupMessage.countDocuments({
                     groupId: group._id,
                     senderId: { $ne: userId },
-                    readBy: { $ne: userId }
+                    readBy: { $ne: userId },
+                    createdAt: { $gte: joinedAt }
                 });
 
                 return {
                     ...group.toObject(),
-                    unreadCount
+                    unreadCount,
+                    lastMessage: (group.lastMessage?.createdAt && new Date(group.lastMessage.createdAt) >= joinedAt)
+                        ? group.lastMessage
+                        : null
                 };
             })
         );
@@ -98,14 +166,19 @@ export const getGroupDetails = async (req, res) => {
 
         const group = await Group.findById(groupId)
             .populate("admin", "fullName profilePic email")
-            .populate("members", "fullName profilePic email");
+            .populate("members.user", "fullName profilePic email")
+            .populate("members", "fullName profilePic email")
+            .populate({
+                path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            });
 
         if (!group) {
             return res.status(404).json({ error: "Group not found" });
         }
 
         // Check if user is a member
-        if (!group.members.some(member => member._id.toString() === userId.toString())) {
+        if (!group.members.some(m => m.user._id.toString() === userId.toString())) {
             return res.status(403).json({ error: "You are not a member of this group" });
         }
 
@@ -129,8 +202,11 @@ export const updateGroup = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (group.admin.toString() !== userId.toString()) {
-            return res.status(403).json({ error: "Only admin can update group" });
+        const isAdmin = group.admin.toString() === userId.toString() ||
+            group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Only admins can update group" });
         }
 
         let imageUrl = group.image;
@@ -142,15 +218,19 @@ export const updateGroup = async (req, res) => {
         group.name = name?.trim() || group.name;
         group.description = description?.trim() ?? group.description;
         group.image = imageUrl;
+        if (req.body.announcementOnly !== undefined) {
+            group.announcementOnly = req.body.announcementOnly;
+        }
 
         await group.save();
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic");
+            .populate("members.user", "fullName profilePic");
 
         // Notify all members
-        group.members.forEach(memberId => {
+        group.members.forEach(member => {
+            const memberId = member.user || member;
             const socketId = getReceiverSocketId(memberId.toString());
             if (socketId) {
                 io.to(socketId).emit("group:updated", updatedGroup);
@@ -180,7 +260,7 @@ export const deleteGroup = async (req, res) => {
             return res.status(403).json({ error: "Only admin can delete group" });
         }
 
-        const memberIds = group.members.map(m => m.toString());
+        const memberIds = group.members.map(m => (m.user || m).toString());
 
         // Delete all group messages
         await GroupMessage.deleteMany({ groupId });
@@ -216,8 +296,11 @@ export const addMembers = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (group.admin.toString() !== userId.toString()) {
-            return res.status(403).json({ error: "Only admin can add members" });
+        const isAdmin = group.admin.toString() === userId.toString() ||
+            group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Only admins can add members" });
         }
 
         if (!memberIds || memberIds.length === 0) {
@@ -225,27 +308,38 @@ export const addMembers = async (req, res) => {
         }
 
         // Add new members (avoid duplicates)
-        const existingMembers = group.members.map(m => m.toString());
-        const newMembers = memberIds.filter(id => !existingMembers.includes(id));
+        const existingMemberIds = group.members.map(m => (m.user?._id || m.user || m).toString());
+        const newMemberIds = memberIds.filter(id => !existingMemberIds.includes(id));
 
-        if (newMembers.length === 0) {
+        if (newMemberIds.length === 0) {
             return res.status(400).json({ error: "All specified users are already members" });
         }
 
-        group.members.push(...newMembers);
+        const membersToAdd = newMemberIds.map(id => ({
+            user: id,
+            joinedAt: new Date()
+        }));
+
+        group.members.push(...membersToAdd);
         await group.save();
+
+        const adminUser = await User.findById(userId);
+        for (const memberId of newMemberIds) {
+            const addedUser = await User.findById(memberId);
+            await sendSystemMessage(groupId, `${adminUser.fullName} added ${addedUser.fullName}`);
+        }
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic");
+            .populate("members.user", "fullName profilePic");
 
         // Notify all members (including new ones)
         updatedGroup.members.forEach(member => {
-            const socketId = getReceiverSocketId(member._id.toString());
+            const socketId = getReceiverSocketId(member.user._id.toString());
             if (socketId) {
                 io.to(socketId).emit("group:memberAdded", {
                     group: updatedGroup,
-                    newMembers: newMembers
+                    newMembers: newMemberIds
                 });
             }
         });
@@ -269,24 +363,39 @@ export const removeMember = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (group.admin.toString() !== userId.toString()) {
-            return res.status(403).json({ error: "Only admin can remove members" });
+        const currentUserMember = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        const targetMember = group.members.find(m => (m.user?._id || m.user || m).toString() === memberToRemove);
+
+        const isOwner = group.admin.toString() === userId.toString();
+        const isAdmin = isOwner || currentUserMember?.role === "admin";
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Only admins can remove members" });
         }
 
         if (memberToRemove === group.admin.toString()) {
-            return res.status(400).json({ error: "Admin cannot be removed" });
+            return res.status(400).json({ error: "Group owner cannot be removed" });
         }
 
-        group.members = group.members.filter(m => m.toString() !== memberToRemove);
+        // Only owner can remove other admins
+        if (targetMember?.role === "admin" && !isOwner) {
+            return res.status(403).json({ error: "Only group owner can remove other admins" });
+        }
+
+        group.members = group.members.filter(m => m.user.toString() !== memberToRemove);
         await group.save();
+
+        const adminUser = await User.findById(userId);
+        const removedUser = await User.findById(memberToRemove);
+        await sendSystemMessage(groupId, `${adminUser.fullName} removed ${removedUser.fullName}`);
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic");
+            .populate("members.user", "fullName profilePic");
 
         // Notify remaining members
         updatedGroup.members.forEach(member => {
-            const socketId = getReceiverSocketId(member._id.toString());
+            const socketId = getReceiverSocketId(member.user._id.toString());
             if (socketId) {
                 io.to(socketId).emit("group:memberRemoved", {
                     group: updatedGroup,
@@ -326,16 +435,19 @@ export const leaveGroup = async (req, res) => {
             });
         }
 
-        group.members = group.members.filter(m => m.toString() !== userId.toString());
+        group.members = group.members.filter(m => m.user.toString() !== userId.toString());
         await group.save();
+
+        const userWhoLeft = await User.findById(userId);
+        await sendSystemMessage(groupId, `${userWhoLeft.fullName} left the group`);
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
-            .populate("members", "fullName profilePic");
+            .populate("members.user", "fullName profilePic");
 
         // Notify remaining members
         updatedGroup.members.forEach(member => {
-            const socketId = getReceiverSocketId(member._id.toString());
+            const socketId = getReceiverSocketId(member.user._id.toString());
             if (socketId) {
                 io.to(socketId).emit("group:memberLeft", {
                     group: updatedGroup,
@@ -363,12 +475,20 @@ export const getGroupMessages = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (!group.members.some(m => m.toString() === userId.toString())) {
+        const memberInfo = group.members.find(m =>
+            (m.user?._id || m.user || m).toString() === userId.toString()
+        );
+        if (!memberInfo) {
             return res.status(403).json({ error: "You are not a member of this group" });
         }
 
-        const messages = await GroupMessage.find({ groupId })
+        // Only show messages created AFTER the user joined the group
+        const messages = await GroupMessage.find({
+            groupId,
+            createdAt: { $gte: memberInfo.joinedAt }
+        })
             .populate("senderId", "fullName profilePic")
+            .populate("readBy", "fullName profilePic")
             .sort({ createdAt: 1 });
 
         res.status(200).json(messages);
@@ -391,8 +511,16 @@ export const sendGroupMessage = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (!group.members.some(m => m.toString() === senderId.toString())) {
+        const currentUserMember = group.members.find(m => (m.user?._id || m.user || m).toString() === senderId.toString());
+        if (!currentUserMember) {
             return res.status(403).json({ error: "You are not a member of this group" });
+        }
+
+        const isOwner = group.admin.toString() === senderId.toString();
+        const isAdmin = isOwner || currentUserMember?.role === "admin";
+
+        if (group.announcementOnly && !isAdmin) {
+            return res.status(403).json({ error: "Only admins can send messages in this group" });
         }
 
         let imageUrl;
@@ -428,7 +556,8 @@ export const sendGroupMessage = async (req, res) => {
             .populate("senderId", "fullName profilePic");
 
         // Notify all group members via socket
-        group.members.forEach(memberId => {
+        group.members.forEach(member => {
+            const memberId = member.user || member;
             const socketId = getReceiverSocketId(memberId.toString());
             if (socketId) {
                 io.to(socketId).emit("group:newMessage", {
@@ -457,16 +586,20 @@ export const markGroupMessagesAsRead = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (!group.members.some(m => m.toString() === userId.toString())) {
+        if (!group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString())) {
             return res.status(403).json({ error: "You are not a member of this group" });
         }
+
+        const memberInfo = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        const joinedAt = memberInfo?.joinedAt || new Date(0);
 
         // Mark all unread messages as read by this user
         await GroupMessage.updateMany(
             {
                 groupId,
                 senderId: { $ne: userId },
-                readBy: { $ne: userId }
+                readBy: { $ne: userId },
+                createdAt: { $gte: joinedAt }
             },
             {
                 $addToSet: { readBy: userId }
@@ -509,7 +642,8 @@ export const deleteGroupMessageForAll = async (req, res) => {
         const group = await Group.findById(groupId);
 
         // Notify all group members via socket
-        group.members.forEach(memberId => {
+        group.members.forEach(member => {
+            const memberId = member.user || member;
             const socketId = getReceiverSocketId(memberId.toString());
             if (socketId) {
                 io.to(socketId).emit("group:messageDeleted", {
@@ -556,3 +690,153 @@ export const deleteGroupMessageForMe = async (req, res) => {
     }
 };
 
+// Update member role (admin only)
+export const updateMemberRole = async (req, res) => {
+    try {
+        const { groupId, userId: targetUserId } = req.params;
+        const { role } = req.body; // "admin" or "member"
+        const userId = req.user._id;
+
+        if (!["admin", "member"].includes(role)) {
+            return res.status(400).json({ error: "Invalid role" });
+        }
+
+        const group = await Group.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ error: "Group not found" });
+        }
+
+        const isOwner = group.admin.toString() === userId.toString();
+        const currentUserMember = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        const isAdmin = isOwner || currentUserMember?.role === "admin";
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Only admins can change roles" });
+        }
+
+        // Only owner can promote/demote other admins
+        if (!isOwner && (role === "admin" || group.members.find(m => (m.user?._id || m.user || m).toString() === targetUserId)?.role === "admin")) {
+            return res.status(403).json({ error: "Only group owner can promote/demote admins" });
+        }
+
+        if (targetUserId === group.admin.toString()) {
+            return res.status(400).json({ error: "Cannot change role of group owner" });
+        }
+
+        const memberIndex = group.members.findIndex(m => (m.user?._id || m.user || m).toString() === targetUserId);
+        if (memberIndex === -1) {
+            return res.status(404).json({ error: "Member not found in group" });
+        }
+
+        group.members[memberIndex].role = role;
+        await group.save();
+
+        const adminUser = await User.findById(userId);
+        const targetUser = await User.findById(targetUserId);
+        const actionText = role === "admin" ? "promoted to admin" : "dismissed as admin";
+        await sendSystemMessage(groupId, `${adminUser.fullName} ${actionText} ${targetUser.fullName}`);
+
+        const updatedGroup = await Group.findById(groupId)
+            .populate("admin", "fullName profilePic")
+            .populate("members.user", "fullName profilePic");
+
+        // Notify all members
+        updatedGroup.members.forEach(member => {
+            const mId = member.user?._id || member.user || member;
+            const socketId = getReceiverSocketId(mId.toString());
+            if (socketId) {
+                io.to(socketId).emit("group:updated", updatedGroup);
+            }
+        });
+
+        res.status(200).json(updatedGroup);
+    } catch (error) {
+        console.error("Error in updateMemberRole:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+// Pin a message
+export const pinMessage = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const userId = req.user._id;
+
+        const group = await Group.findById(groupId);
+        if (!group) return res.status(404).json({ error: "Group not found" });
+
+        const isOwner = group.admin.toString() === userId.toString();
+        const currentUserMember = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        const isAdmin = isOwner || currentUserMember?.role === "admin";
+
+        if (!isAdmin) return res.status(403).json({ error: "Only admins can pin messages" });
+
+        const message = await GroupMessage.findById(messageId);
+        if (!message) return res.status(404).json({ error: "Message not found" });
+
+        group.pinnedMessage = messageId;
+        await group.save();
+
+        const adminUser = await User.findById(userId);
+        await sendSystemMessage(groupId, `${adminUser.fullName} pinned a message`);
+
+        const updatedGroup = await Group.findById(groupId)
+            .populate("admin", "fullName profilePic")
+            .populate("members.user", "fullName profilePic")
+            .populate({
+                path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            });
+
+        // Notify all members
+        updatedGroup.members.forEach(member => {
+            const mId = member.user?._id || member.user || member;
+            const socketId = getReceiverSocketId(mId.toString());
+            if (socketId) {
+                io.to(socketId).emit("group:updated", updatedGroup);
+            }
+        });
+
+        res.status(200).json(updatedGroup);
+    } catch (error) {
+        console.error("Error in pinMessage:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Unpin message
+export const unpinMessage = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const userId = req.user._id;
+
+        const group = await Group.findById(groupId);
+        if (!group) return res.status(404).json({ error: "Group not found" });
+
+        const isOwner = group.admin.toString() === userId.toString();
+        const currentUserMember = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        const isAdmin = isOwner || currentUserMember?.role === "admin";
+
+        if (!isAdmin) return res.status(403).json({ error: "Only admins can unpin messages" });
+
+        group.pinnedMessage = null;
+        await group.save();
+
+        const updatedGroup = await Group.findById(groupId)
+            .populate("admin", "fullName profilePic")
+            .populate("members.user", "fullName profilePic");
+
+        // Notify all members
+        updatedGroup.members.forEach(member => {
+            const mId = member.user?._id || member.user || member;
+            const socketId = getReceiverSocketId(mId.toString());
+            if (socketId) {
+                io.to(socketId).emit("group:updated", updatedGroup);
+            }
+        });
+
+        res.status(200).json(updatedGroup);
+    } catch (error) {
+        console.error("Error in unpinMessage:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};

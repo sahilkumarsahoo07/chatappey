@@ -24,8 +24,20 @@ const groupSchema = new mongoose.Schema(
         },
         members: [
             {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "User"
+                user: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User",
+                    required: true
+                },
+                joinedAt: {
+                    type: Date,
+                    default: Date.now
+                },
+                role: {
+                    type: String,
+                    enum: ["admin", "member"],
+                    default: "member"
+                }
             }
         ],
         lastMessage: {
@@ -36,6 +48,14 @@ const groupSchema = new mongoose.Schema(
             },
             senderName: String,
             createdAt: Date
+        },
+        pinnedMessage: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "GroupMessage"
+        },
+        announcementOnly: {
+            type: Boolean,
+            default: false
         }
     },
     { timestamps: true }

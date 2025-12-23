@@ -13,7 +13,10 @@ import {
     sendGroupMessage,
     markGroupMessagesAsRead,
     deleteGroupMessageForAll,
-    deleteGroupMessageForMe
+    deleteGroupMessageForMe,
+    updateMemberRole,
+    pinMessage,
+    unpinMessage
 } from "../controllers/group.controllers.js";
 
 const router = express.Router();
@@ -29,6 +32,9 @@ router.delete("/:groupId", protectRoute, deleteGroup);
 router.post("/:groupId/members", protectRoute, addMembers);
 router.delete("/:groupId/members/:userId", protectRoute, removeMember);
 router.post("/:groupId/leave", protectRoute, leaveGroup);
+router.put("/:groupId/members/:userId/role", protectRoute, updateMemberRole);
+router.post("/:groupId/pin/:messageId", protectRoute, pinMessage);
+router.post("/:groupId/unpin", protectRoute, unpinMessage);
 
 // Messages
 router.get("/:groupId/messages", protectRoute, getGroupMessages);

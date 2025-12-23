@@ -1,10 +1,12 @@
 import { THEMES } from "../constants";
 import { useThemeStore } from "../store/useThemeStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Send, Camera, Edit, User, Mail, Info } from "lucide-react";
+import { Send, Camera, Edit, User, Mail, Info, Bell } from "lucide-react";
 import { useState } from "react";
 import defaultImg from '../public/avatar.png';
 import EmojiPicker from 'emoji-picker-react';
+import { requestNotificationPermission, showBrowserNotification } from "../lib/notifications";
+import toast from "react-hot-toast";
 
 const PREVIEW_MESSAGES = [
     { id: 1, content: "Hey! How's it going?", isSent: false },
@@ -167,6 +169,58 @@ const SettingsPage = () => {
                                             <span className="text-success font-semibold">Active</span>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Notification Section */}
+                    <div className="space-y-6">
+                        <div className="flex flex-col gap-1">
+                            <h2 className="text-2xl font-bold">Notifications</h2>
+                            <p className="text-sm text-base-content/70">Manage your desktop notifications</p>
+                        </div>
+
+                        <div className="card bg-base-100 shadow-md border border-base-300">
+                            <div className="card-body">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-primary/10 rounded-full">
+                                            <Bell className="w-6 h-6 text-primary" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-semibold">Desktop Notifications</h3>
+                                            <p className="text-sm text-base-content/70">
+                                                Receive notifications for new messages even when the app is in the background
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => showBrowserNotification("Test Notification", { body: "This is a test notification from ChatAppey" })}
+                                            className="btn btn-ghost"
+                                        >
+                                            Test
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                const granted = await requestNotificationPermission();
+                                                if (granted) {
+                                                    toast.success("Notifications enabled successfully!");
+                                                } else {
+                                                    toast.error("Permission denied. check browser settings.");
+                                                }
+                                            }}
+                                            className="btn btn-primary"
+                                        >
+                                            Enable Notifications
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="mt-4 p-4 bg-base-200 rounded-lg text-sm text-base-content/70">
+                                    <p>
+                                        Note: If notifications are not working, please check your browser settings and ensure "Do Not Disturb" mode is off on your device.
+                                    </p>
                                 </div>
                             </div>
                         </div>

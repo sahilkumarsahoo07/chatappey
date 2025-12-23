@@ -10,7 +10,12 @@ const groupMessageSchema = new mongoose.Schema(
         senderId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: true
+            required: false // Optional for system messages
+        },
+        messageType: {
+            type: String,
+            enum: ["text", "system"],
+            default: "text"
         },
         text: {
             type: String

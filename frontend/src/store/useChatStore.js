@@ -165,64 +165,108 @@ export const useChatStore = create((set, get) => ({
       const authUser = useAuthStore.getState().authUser;
       const users = get().users;
 
-      // Add message if it's part of the conversation with the selected user
-      // (either sent by them to me, or sent by me to them)
       const isMessageForCurrentChat =
         (newMessage.senderId === currentSelectedUser?._id && newMessage.receiverId === authUser._id) ||
         (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
 
-      if (isMessageForCurrentChat) {
-        // If this message was sent by us, skip it completely
-        // Our sendMessage function already handles the optimistic → real message replacement
-        // Adding it from socket causes race condition flashing (empty bubble then content)
-        if (newMessage.senderId === authUser._id) {
-          return;
-        }
-
+      // 1. Update Messages UI (Store State) for current chat
+      if (isMessageForCurrentChat && newMessage.senderId !== authUser._id) {
         set({
           messages: [...get().messages, newMessage],
         });
+      }
 
-        // If this is a message from the other user, mark it as read immediately
-        if (newMessage.senderId === currentSelectedUser?._id) {
-          get().markMessagesAsRead(currentSelectedUser._id);
+      // 2. Notification & Sender Status logic variables
+      const isWindowFocused = document.hasFocus() && !document.hidden;
+      const isSenderActiveCurrentChat = currentSelectedUser?._id === newMessage.senderId;
+      let shouldMarkRead = false;
+
+      if (newMessage.receiverId === authUser._id) {
+        playNotificationSound();
+
+        // Notification Logic
+        const senderForNotify = users.find(u => u._id === newMessage.senderId) || {
+          _id: newMessage.senderId,
+          fullName: newMessage.senderName || "New Message",
+          profilePic: newMessage.senderProfilePic || "/avatar.png"
+        };
+
+        if (!isWindowFocused) {
+          // System Notification (App Minimized/Background)
+          showBrowserNotification(senderForNotify.fullName, {
+            body: newMessage.text || "📷 Photo",
+            icon: senderForNotify.profilePic || "/avatar.png",
+            tag: newMessage._id, // Unique tag per message to ensure delivery even if closed previously
+            requireInteraction: false,
+            silent: false
+          });
+        } else if (!isSenderActiveCurrentChat) {
+          // In-App Toast (App Active, Different Chat)
+          showInAppNotification(newMessage, senderForNotify, () => {
+            get().setSelectedUser(senderForNotify);
+          });
         }
-      } else if (newMessage.receiverId === authUser._id) {
-        // Message is for me but from a different chat OR browser is not visible
-        // Show notification
-        const sender = users.find(u => u._id === newMessage.senderId);
 
-        if (sender) {
-          // Play notification sound
-          playNotificationSound();
-
-          console.log('Document visible:', isDocumentVisible());
-          console.log('Notification permission:', Notification.permission);
-
-          // ALWAYS show browser notification when tab is not visible
-          // Document visibility check handles both minimized and background tabs
-          if (!isDocumentVisible() || document.hidden) {
-            // Browser is not focused/visible - show browser notification
-            console.log('Showing browser notification for:', sender.fullName);
-            showBrowserNotification(sender.fullName, {
-              body: newMessage.text || "📷 Photo",
-              icon: sender.profilePic || "/avatar.png",
-              tag: newMessage.senderId, // Prevent duplicate notifications
-              requireInteraction: false,
-            });
-          } else if (currentSelectedUser?._id !== newMessage.senderId) {
-            // Browser is focused but viewing different chat - show in-app notification
-            showInAppNotification(newMessage, sender, () => {
-              // When notification is clicked, open that chat
-              get().setSelectedUser(sender);
-            });
-          }
+        // Decide if we should mark as read (for optimistic update)
+        if (isWindowFocused && isSenderActiveCurrentChat) {
+          shouldMarkRead = true;
         }
       }
 
-      // Always refresh user list to update last message preview
-      get().refreshUsers();
+      // 3. Optimistic Sidebar Update (User List)
+      const senderId = newMessage.senderId === authUser._id ? newMessage.receiverId : newMessage.senderId;
+      const senderIndex = users.findIndex((u) => u._id === senderId);
+
+      if (senderIndex !== -1) {
+        const updatedUsers = [...users];
+        const sender = updatedUsers[senderIndex];
+
+        const updatedSender = {
+          ...sender,
+          lastMessage: {
+            text: newMessage.text,
+            image: newMessage.image,
+            createdAt: newMessage.createdAt,
+            senderId: newMessage.senderId,
+            status: (shouldMarkRead || (isWindowFocused && isSenderActiveCurrentChat)) ? 'read' : 'delivered'
+          },
+          // If we are watching the chat (Active Chat), unreadCount stays 0
+          unreadCount: (shouldMarkRead || isSenderActiveCurrentChat)
+            ? 0
+            : (newMessage.receiverId === authUser._id ? (sender.unreadCount || 0) + 1 : sender.unreadCount)
+        };
+
+        updatedUsers.splice(senderIndex, 1);
+        updatedUsers.unshift(updatedSender);
+        set({ users: updatedUsers });
+      } else {
+        get().refreshUsers();
+      }
+
+      // 4. Trigger Server Side Read Status
+      const isVisible = !document.hidden;
+      if (isVisible && isMessageForCurrentChat && newMessage.receiverId === authUser._id) {
+        if (newMessage.senderId === currentSelectedUser?._id) {
+          console.log(`👀 MarkRead Trigger: Window Visible & Chat Active for ${currentSelectedUser.fullName}`);
+          get().markMessagesAsRead(currentSelectedUser._id);
+        }
+      }
     });
+
+    // Handle focus/visibility to mark as read when user returns
+    const handleActiveState = () => {
+      const { selectedUser } = get();
+      if (!document.hidden && selectedUser) {
+        console.log("👀 focus/visibility: Syncing read status for:", selectedUser.fullName);
+        get().markMessagesAsRead(selectedUser._id);
+      }
+    };
+    window.addEventListener("focus", handleActiveState);
+    document.addEventListener("visibilitychange", handleActiveState);
+    get()._cleanupVisibility = () => {
+      window.removeEventListener("focus", handleActiveState);
+      document.removeEventListener("visibilitychange", handleActiveState);
+    };
 
     // Listen for deleted messages
     socket.on("deleteMessageForAll", (updatedMessage) => {
@@ -264,17 +308,26 @@ export const useChatStore = create((set, get) => ({
 
     // Listen for messages read event
     socket.on("messagesRead", ({ readBy, chatWith, messageIds }) => {
-      const { selectedUser, messages } = get();
+      const { selectedUser, messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
 
-      // Update status of my messages when they're read
+      console.log("📨 Socket 'messagesRead' from:", readBy);
+
+      // 1. Update status of my messages when they're read
       if (selectedUser && readBy === selectedUser._id && chatWith === authUser._id) {
+        console.log("✅ Syncing Blue Ticks (Chat + Sidebar)");
         set({
           messages: messages.map((msg) =>
             msg.senderId === authUser._id && msg.status !== "read"
               ? { ...msg, status: "read" }
               : msg
           ),
+          // 2. ALSO update Sidebar (Blue Ticks in user list)
+          users: users.map(user =>
+            user._id === readBy
+              ? { ...user, lastMessage: user.lastMessage ? { ...user.lastMessage, status: 'read' } : null }
+              : user
+          )
         });
       }
     });
@@ -369,6 +422,11 @@ export const useChatStore = create((set, get) => ({
       socket.off("messagesDelivered");
       socket.off("messagesRead");
       socket.off("userOnline");
+    }
+    // Cleanup visibility listeners
+    if (get()._cleanupVisibility) {
+      get()._cleanupVisibility();
+      set({ _cleanupVisibility: null });
     }
   },
 

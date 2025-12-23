@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
-import { X, Users, LogOut, Trash2, UserPlus, UserMinus, Edit2, Camera, Check } from "lucide-react";
+import { X, Users, LogOut, Trash2, UserPlus, UserMinus, Edit2, Camera, Check, MoreVertical, Shield, ShieldOff, ShieldCheck, Search, Megaphone } from "lucide-react";
+import { Menu, MenuItem } from "@mui/material";
 import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import defaultAvatar from "../public/avatar.png";
 
 const GroupInfoPanel = ({ isOpen, onClose }) => {
-    const { selectedGroup, updateGroup, deleteGroup, addMembers, removeMember, leaveGroup } = useGroupStore();
+    const { selectedGroup, updateGroup, deleteGroup, addMembers, removeMember, leaveGroup, updateMemberRole } = useGroupStore();
     const { users } = useChatStore();
     const { authUser } = useAuthStore();
 
@@ -15,13 +16,18 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
     const [editImage, setEditImage] = useState("");
     const [showAddMembers, setShowAddMembers] = useState(false);
     const [selectedNewMembers, setSelectedNewMembers] = useState([]);
+    const [memberSearchQuery, setMemberSearchQuery] = useState("");
+    const [anchorEl, setAnchorEl] = useState(null);
+    const [menuMember, setMenuMember] = useState(null);
 
-    const isAdmin = selectedGroup?.admin?._id === authUser?._id;
+    const isOwner = selectedGroup?.admin?._id === authUser?._id;
     const members = selectedGroup?.members || [];
+    const currentUserMember = members.find(m => (m.user?._id || m.user || m).toString() === authUser?._id);
+    const isAdmin = isOwner || currentUserMember?.role === "admin";
 
     // Friends who are not already in the group
     const availableFriends = users.filter(
-        user => user.isFriend && !members.some(m => m._id === user._id)
+        user => user.isFriend && !members.some(m => (m.user?._id || m._id) === user._id)
     );
 
     useEffect(() => {
@@ -56,6 +62,18 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         }
     };
 
+    const handleTransferOwnership = async (userId) => {
+        handleCloseMenu();
+        if (!confirm("Are you sure you want to transfer group ownership? You will no longer be the owner.")) return;
+
+        try {
+            await updateGroup(selectedGroup._id, { admin: userId });
+            toast.success("Ownership transferred successfully!");
+        } catch (error) {
+            console.error("Failed to transfer ownership:", error);
+        }
+    };
+
     const handleAddMembers = async () => {
         if (selectedNewMembers.length === 0) return;
 
@@ -69,6 +87,7 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
     };
 
     const handleRemoveMember = async (userId) => {
+        handleCloseMenu();
         if (!confirm("Remove this member from the group?")) return;
 
         try {
@@ -76,6 +95,25 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         } catch (error) {
             console.error("Failed to remove member:", error);
         }
+    };
+
+    const handleUpdateRole = async (userId, newRole) => {
+        handleCloseMenu();
+        try {
+            await updateMemberRole(selectedGroup._id, userId, newRole);
+        } catch (error) {
+            console.error("Failed to update role:", error);
+        }
+    };
+
+    const handleOpenMenu = (event, member) => {
+        setAnchorEl(event.currentTarget);
+        setMenuMember(member);
+    };
+
+    const handleCloseMenu = () => {
+        setAnchorEl(null);
+        setMenuMember(null);
     };
 
     const handleLeaveGroup = async () => {
@@ -86,6 +124,17 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
             onClose();
         } catch (error) {
             console.error("Failed to leave group:", error);
+        }
+    };
+
+    const handleToggleAnnouncement = async () => {
+        try {
+            await updateGroup(selectedGroup._id, {
+                announcementOnly: !selectedGroup.announcementOnly
+            });
+            toast.success(`Announcement mode ${!selectedGroup.announcementOnly ? "enabled" : "disabled"}`);
+        } catch (error) {
+            console.error("Failed to toggle announcement mode:", error);
         }
     };
 
@@ -112,8 +161,14 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
     if (!isOpen || !selectedGroup) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-end z-50">
-            <div className="bg-base-100 w-full max-w-sm h-full overflow-y-auto shadow-2xl animate-slide-in-right">
+        <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-end z-50"
+            onClick={onClose}
+        >
+            <div
+                className="bg-base-100 w-full max-w-sm h-full overflow-y-auto shadow-2xl animate-slide-in-right"
+                onClick={(e) => e.stopPropagation()}
+            >
                 {/* Header */}
                 <div className="sticky top-0 bg-base-100 p-4 border-b border-base-300 flex items-center justify-between z-10">
                     <h2 className="text-lg font-semibold">Group Info</h2>
@@ -201,6 +256,28 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                         )}
                     </div>
 
+                    {/* Member Search */}
+                    {members.length > 5 && (
+                        <div className="relative mb-3">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+                            <input
+                                type="text"
+                                placeholder="Search members..."
+                                value={memberSearchQuery}
+                                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                className="input input-bordered input-sm w-full pl-9 h-9 text-sm"
+                            />
+                            {memberSearchQuery && (
+                                <button
+                                    onClick={() => setMemberSearchQuery("")}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                                >
+                                    <X className="w-3 h-3 text-base-content/40" />
+                                </button>
+                            )}
+                        </div>
+                    )}
+
                     {/* Add Members Section */}
                     {showAddMembers && (
                         <div className="bg-base-200 rounded-lg p-3 mb-3">
@@ -246,37 +323,125 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
 
                     {/* Members List */}
                     <div className="space-y-1">
-                        {members.map(member => (
-                            <div
-                                key={member._id}
-                                className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200"
-                            >
-                                <img
-                                    src={member.profilePic || defaultAvatar}
-                                    alt={member.fullName}
-                                    className="w-10 h-10 rounded-full object-cover"
-                                />
-                                <div className="flex-1">
-                                    <p className="font-medium text-sm">
-                                        {member.fullName}
-                                        {member._id === authUser._id && " (You)"}
-                                    </p>
-                                    {member._id === selectedGroup.admin?._id && (
-                                        <span className="text-xs text-primary">Admin</span>
-                                    )}
-                                </div>
-                                {isAdmin && member._id !== authUser._id && (
-                                    <button
-                                        onClick={() => handleRemoveMember(member._id)}
-                                        className="btn btn-ghost btn-xs btn-circle text-error"
+                        {members
+                            .filter(m => {
+                                const member = m.user || m;
+                                return member.fullName?.toLowerCase().includes(memberSearchQuery.toLowerCase());
+                            })
+                            .map(m => {
+                                const member = m.user || m;
+                                const isMemberOwner = selectedGroup.admin?._id === member._id;
+                                const isMemberAdmin = m.role === "admin" || isMemberOwner;
+
+                                return (
+                                    <div
+                                        key={member._id}
+                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200"
                                     >
-                                        <UserMinus className="w-4 h-4" />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
+                                        <img
+                                            src={member.profilePic || defaultAvatar}
+                                            alt={member.fullName}
+                                            className="w-10 h-10 rounded-full object-cover"
+                                        />
+                                        <div className="flex-1">
+                                            <p className="font-medium text-sm">
+                                                {member.fullName}
+                                                {member._id === authUser._id && " (You)"}
+                                            </p>
+                                            <div className="flex items-center gap-1">
+                                                {isMemberOwner && (
+                                                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">Owner</span>
+                                                )}
+                                                {isMemberAdmin && !isMemberOwner && (
+                                                    <span className="text-[10px] bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                                                        <ShieldCheck className="w-3 h-3" /> Admin
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Action Menu Trigger (Only if currentUser is Admin and target is not themselves) */}
+                                        {isAdmin && member._id !== authUser._id && (
+                                            <button
+                                                onClick={(e) => handleOpenMenu(e, m)}
+                                                className="btn btn-ghost btn-xs btn-circle"
+                                            >
+                                                <MoreVertical className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
                     </div>
+
+                    {/* Member Action Menu */}
+                    <Menu
+                        anchorEl={anchorEl}
+                        open={Boolean(anchorEl)}
+                        onClose={handleCloseMenu}
+                        PaperProps={{
+                            className: "bg-base-100 border border-base-300 shadow-xl"
+                        }}
+                    >
+                        {/* Only owner can promote/demote admins */}
+                        {isOwner && menuMember?.role !== "admin" && (
+                            <MenuItem
+                                onClick={() => handleUpdateRole(menuMember.user?._id || menuMember.user || menuMember, "admin")}
+                                className="text-sm gap-2"
+                            >
+                                <Shield className="w-4 h-4 text-primary" /> Make Admin
+                            </MenuItem>
+                        )}
+                        {isOwner && menuMember?.role === "admin" && (
+                            <MenuItem
+                                onClick={() => handleUpdateRole(menuMember.user?._id || menuMember.user || menuMember, "member")}
+                                className="text-sm gap-2"
+                            >
+                                <ShieldOff className="w-4 h-4 text-error" /> Dismiss Admin
+                            </MenuItem>
+                        )}
+
+                        {/* Transfer Ownership (Only owner can see this for other admins) */}
+                        {isOwner && menuMember?.role === "admin" && (
+                            <MenuItem
+                                onClick={() => handleTransferOwnership(menuMember.user?._id || menuMember.user || menuMember)}
+                                className="text-sm gap-2"
+                            >
+                                <ShieldCheck className="w-4 h-4 text-warning" /> Transfer Ownership
+                            </MenuItem>
+                        )}
+
+                        {/* Any admin can remove a member (if not owner, they can't remove other admins based on backend logic) */}
+                        <MenuItem
+                            onClick={() => handleRemoveMember(menuMember.user?._id || menuMember.user || menuMember)}
+                            className="text-sm gap-2 text-error"
+                        >
+                            <UserMinus className="w-4 h-4" /> Remove Member
+                        </MenuItem>
+                    </Menu>
                 </div>
+
+                {/* Settings Section (Admins only) */}
+                {isAdmin && (
+                    <div className="p-4 border-t border-base-300">
+                        <h4 className="font-semibold text-sm text-base-content/70 mb-3">Settings</h4>
+                        <div className="flex items-center justify-between p-2 rounded-lg hover:bg-base-200 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <Megaphone className="w-4 h-4 text-base-content/60" />
+                                <div>
+                                    <p className="text-sm font-medium">Announcement Mode</p>
+                                    <p className="text-[10px] text-base-content/50">Only admins can send messages</p>
+                                </div>
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="toggle toggle-primary toggle-sm"
+                                checked={selectedGroup.announcementOnly || false}
+                                onChange={handleToggleAnnouncement}
+                            />
+                        </div>
+                    </div>
+                )}
 
                 {/* Actions */}
                 <div className="p-4 border-t border-base-300 space-y-2">

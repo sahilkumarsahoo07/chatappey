@@ -60,13 +60,15 @@ export const showBrowserNotification = (title, options = {}) => {
     const notification = new Notification(title, {
       icon: "/avatar.png",
       badge: "/avatar.png",
+      requireInteraction: true, // Keep notification until user interacts by default
       ...options,
     });
 
     console.log("✅ Notification created successfully");
 
-    // Auto close after 5 seconds
-    setTimeout(() => notification.close(), 5000);
+    // Do not auto-close browser notifications. Let the OS/User handle it.
+    // This allows notifications to sit in the action center if missed.
+    // setTimeout(() => notification.close(), 5000); 
 
     return notification;
   } catch (error) {

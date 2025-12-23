@@ -129,6 +129,57 @@ export const useGroupStore = create((set, get) => ({
         }
     },
 
+    // Update member role (admin only)
+    updateMemberRole: async (groupId, userId, role) => {
+        try {
+            const res = await axiosInstance.put(`/groups/${groupId}/members/${userId}/role`, { role });
+            const updatedGroup = res.data;
+            set({
+                groups: get().groups.map(g => g._id === groupId ? updatedGroup : g),
+                selectedGroup: get().selectedGroup?._id === groupId ? updatedGroup : get().selectedGroup
+            });
+            toast.success(`Member role updated to ${role}!`);
+            return updatedGroup;
+        } catch (error) {
+            toast.error(error.response?.data?.error || "Failed to update member role");
+            throw error;
+        }
+    },
+
+    // Pin a message
+    pinMessage: async (groupId, messageId) => {
+        try {
+            const res = await axiosInstance.post(`/groups/${groupId}/pin/${messageId}`);
+            const updatedGroup = res.data;
+            set({
+                groups: get().groups.map(g => g._id === groupId ? updatedGroup : g),
+                selectedGroup: get().selectedGroup?._id === groupId ? updatedGroup : get().selectedGroup
+            });
+            toast.success("Message pinned!");
+            return updatedGroup;
+        } catch (error) {
+            toast.error(error.response?.data?.error || "Failed to pin message");
+            throw error;
+        }
+    },
+
+    // Unpin message
+    unpinMessage: async (groupId) => {
+        try {
+            const res = await axiosInstance.post(`/groups/${groupId}/unpin`);
+            const updatedGroup = res.data;
+            set({
+                groups: get().groups.map(g => g._id === groupId ? updatedGroup : g),
+                selectedGroup: get().selectedGroup?._id === groupId ? updatedGroup : get().selectedGroup
+            });
+            toast.success("Message unpinned!");
+            return updatedGroup;
+        } catch (error) {
+            toast.error(error.response?.data?.error || "Failed to unpin message");
+            throw error;
+        }
+    },
+
     // Get group messages
     getGroupMessages: async (groupId) => {
         set({ isGroupMessagesLoading: true });
@@ -169,7 +220,8 @@ export const useGroupStore = create((set, get) => ({
             image: messageData.image,
             createdAt: new Date().toISOString(),
             readBy: [authUser._id],
-            isForwarded: messageData.isForwarded || false
+            isForwarded: messageData.isForwarded || false,
+            isOptimistic: true
         };
 
         // Add message to UI instantly (only if not forwarding to another group)
@@ -186,11 +238,24 @@ export const useGroupStore = create((set, get) => ({
 
             // Replace optimistic message with real one (only if not forwarding)
             if (!isForwarding) {
-                set({
-                    groupMessages: get().groupMessages.map(msg =>
-                        msg._id === optimisticMessage._id ? newMessage : msg
-                    )
-                });
+                const currentMessages = get().groupMessages;
+                const alreadyAddedBySocket = currentMessages.some(m => m._id === newMessage._id);
+
+                if (alreadyAddedBySocket) {
+                    // Remove the optimistic one since socket already added the real one
+                    set({
+                        groupMessages: currentMessages.filter(msg =>
+                            msg._id !== optimisticMessage._id
+                        )
+                    });
+                } else {
+                    // Standard replacement
+                    set({
+                        groupMessages: currentMessages.map(msg =>
+                            msg._id === optimisticMessage._id ? newMessage : msg
+                        )
+                    });
+                }
             }
 
             // Update group's lastMessage in the list
@@ -284,10 +349,27 @@ export const useGroupStore = create((set, get) => ({
 
         // New group created (for other members when they're added)
         socket.on("group:created", (newGroup) => {
-            // Only add if not already in the list (creator already has it from API response)
-            const exists = get().groups.some(g => g._id === newGroup._id);
+            const { groups } = get();
+            const authUser = useAuthStore.getState().authUser;
+            if (!authUser) return;
+
+            // Only add if not already in the list
+            const exists = groups.some(g => g._id === newGroup._id);
             if (!exists) {
-                set({ groups: [newGroup, ...get().groups] });
+                // Find joinedAt for current user
+                const memberInfo = newGroup.members.find(m =>
+                    (m.user?._id || m.user || m).toString() === authUser._id.toString()
+                );
+                const joinedAt = memberInfo?.joinedAt ? new Date(memberInfo.joinedAt) : new Date(0);
+
+                const filteredGroup = {
+                    ...newGroup,
+                    lastMessage: (newGroup.lastMessage?.createdAt && new Date(newGroup.lastMessage.createdAt) >= joinedAt)
+                        ? newGroup.lastMessage
+                        : null,
+                    unreadCount: 0
+                };
+                set({ groups: [filteredGroup, ...groups] });
             }
         });
 
@@ -309,10 +391,41 @@ export const useGroupStore = create((set, get) => ({
 
         // New member added
         socket.on("group:memberAdded", ({ group }) => {
-            set({
-                groups: get().groups.map(g => g._id === group._id ? group : g),
-                selectedGroup: get().selectedGroup?._id === group._id ? group : get().selectedGroup
-            });
+            const { groups, selectedGroup } = get();
+            const authUser = useAuthStore.getState().authUser;
+            if (!authUser) return;
+
+            const exists = groups.some(g => g._id === group._id);
+
+            // Check if WE are the one who was added, or if we were already there
+            const memberInfo = group.members.find(m =>
+                (m.user?._id || m.user || m).toString() === authUser._id.toString()
+            );
+
+            // If we are not in the group, ignore (shouldn't happen as we receive the event)
+            if (!memberInfo) return;
+
+            // Apply joinedAt filtering to lastMessage for real-time consistency
+            const joinedAt = memberInfo?.joinedAt ? new Date(memberInfo.joinedAt) : new Date(0);
+            const filteredGroup = {
+                ...group,
+                lastMessage: (group.lastMessage?.createdAt && new Date(group.lastMessage.createdAt) >= joinedAt)
+                    ? group.lastMessage
+                    : null,
+                unreadCount: exists ? (groups.find(g => g._id === group._id).unreadCount || 0) : 0
+            };
+
+            if (exists) {
+                set({
+                    groups: groups.map(g => g._id === group._id ? filteredGroup : g),
+                    selectedGroup: selectedGroup?._id === group._id ? filteredGroup : selectedGroup
+                });
+            } else {
+                // If the user was just added, they need the group in their list
+                set({
+                    groups: [filteredGroup, ...groups]
+                });
+            }
         });
 
         // Member removed
@@ -347,13 +460,31 @@ export const useGroupStore = create((set, get) => ({
             const { selectedGroup, groupMessages, groups } = get();
 
             // Check if this is a message from another user
-            const isFromOther = message.senderId._id !== authUser._id;
+            const isFromOther = message.senderId && message.senderId._id !== authUser._id;
+            const isSystem = message.messageType === "system";
 
             // If this is in the currently selected group, add the message
             if (selectedGroup?._id === groupId) {
-                // Don't add if we already have this message (from our own send)
-                if (!groupMessages.some(m => m._id === message._id)) {
-                    set({ groupMessages: [...groupMessages, message] });
+                // If it's my message, try to match it with an optimistic one to prevent flickering/duplicates
+                if (!isFromOther && !isSystem) {
+                    const optimisticMsg = groupMessages.find(m =>
+                        m.isOptimistic &&
+                        m.text === message.text &&
+                        m.image === message.image
+                    );
+
+                    if (optimisticMsg) {
+                        set({
+                            groupMessages: groupMessages.map(m => m._id === optimisticMsg._id ? message : m)
+                        });
+                    } else if (!groupMessages.some(m => m._id === message._id)) {
+                        set({ groupMessages: [...groupMessages, message] });
+                    }
+                } else {
+                    // System or other's message - add if not already there
+                    if (!groupMessages.some(m => m._id === message._id)) {
+                        set({ groupMessages: [...groupMessages, message] });
+                    }
                 }
             }
 
@@ -362,14 +493,15 @@ export const useGroupStore = create((set, get) => ({
                 groups: groups.map(g => {
                     if (g._id === groupId) {
                         // Only increment unread if message is from another user AND group is not selected
-                        const shouldIncrementUnread = isFromOther && selectedGroup?._id !== groupId;
+                        // System messages don't increment unread
+                        const shouldIncrementUnread = isFromOther && !isSystem && selectedGroup?._id !== groupId;
 
                         return {
                             ...g,
                             lastMessage: {
                                 text: message.text || "📷 Photo",
-                                senderId: message.senderId._id,
-                                senderName: message.senderId.fullName,
+                                senderId: message.senderId?._id || null,
+                                senderName: message.senderId?.fullName || (isSystem ? "System" : "Unknown"),
                                 createdAt: message.createdAt
                             },
                             updatedAt: message.createdAt,

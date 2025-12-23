@@ -7,8 +7,8 @@ import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime } from "../lib/utils";
 import defaultAvatar from "../public/avatar.png";
-import { MoreVertical, Copy, Trash2, Forward, Search, Users, X } from "lucide-react";
-import { Menu, MenuItem } from "@mui/material";
+import { MoreVertical, Copy, Trash2, Forward, Search, Users, X, Pin, Info, Shield, Clock, Check, CheckCheck } from "lucide-react";
+import { Menu, MenuItem, Dialog, DialogTitle, DialogContent } from "@mui/material";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 
@@ -21,6 +21,8 @@ const GroupChatContainer = () => {
         sendGroupMessage,
         deleteGroupMessageForAll,
         deleteGroupMessageForMe,
+        pinMessage,
+        unpinMessage,
         groups
     } = useGroupStore();
     const { users } = useChatStore();
@@ -36,6 +38,7 @@ const GroupChatContainer = () => {
     const [forwardDialogMessageId, setForwardDialogMessageId] = useState(null);
     const [forwardSearchQuery, setForwardSearchQuery] = useState("");
     const [forwardTab, setForwardTab] = useState("users"); // "users" or "groups"
+    const [infoDialogMessageId, setInfoDialogMessageId] = useState(null);
     const longPressTimerRef = useRef(null);
     const longPressMessageRef = useRef(null);
 
@@ -117,6 +120,19 @@ const GroupChatContainer = () => {
         }
     };
 
+    const handlePinMessage = async (messageId) => {
+        setOpenMenuId(null);
+        if (selectedGroup.pinnedMessage?._id === messageId) {
+            await unpinMessage(selectedGroup._id);
+        } else {
+            await pinMessage(selectedGroup._id, messageId);
+        }
+    };
+
+    const isOwner = selectedGroup?.admin?._id === authUser?._id;
+    const currentUserMember = selectedGroup?.members?.find(m => (m.user?._id || m.user || m).toString() === authUser?._id);
+    const isAdmin = isOwner || currentUserMember?.role === "admin";
+
     // Long press handlers for mobile
     const handleTouchStart = (e, messageId) => {
         longPressMessageRef.current = e.currentTarget;
@@ -179,6 +195,16 @@ const GroupChatContainer = () => {
                                     groupMessages[index - 1]?.senderId?._id !== sender?._id
                                 );
                                 const isDeleted = message.text === "This message was deleted";
+
+                                if (message.messageType === "system") {
+                                    return (
+                                        <div key={message._id} className="flex justify-center my-2">
+                                            <div className="bg-base-300/30 text-base-content/60 px-4 py-1.5 rounded-lg text-[11px] font-medium backdrop-blur-sm border border-base-content/5 shadow-sm">
+                                                {message.text}
+                                            </div>
+                                        </div>
+                                    );
+                                }
 
                                 return (
                                     <div
@@ -270,6 +296,16 @@ const GroupChatContainer = () => {
                                                     transformOrigin={{ vertical: "top", horizontal: "right" }}
                                                     PaperProps={{ sx: { width: 180, borderRadius: "12px" } }}
                                                 >
+                                                    {!isDeleted && (
+                                                        <MenuItem onClick={() => { setOpenMenuId(null); setInfoDialogMessageId(message._id); }}>
+                                                            <Info className="w-4 h-4 mr-2" /> Message Info
+                                                        </MenuItem>
+                                                    )}
+                                                    {isAdmin && !isDeleted && (
+                                                        <MenuItem onClick={() => handlePinMessage(message._id)}>
+                                                            <Pin className="w-4 h-4 mr-2" /> {selectedGroup.pinnedMessage?._id === message._id ? "Unpin Message" : "Pin Message"}
+                                                        </MenuItem>
+                                                    )}
                                                     {!message.image && message.text && message.text !== "This message was deleted" && (
                                                         <MenuItem onClick={() => { handleCopyText(message.text); setOpenMenuId(null); }}>
                                                             <Copy className="w-4 h-4 mr-2" /> Copy
@@ -460,8 +496,63 @@ const GroupChatContainer = () => {
                 )}
             </div>
 
+            {/* Read Receipts Dialog */}
+            <Dialog
+                open={!!infoDialogMessageId}
+                onClose={() => setInfoDialogMessageId(null)}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle className="flex items-center justify-between border-b border-base-300 bg-base-100">
+                    <div className="flex items-center gap-2">
+                        <Info className="w-5 h-5 text-primary" />
+                        <span className="text-lg font-semibold">Message Info</span>
+                    </div>
+                    <button onClick={() => setInfoDialogMessageId(null)} className="btn btn-ghost btn-sm btn-circle">
+                        <X className="w-4 h-4" />
+                    </button>
+                </DialogTitle>
+                <DialogContent className="p-0 bg-base-100">
+                    <div className="p-4">
+                        <h4 className="text-xs font-bold text-base-content/40 uppercase mb-3 px-2">Read by</h4>
+                        <div className="space-y-1">
+                            {(() => {
+                                const msg = groupMessages.find(m => m._id === infoDialogMessageId);
+                                const readers = msg?.readBy || [];
+                                if (readers.length === 1 && readers[0]._id === authUser._id) {
+                                    return <p className="text-sm text-center py-4 text-base-content/50">No one else has read this yet</p>;
+                                }
+                                return readers
+                                    .filter(r => r._id !== authUser._id)
+                                    .map(reader => (
+                                        <div key={reader._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-colors">
+                                            <img
+                                                src={reader.profilePic || defaultAvatar}
+                                                alt={reader.fullName}
+                                                className="w-10 h-10 rounded-full object-cover"
+                                            />
+                                            <div className="flex-1">
+                                                <p className="text-sm font-medium">{reader.fullName}</p>
+                                                <div className="flex items-center gap-1 text-[10px] text-success">
+                                                    <CheckCheck className="w-3 h-3" />
+                                                    Read
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ));
+                            })()}
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             {/* Message Input */}
-            <MessageInput onSend={handleSendMessage} isGroupChat={true} />
+            <MessageInput
+                onSend={handleSendMessage}
+                isGroupChat={true}
+                isAdmin={isAdmin}
+                announcementOnly={selectedGroup.announcementOnly}
+            />
         </div>
     );
 };
