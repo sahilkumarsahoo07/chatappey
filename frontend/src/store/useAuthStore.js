@@ -362,17 +362,29 @@ export const useAuthStore = create((set, get) => ({
             set({ onlineUsers: userIds });
         });
         socket.on("user-logged-out", ({ userId, lastLogout }) => {
-            // If the selected user is the one who logged out, update their lastLogout
-            if (get().selectedUser?._id === userId) {
-                set((state) => ({
-                    selectedUser: {
-                        ...state.selectedUser,
-                        lastLogout,
-                    },
-                }));
-            }
+            // Import useChatStore to update the users list and selectedUser
+            import("./useChatStore").then(({ useChatStore }) => {
+                const chatStore = useChatStore.getState();
 
-            // Update online users
+                // Update selectedUser if it's the one who logged out
+                if (chatStore.selectedUser?._id === userId) {
+                    useChatStore.setState((state) => ({
+                        selectedUser: {
+                            ...state.selectedUser,
+                            lastLogout,
+                        },
+                    }));
+                }
+
+                // Update the users list with the new lastLogout time
+                useChatStore.setState((state) => ({
+                    users: state.users.map((user) =>
+                        user._id === userId ? { ...user, lastLogout } : user
+                    ),
+                }));
+            });
+
+            // Update online users - remove the user who logged out
             set((state) => ({
                 onlineUsers: state.onlineUsers.filter((id) => id !== userId),
             }));

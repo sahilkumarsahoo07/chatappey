@@ -1,6 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { THEMES } from "../constants";
 import { useAuthStore } from "../store/useAuthStore";
+import { useChatStore } from "../store/useChatStore";
+import { useGroupStore } from "../store/useGroupStore";
 import { LogOut, MessageCircleHeart, Palette, User, Settings, MessageSquare, Users, Bell, Phone } from "lucide-react";
 import { useThemeStore } from "../store/useThemeStore";
 import { useNotificationStore } from "../store/useNotificationStore";
@@ -11,12 +13,27 @@ const LeftNavbar = () => {
     const { logout, authUser } = useAuthStore();
     const { theme, setTheme } = useThemeStore();
     const { unreadCount, fetchUnreadCount } = useNotificationStore();
+    const { selectedUser, setSelectedUser } = useChatStore();
+    const { selectedGroup, setSelectedGroup } = useGroupStore();
+    const location = useLocation();
 
     useEffect(() => {
         if (authUser) {
             fetchUnreadCount();
         }
     }, [authUser, fetchUnreadCount]);
+
+    // Handle navigation click - if on home with chat open, go back instead of navigating
+    const handleNavClick = (e, item) => {
+        // Only for Messages item on home page when a chat is selected
+        if (item.to === "/" && location.pathname === "/" && (selectedUser || selectedGroup)) {
+            e.preventDefault();
+            // Clear selections to go back to chat list
+            setSelectedUser(null);
+            setSelectedGroup(null);
+        }
+        // Otherwise, let the Link navigate normally
+    };
 
     // Navigation items for reuse
     const navItems = [
@@ -87,6 +104,7 @@ const LeftNavbar = () => {
                         <Link
                             key={item.to}
                             to={item.to}
+                            onClick={(e) => handleNavClick(e, item)}
                             className="flex flex-col items-center justify-center p-1.5 rounded-lg hover:bg-primary-content/10 transition-all duration-200 relative min-w-[48px]"
                         >
                             <div className="relative">

@@ -146,9 +146,6 @@ const ChatHeader = () => {
                             <div className="size-11 md:size-12 rounded-full relative ring-2 ring-primary-content/30 overflow-hidden">
                                 <img src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)} alt={selectedUser.fullName} className="w-full h-full object-cover" />
                             </div>
-                            {onlineUsers.includes(selectedUser._id) && !selectedUser.hasBlockedMe && !isBlocked && (
-                                <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full ring-2 ring-primary"></span>
-                            )}
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -172,8 +169,8 @@ const ChatHeader = () => {
                         <button
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'audio')}
                             className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                    ? 'text-gray-700 hover:bg-gray-200'
-                                    : 'text-primary-content hover:bg-primary-content/10'
+                                ? 'text-gray-700 hover:bg-gray-200'
+                                : 'text-primary-content hover:bg-primary-content/10'
                                 }`}
                             title="Voice Call"
                         >
@@ -182,8 +179,8 @@ const ChatHeader = () => {
                         <button
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'video')}
                             className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                    ? 'text-gray-700 hover:bg-gray-200'
-                                    : 'text-primary-content hover:bg-primary-content/10'
+                                ? 'text-gray-700 hover:bg-gray-200'
+                                : 'text-primary-content hover:bg-primary-content/10'
                                 }`}
                             title="Video Call"
                         >
@@ -192,8 +189,8 @@ const ChatHeader = () => {
                         <button
                             onClick={() => setSelectedUser(null)}
                             className={`hidden md:block p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                    ? 'text-gray-700 hover:bg-gray-200'
-                                    : 'text-primary-content hover:bg-primary-content/10'
+                                ? 'text-gray-700 hover:bg-gray-200'
+                                : 'text-primary-content hover:bg-primary-content/10'
                                 }`}
                         >
                             <X size={20} />

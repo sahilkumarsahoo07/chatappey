@@ -283,10 +283,23 @@ io.on("connection", (socket) => {
 
 
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log("A user disconnected:", socket.id);
     if (userId && userSocketMap[userId] === socket.id) {
       delete userSocketMap[userId];
+
+      // Update lastLogout in database for accurate "last seen" timestamps
+      try {
+        const User = (await import("../models/user.model.js")).default;
+        const logoutTime = new Date();
+        await User.findByIdAndUpdate(userId, { lastLogout: logoutTime });
+
+        // Emit the user-logged-out event so other clients update their UI
+        io.emit("user-logged-out", { userId, lastLogout: logoutTime });
+        console.log(`Updated lastLogout for user ${userId}`);
+      } catch (error) {
+        console.error("Error updating lastLogout on disconnect:", error);
+      }
     }
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
