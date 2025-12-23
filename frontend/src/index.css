@@ -825,3 +825,35 @@
 .animate-blob {
     animation: blob 8s ease-in-out infinite;
 }
+
+/* ============================================
+   GLOBAL CURSOR POINTER FOR INTERACTIVE ELEMENTS
+   ============================================ */
+
+/* Apply cursor pointer to all buttons, links, and interactive elements */
+button,
+a,
+[role="button"],
+[type="button"],
+[type="submit"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"],
+select,
+.btn,
+.cursor-pointer,
+label[for],
+summary,
+[tabindex]:not([tabindex="-1"]) {
+    cursor: pointer !important;
+}
+
+/* List items and cards that are clickable */
+.hover-lift,
+.hover-glow,
+.touch-active,
+.card-modern:hover,
+.card-premium:hover,
+.settings-item {
+    cursor: pointer;
+}
