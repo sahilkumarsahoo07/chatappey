@@ -20,6 +20,7 @@ export const useChatStore = create((set, get) => ({
   sentRequests: [],
   isFriendRequestsLoading: false,
   replyingToMessage: null,
+  isTyping: false, // New state
 
   getUsers: async () => {
     set({ isUsersLoading: true });
@@ -68,10 +69,14 @@ export const useChatStore = create((set, get) => ({
       _id: `temp-${Date.now()}`, // Temporary ID
       text: messageData.text,
       image: messageData.image,
+      audio: messageData.audio,
+      file: messageData.file,
+      poll: messageData.poll || null,
+      scheduledFor: messageData.scheduledFor,
       senderId: authUser._id,
       receiverId: selectedUser._id,
-      createdAt: new Date().toISOString(),
-      status: 'sending', // Temporary status
+      createdAt: messageData.scheduledFor ? new Date(messageData.scheduledFor).toISOString() : new Date().toISOString(),
+      status: messageData.scheduledFor ? 'scheduled' : 'sending',
       replyTo: replyingToMessage?._id || null,
       replyToMessage: replyingToMessage ? {
         text: replyingToMessage.text,
@@ -95,18 +100,16 @@ export const useChatStore = create((set, get) => ({
       const newMessage = res.data;
 
       // Replace optimistic message with real one from server
-      // Keep original image URL AND createdAt to prevent:
-      // 1. Image reloading (URL change)
-      // 2. Message repositioning/shaking (createdAt change affects sort order)
       const currentMessages = get().messages;
       set({
         messages: currentMessages.map(msg => {
           if (msg._id === optimisticMessage._id) {
             return {
               ...newMessage,
-              // Keep original values to prevent visual glitches
               image: optimisticMessage.image || newMessage.image,
-              createdAt: optimisticMessage.createdAt // Preserve position in sorted list
+              audio: optimisticMessage.audio || newMessage.audio,
+              file: optimisticMessage.file || newMessage.file,
+              createdAt: optimisticMessage.createdAt
             };
           }
           return msg;
@@ -138,11 +141,8 @@ export const useChatStore = create((set, get) => ({
       });
 
       set({ users: sortedUsers });
-
-      // Clear reply state after sending
       set({ replyingToMessage: null });
     } catch (error) {
-      // Remove optimistic message on error - use current state
       const currentMessages = get().messages;
       set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
       toast.error(error.response?.data?.message || "Failed to send message");
@@ -165,18 +165,23 @@ export const useChatStore = create((set, get) => ({
       const authUser = useAuthStore.getState().authUser;
       const users = get().users;
 
+      // Skip scheduled messages - they should never arrive via socket
+      if (newMessage.status === 'scheduled') {
+        console.warn("Received scheduled message via socket - ignoring:", newMessage._id);
+        return;
+      }
+
       const isMessageForCurrentChat =
         (newMessage.senderId === currentSelectedUser?._id && newMessage.receiverId === authUser._id) ||
         (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
 
-      // 1. Update Messages UI (Store State) for current chat
       if (isMessageForCurrentChat && newMessage.senderId !== authUser._id) {
         set({
           messages: [...get().messages, newMessage],
         });
       }
 
-      // 2. Notification & Sender Status logic variables
+      // Notification Logic
       const isWindowFocused = document.hasFocus() && !document.hidden;
       const isSenderActiveCurrentChat = currentSelectedUser?._id === newMessage.senderId;
       let shouldMarkRead = false;
@@ -184,7 +189,6 @@ export const useChatStore = create((set, get) => ({
       if (newMessage.receiverId === authUser._id) {
         playNotificationSound();
 
-        // Notification Logic
         const senderForNotify = users.find(u => u._id === newMessage.senderId) || {
           _id: newMessage.senderId,
           fullName: newMessage.senderName || "New Message",
@@ -192,28 +196,24 @@ export const useChatStore = create((set, get) => ({
         };
 
         if (!isWindowFocused) {
-          // System Notification (App Minimized/Background)
           showBrowserNotification(senderForNotify.fullName, {
             body: newMessage.text || "📷 Photo",
             icon: senderForNotify.profilePic || "/avatar.png",
-            tag: newMessage._id, // Unique tag per message to ensure delivery even if closed previously
+            tag: newMessage._id,
             requireInteraction: false,
             silent: false
           });
         } else if (!isSenderActiveCurrentChat) {
-          // In-App Toast (App Active, Different Chat)
           showInAppNotification(newMessage, senderForNotify, () => {
             get().setSelectedUser(senderForNotify);
           });
         }
 
-        // Decide if we should mark as read (for optimistic update)
         if (isWindowFocused && isSenderActiveCurrentChat) {
           shouldMarkRead = true;
         }
       }
 
-      // 3. Optimistic Sidebar Update (User List)
       const senderId = newMessage.senderId === authUser._id ? newMessage.receiverId : newMessage.senderId;
       const senderIndex = users.findIndex((u) => u._id === senderId);
 
@@ -230,7 +230,6 @@ export const useChatStore = create((set, get) => ({
             senderId: newMessage.senderId,
             status: (shouldMarkRead || (isWindowFocused && isSenderActiveCurrentChat)) ? 'read' : 'delivered'
           },
-          // If we are watching the chat (Active Chat), unreadCount stays 0
           unreadCount: (shouldMarkRead || isSenderActiveCurrentChat)
             ? 0
             : (newMessage.receiverId === authUser._id ? (sender.unreadCount || 0) + 1 : sender.unreadCount)
@@ -243,21 +242,17 @@ export const useChatStore = create((set, get) => ({
         get().refreshUsers();
       }
 
-      // 4. Trigger Server Side Read Status
       const isVisible = !document.hidden;
       if (isVisible && isMessageForCurrentChat && newMessage.receiverId === authUser._id) {
         if (newMessage.senderId === currentSelectedUser?._id) {
-          console.log(`👀 MarkRead Trigger: Window Visible & Chat Active for ${currentSelectedUser.fullName}`);
           get().markMessagesAsRead(currentSelectedUser._id);
         }
       }
     });
 
-    // Handle focus/visibility to mark as read when user returns
     const handleActiveState = () => {
       const { selectedUser } = get();
       if (!document.hidden && selectedUser) {
-        console.log("👀 focus/visibility: Syncing read status for:", selectedUser.fullName);
         get().markMessagesAsRead(selectedUser._id);
       }
     };
@@ -268,7 +263,6 @@ export const useChatStore = create((set, get) => ({
       document.removeEventListener("visibilitychange", handleActiveState);
     };
 
-    // Listen for deleted messages
     socket.on("deleteMessageForAll", (updatedMessage) => {
       set({
         messages: get().messages.map((msg) =>
@@ -277,22 +271,17 @@ export const useChatStore = create((set, get) => ({
       });
     });
 
-    // Listen for message delivered event (single message)
     socket.on("messageDelivered", ({ messageId, status }) => {
-      const { messages } = get();
       set({
-        messages: messages.map((msg) =>
+        messages: get().messages.map((msg) =>
           msg._id === messageId ? { ...msg, status } : msg
         ),
       });
     });
 
-    // Listen for multiple messages delivered event
     socket.on("messagesDelivered", ({ receiverId, senderId }) => {
       const { messages } = get();
       const authUser = useAuthStore.getState().authUser;
-
-      // Update all sent messages to this receiver to "delivered"
       if (senderId === authUser._id) {
         set({
           messages: messages.map((msg) =>
@@ -306,23 +295,16 @@ export const useChatStore = create((set, get) => ({
       }
     });
 
-    // Listen for messages read event
     socket.on("messagesRead", ({ readBy, chatWith, messageIds }) => {
       const { selectedUser, messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
-
-      console.log("📨 Socket 'messagesRead' from:", readBy);
-
-      // 1. Update status of my messages when they're read
       if (selectedUser && readBy === selectedUser._id && chatWith === authUser._id) {
-        console.log("✅ Syncing Blue Ticks (Chat + Sidebar)");
         set({
           messages: messages.map((msg) =>
             msg.senderId === authUser._id && msg.status !== "read"
               ? { ...msg, status: "read" }
               : msg
           ),
-          // 2. ALSO update Sidebar (Blue Ticks in user list)
           users: users.map(user =>
             user._id === readBy
               ? { ...user, lastMessage: user.lastMessage ? { ...user.lastMessage, status: 'read' } : null }
@@ -332,14 +314,10 @@ export const useChatStore = create((set, get) => ({
       }
     });
 
-    // Listen for when user comes online
     socket.on("userOnline", ({ userId }) => {
       const authUser = useAuthStore.getState().authUser;
       const { messages, selectedUser } = get();
-
-      // If the selected user comes online, update pending messages
       if (selectedUser && userId === selectedUser._id) {
-        // Notify server to update pending messages
         const pendingMessages = messages.filter(
           msg => msg.senderId === authUser._id &&
             msg.receiverId === userId &&
@@ -354,6 +332,84 @@ export const useChatStore = create((set, get) => ({
         }
       }
     });
+
+    // === NEW EVENTS ===
+    socket.on("messageReaction", ({ messageId, reactions }) => {
+      set({
+        messages: get().messages.map(msg => msg._id === messageId ? { ...msg, reactions } : msg)
+      });
+    });
+
+    socket.on("messageUpdated", (updatedMessage) => {
+      set({
+        messages: get().messages.map(msg => msg._id === updatedMessage._id ? { ...msg, ...updatedMessage } : msg)
+      });
+    });
+
+    socket.on("messagePinned", ({ messageId, isPinned }) => {
+      set({
+        messages: get().messages.map(msg => msg._id === messageId ? { ...msg, isPinned } : msg)
+      });
+    });
+
+    socket.on("pollUpdated", ({ messageId, poll }) => {
+      set({
+        messages: get().messages.map(msg => msg._id === messageId ? { ...msg, poll } : msg)
+      });
+    });
+
+    socket.on("typing", ({ senderId }) => {
+      if (get().selectedUser?._id === senderId) {
+        set({ isTyping: true });
+
+        // Clear any existing timeout
+        if (get()._typingTimeout) {
+          clearTimeout(get()._typingTimeout);
+        }
+
+        // Auto-clear typing indicator after 2 seconds if no stopTyping event
+        const timeout = setTimeout(() => {
+          if (get().selectedUser?._id === senderId) {
+            set({ isTyping: false, _typingTimeout: null });
+          }
+        }, 2000);
+
+        set({ _typingTimeout: timeout });
+      }
+    });
+
+    socket.on("stopTyping", ({ senderId }) => {
+      if (get().selectedUser?._id === senderId) {
+        // Clear timeout if it exists
+        if (get()._typingTimeout) {
+          clearTimeout(get()._typingTimeout);
+          set({ _typingTimeout: null });
+        }
+        set({ isTyping: false });
+      }
+    });
+  },
+
+  unsubscribeFromMessages: () => {
+    const socket = useAuthStore.getState().socket;
+    if (socket) {
+      socket.off("newMessage");
+      socket.off("deleteMessageForAll");
+      socket.off("messageDelivered");
+      socket.off("messagesDelivered");
+      socket.off("messagesRead");
+      socket.off("userOnline");
+      socket.off("messageReaction");
+      socket.off("messageUpdated");
+      socket.off("messagePinned");
+      socket.off("pollUpdated");
+      socket.off("typing");
+      socket.off("stopTyping");
+    }
+    if (get()._cleanupVisibility) {
+      get()._cleanupVisibility();
+      set({ _cleanupVisibility: null });
+    }
   },
 
   deleteForAllMessage: async (messageId) => {
@@ -361,7 +417,6 @@ export const useChatStore = create((set, get) => ({
       const socket = useAuthStore.getState().socket;
       const { messages } = get();
 
-      // Optimistic update - change text immediately
       set({
         messages: messages.map((msg) =>
           msg._id === messageId
@@ -370,13 +425,10 @@ export const useChatStore = create((set, get) => ({
         ),
       });
 
-      // Emit to server
       socket?.emit("deleteMessageForAll", messageId);
-
       await axiosInstance.put(`/messages/${messageId}`);
       toast.success("Message deleted for everyone");
     } catch (error) {
-      // Revert on error
       get().getMessages(get().selectedUser?._id);
       toast.error("Delete failed");
     }
@@ -388,8 +440,6 @@ export const useChatStore = create((set, get) => ({
         receiverId,
       });
 
-      // If the message is being forwarded to the currently selected user,
-      // add it to the local messages for immediate display
       const { selectedUser, messages } = get();
       if (selectedUser._id === receiverId) {
         set({ messages: [...messages, res.data] });
@@ -406,41 +456,18 @@ export const useChatStore = create((set, get) => ({
   markMessagesAsRead: async (userId) => {
     try {
       await axiosInstance.put(`/messages/read/${userId}`);
-      // Refresh user list to update unread count and remove highlights
       get().refreshUsers();
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }
   },
 
-  unsubscribeFromMessages: () => {
-    const socket = useAuthStore.getState().socket;
-    if (socket) {
-      socket.off("newMessage");
-      socket.off("deleteMessageForAll");
-      socket.off("messageDelivered");
-      socket.off("messagesDelivered");
-      socket.off("messagesRead");
-      socket.off("userOnline");
-    }
-    // Cleanup visibility listeners
-    if (get()._cleanupVisibility) {
-      get()._cleanupVisibility();
-      set({ _cleanupVisibility: null });
-    }
-  },
-
-  // Friend Request Actions
   sendFriendRequest: async (userId, message = "") => {
     try {
       const endpoint = message ? `/friends/request-message/${userId}` : `/friends/request/${userId}`;
       const res = await axiosInstance.post(endpoint, { message });
-
       toast.success("Friend request sent");
-
-      // Refresh users to update friend status
       get().refreshUsers();
-
       return res.data;
     } catch (error) {
       toast.error(error.response?.data?.error || "Failed to send friend request");
@@ -451,13 +478,9 @@ export const useChatStore = create((set, get) => ({
   acceptFriendRequest: async (requestId) => {
     try {
       const res = await axiosInstance.put(`/friends/accept/${requestId}`);
-
       toast.success("Friend request accepted");
-
-      // Refresh friend requests and users
       get().fetchFriendRequests();
       get().refreshUsers();
-
       return res.data;
     } catch (error) {
       toast.error(error.response?.data?.error || "Failed to accept friend request");
@@ -468,12 +491,8 @@ export const useChatStore = create((set, get) => ({
   rejectFriendRequest: async (requestId) => {
     try {
       const res = await axiosInstance.put(`/friends/reject/${requestId}`);
-
       toast.success("Friend request rejected");
-
-      // Refresh friend requests
       get().fetchFriendRequests();
-
       return res.data;
     } catch (error) {
       toast.error(error.response?.data?.error || "Failed to reject friend request");
@@ -504,7 +523,6 @@ export const useChatStore = create((set, get) => ({
 
   setSelectedUser: (selectedUser) => {
     const currentUser = get().selectedUser;
-    // Clear messages when switching to a different user (prevents old messages flash)
     if (selectedUser && (!currentUser || currentUser._id !== selectedUser._id)) {
       set({ selectedUser, messages: [] });
     } else {
@@ -515,4 +533,58 @@ export const useChatStore = create((set, get) => ({
   setReplyingToMessage: (message) => set({ replyingToMessage: message }),
 
   clearReplyingToMessage: () => set({ replyingToMessage: null }),
+
+  // NEW ACTIONS
+  sendReaction: async (messageId, emoji) => {
+    try {
+      const res = await axiosInstance.post(`/messages/${messageId}/reaction`, { emoji });
+      // Optimistic local update
+      set({
+        messages: get().messages.map(msg => msg._id === messageId ? res.data : msg)
+      });
+    } catch (error) {
+      toast.error("Failed to react");
+    }
+  },
+
+  editMessage: async (messageId, text) => {
+    try {
+      const res = await axiosInstance.put(`/messages/${messageId}/edit`, { text });
+      set({ messages: get().messages.map(m => m._id === messageId ? res.data : m) });
+      toast.success("Message edited");
+    } catch (error) {
+      toast.error("Failed to edit message");
+    }
+  },
+
+  togglePinMessage: async (messageId) => {
+    try {
+      const res = await axiosInstance.post(`/messages/${messageId}/pin`);
+      set({ messages: get().messages.map(m => m._id === messageId ? res.data : m) });
+      toast.success(res.data.isPinned ? "Message pinned" : "Message unpinned");
+    } catch (error) {
+      toast.error("Failed to pin message");
+    }
+  },
+
+  votePoll: async (messageId, optionIndex) => {
+    try {
+      const res = await axiosInstance.post(`/messages/${messageId}/vote`, { optionIndex });
+      set({ messages: get().messages.map(m => m._id === messageId ? res.data : m) });
+    } catch (error) {
+      toast.error("Failed to vote");
+    }
+  },
+
+  setTyping: (isTyping) => {
+    const socket = useAuthStore.getState().socket;
+    const { selectedUser } = get();
+    if (!socket || !selectedUser) return;
+
+    if (isTyping) {
+      socket.emit("typing", { receiverId: selectedUser._id });
+    } else {
+      socket.emit("stopTyping", { receiverId: selectedUser._id });
+    }
+  }
 }));

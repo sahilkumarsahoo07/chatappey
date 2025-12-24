@@ -11,9 +11,12 @@ import { connectDB } from './lib/db.js'
 import cookieParser from "cookie-parser";
 import cors from 'cors';
 import { app, server } from './lib/socket.js'
+import setupCronJobs from './lib/cron.js';
 
 dotenv.config();
 // const app = express();
+
+setupCronJobs();
 
 
 

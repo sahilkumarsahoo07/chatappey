@@ -9,6 +9,7 @@ export const useGroupStore = create((set, get) => ({
     groupMessages: [],
     isGroupsLoading: false,
     isGroupMessagesLoading: false,
+    typingUsers: [], // Array of {userId, userName} objects for group typing
 
     // Get all groups for current user
     getGroups: async () => {
@@ -527,6 +528,43 @@ export const useGroupStore = create((set, get) => ({
                 });
             }
         });
+
+        // Poll updated in group
+        socket.on("group:pollUpdated", ({ groupId, messageId, poll }) => {
+            const { selectedGroup, groupMessages } = get();
+
+            if (selectedGroup?._id === groupId) {
+                set({
+                    groupMessages: groupMessages.map(msg =>
+                        msg._id === messageId ? { ...msg, poll } : msg
+                    )
+                });
+            }
+        });
+
+        // Group typing indicators
+        socket.on("group:typing", ({ groupId, userId, userName }) => {
+            const { selectedGroup, typingUsers } = get();
+            if (selectedGroup?._id === groupId) {
+                // Add user to typing list if not already there
+                if (!typingUsers.find(u => u.userId === userId)) {
+                    const newTypingUsers = [...typingUsers, { userId, userName }];
+                    set({ typingUsers: newTypingUsers });
+
+                    // Auto-clear after 2 seconds
+                    setTimeout(() => {
+                        set({ typingUsers: get().typingUsers.filter(u => u.userId !== userId) });
+                    }, 2000);
+                }
+            }
+        });
+
+        socket.on("group:stopTyping", ({ groupId, userId }) => {
+            const { selectedGroup } = get();
+            if (selectedGroup?._id === groupId) {
+                set({ typingUsers: get().typingUsers.filter(u => u.userId !== userId) });
+            }
+        });
     },
 
     // Unsubscribe from group socket events
@@ -542,6 +580,9 @@ export const useGroupStore = create((set, get) => ({
             socket.off("group:memberLeft");
             socket.off("group:newMessage");
             socket.off("group:messageDeleted");
+            socket.off("group:pollUpdated");
+            socket.off("group:typing");
+            socket.off("group:stopTyping");
         }
     },
 
@@ -557,5 +598,16 @@ export const useGroupStore = create((set, get) => ({
     // Clear selected group
     clearSelectedGroup: () => {
         set({ selectedGroup: null, groupMessages: [] });
+    },
+
+    // Vote on a poll option in group message
+    votePoll: async (messageId, optionIndex) => {
+        try {
+            const { selectedGroup } = get();
+            const res = await axiosInstance.post(`/groups/${selectedGroup._id}/messages/${messageId}/vote`, { optionIndex });
+            set({ groupMessages: get().groupMessages.map(m => m._id === messageId ? res.data : m) });
+        } catch (error) {
+            toast.error("Failed to vote");
+        }
     }
 }));

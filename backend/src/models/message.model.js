@@ -16,7 +16,16 @@ const messageSchema = new mongoose.Schema(
             type: String,
         },
         image: {
-            type: String,
+            type: String, // Image URL
+        },
+        audio: {
+            type: String, // Audio URL
+        },
+        file: {
+            type: String, // File URL
+        },
+        fileName: {
+            type: String, // Original filename with extension
         },
         deletedFor: {
             type: [mongoose.Schema.Types.ObjectId],
@@ -36,7 +45,7 @@ const messageSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ["sent", "delivered", "read"],
+            enum: ["sent", "delivered", "read", "scheduled"],
             default: "sent"
         },
         replyTo: {
@@ -52,6 +61,39 @@ const messageSchema = new mongoose.Schema(
                 ref: "User"
             },
             senderName: String
+        },
+        // NEW FEATURES
+        reactions: [
+            {
+                userId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User"
+                },
+                emoji: {
+                    type: String,
+                    required: true
+                }
+            }
+        ],
+        isEdited: {
+            type: Boolean,
+            default: false
+        },
+        isPinned: {
+            type: Boolean,
+            default: false
+        },
+        poll: {
+            question: String,
+            options: [
+                {
+                    text: String,
+                    votes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }]
+                }
+            ]
+        },
+        scheduledFor: {
+            type: Date
         }
     },
     { timestamps: true }

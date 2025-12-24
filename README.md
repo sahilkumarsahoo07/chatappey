@@ -23,44 +23,45 @@
 | Feature | Description |
 |---------|-------------|
 | 💬 **Real-time Messaging** | Instant message delivery with Socket.io |
-| 👥 **Group Chats** | Create and manage group conversations |
-| 📞 **Voice & Video Calls** | Integrated calling with ZEGOCLOUD SDK |
-| 🔔 **Push Notifications** | Browser notifications for new messages |
-| 🌙 **Dark Theme UI** | Modern, eye-friendly dark interface with DaisyUI themes |
-| 🖼️ **Media Sharing** | Share images and GIFs in conversations |
-| 😊 **Emoji Support** | Rich emoji picker for expressive messaging |
+| 👥 **Group Chats** | Create, manage, and participate in group conversations with roles |
+| 📞 **Voice & Video Calls** | Integrated high-quality calling with ZEGOCLOUD SDK |
+| 🕒 **Scheduled Messages** | Plan your messages to be sent at a specific future time |
+| 🎭 **Message Reactions** | Express yourself with emoji reactions on any message |
+| 📌 **Message Pinning** | Pin important messages in individual or group chats for quick access |
+| 📊 **Interactive Polls** | Create and vote on polls within your conversations |
+| ✏️ **Message Editing** | Correct mistakes or update info in sent messages |
+| ↪️ **Message Forwarding** | Seamlessly share messages across different chats |
 | ✅ **Message Status** | WhatsApp-style tick indicators (sent, delivered, read) |
-| 👤 **User Profiles** | Customizable user profiles with avatars |
-| 🔒 **User Privacy** | Block users and control who sees your online status |
-| 📱 **Friend Requests** | Send, accept, or decline friend requests |
-| 🔐 **Secure Authentication** | JWT-based authentication with OTP verification |
+| 🔒 **Advanced Privacy** | Block users, manage "Last Seen", and control profile visibility |
+| 📱 **Friend Requests** | Robust system to manage connections and contacts |
+| 🔐 **Secure Auth** | JWT-based authentication with OTP verification & Password Reset |
+| 🌙 **Dark Theme UI** | Premium, theme-aware interface built with DaisyUI |
+| 🖼️ **Media Sharing** | Share images, GIFs, and more in real-time |
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React 19** - UI Library
-- **Vite** - Build Tool & Dev Server
-- **TailwindCSS 4** - Utility-first CSS Framework
-- **DaisyUI** - Component Library for Tailwind
-- **Zustand** - State Management
+- **React 19** - Modern UI Library
+- **Vite** - Lightning-fast Build Tool
+- **TailwindCSS 4** - Modern Utility-first CSS
+- **DaisyUI** - Premium Component Library
+- **Zustand** - Light-weight State Management
 - **Socket.io Client** - Real-time Communication
-- **React Router DOM** - Client-side Routing
-- **Material UI Icons** - Icon Library
-- **Axios** - HTTP Client
-- **ZEGOCLOUD SDK** - Voice/Video Calling
+- **React Router DOM** - Declarative Routing
+- **ZEGOCLOUD SDK** - Real-time Voice & Video
+- **Lucide React / MUI Icons** - Rich Icon Sets
 
 ### Backend
-- **Node.js** - Runtime Environment
-- **Express 5** - Web Framework
-- **MongoDB** - NoSQL Database
-- **Mongoose** - ODM for MongoDB
-- **Socket.io** - Real-time Events
-- **JWT** - Authentication Tokens
-- **bcryptjs** - Password Hashing
-- **Cloudinary** - Image Storage
-- **Nodemailer/Resend** - Email Services
+- **Node.js** - JavaScript Runtime
+- **Express 5** - Scalable Web Framework
+- **MongoDB & Mongoose** - NoSQL Database & ODM
+- **Socket.io** - WebSockets for Real-time Events
+- **Node-Cron** - Task Scheduling for Messages
+- **JWT & bcryptjs** - Secure Authentication & Hashing
+- **Cloudinary** - Cloud-based Media Management
+- **Nodemailer / Resend** - Reliable Email Services
 
 ---
 
@@ -70,51 +71,20 @@
 chatappey/
 ├── backend/
 │   └── src/
-│       ├── controllers/       # Route handlers
-│       │   ├── auth.controllers.js
-│       │   ├── message.controllers.js
-│       │   ├── group.controllers.js
-│       │   ├── call.controllers.js
-│       │   ├── friendRequest.controllers.js
-│       │   └── notification.controllers.js
-│       ├── models/            # MongoDB schemas
-│       │   ├── user.model.js
-│       │   ├── message.model.js
-│       │   ├── group.model.js
-│       │   ├── groupMessage.model.js
-│       │   ├── call.model.js
-│       │   ├── friendRequest.model.js
-│       │   └── notification.model.js
-│       ├── routes/            # API routes
-│       ├── middleware/        # Auth middleware
-│       ├── lib/              # Utilities (db, socket, cloudinary)
-│       └── index.js          # Entry point
+│       ├── controllers/       # Route handlers & logic
+│       ├── models/            # Database schemas (User, Message, Group, etc.)
+│       ├── routes/            # API endpoints (Auth, Messages, Groups, etc.)
+│       ├── middleware/        # Security & Auth middleware
+│       ├── lib/              # Core utilities (db, socket, cloudinary, cron)
+│       └── index.js          # Server entry point
 │
 ├── frontend/
 │   └── src/
-│       ├── components/        # Reusable UI components
-│       │   ├── ChatContainer.jsx
-│       │   ├── ChatHeader.jsx
-│       │   ├── Sidebar.jsx
-│       │   ├── MessageInput.jsx
-│       │   ├── GroupChatContainer.jsx
-│       │   ├── CallWindow.jsx
-│       │   └── ...more
-│       ├── pages/             # Route pages
-│       │   ├── HomePage.jsx
-│       │   ├── LoginPage.jsx
-│       │   ├── SignUpPage.jsx
-│       │   ├── ProfilePage.jsx
-│       │   ├── SettingsPage.jsx
-│       │   └── ...more
-│       ├── store/             # Zustand stores
-│       │   ├── useAuthStore.js
-│       │   ├── useChatStore.js
-│       │   ├── useGroupStore.js
-│       │   ├── useCallStore.js
-│       │   └── ...more
-│       ├── lib/              # Utilities
-│       └── App.jsx           # Main app component
+│       ├── components/        # UI components (Sidebar, Chat, Modals, etc.)
+│       ├── pages/             # App views (Home, Profile, LoginHelp, Legal, etc.)
+│       ├── store/             # Zustand global state (Auth, Chat, Groups, etc.)
+│       ├── lib/              # API clients & helper functions
+│       └── App.jsx           # Root component & Routing
 │
 └── README.md
 ```
@@ -126,9 +96,10 @@ chatappey/
 ### Prerequisites
 
 - Node.js (v18 or higher)
-- MongoDB Database
-- Cloudinary Account
-- ZEGOCLOUD Account (for voice/video calls)
+- MongoDB Database (Atlas or Local)
+- Cloudinary Account (for media)
+- ZEGOCLOUD Account (for calling)
+- Email Service API Key (Resend or Gmail SMTP)
 
 ### Installation
 
@@ -152,20 +123,16 @@ chatappey/
 
 4. **Environment Variables**
    
-   Create a `.env` file in the `backend` folder with the required environment variables. See [Environment Variables](#-environment-variables) section below.
+   Create a `.env` file in the `backend` folder. See [Environment Variables](#-environment-variables) for details.
 
 5. **Run the Application**
 
-   **Backend:**
+   **Development mode:**
    ```bash
-   cd backend
-   npm run dev
-   ```
-
-   **Frontend:**
-   ```bash
-   cd frontend
-   npm run dev
+   # From the root directory (using concurrent execution if configured)
+   # Or individually:
+   cd backend && npm run dev
+   cd frontend && npm run dev
    ```
 
 6. **Open in Browser**
@@ -180,7 +147,8 @@ Create a `.env` file in the `backend` directory with the following variables:
 
 ```env
 # Server Configuration
-PORT=your_port_number
+PORT=5001
+NODE_ENV=development
 
 # Database
 MONGODB_URI=your_mongodb_connection_string
@@ -193,24 +161,24 @@ CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 
-# Email Service (for OTP)
+# Email Service (OTP & Resets)
+RESEND_API_KEY=your_resend_api_key
+# OR
 EMAIL_USER=your_email_address
 EMAIL_PASS=your_email_password
-# OR
-RESEND_API_KEY=your_resend_api_key
 
 # ZEGOCLOUD (Voice/Video Calls)
 ZEGO_APP_ID=your_zego_app_id
 ZEGO_SERVER_SECRET=your_zego_server_secret
 ```
 
-> ⚠️ **Important:** Never commit your `.env` file to version control. Keep your credentials safe!
+> ⚠️ **Important:** Never commit your `.env` file to version control.
 
 ---
 
 ## 🌐 Deployment
 
-The application is deployed on:
+The application is optimized for deployment on modern platforms:
 
 - **Frontend:** [Netlify](https://chatappey.netlify.app)
 - **Backend:** [Render](https://chatappey.onrender.com)
@@ -219,7 +187,7 @@ The application is deployed on:
 
 ## 📸 Screenshots
 
-*Coming soon...*
+*The UI features a premium, responsive design with full dark mode support.*
 
 ---
 
@@ -227,13 +195,11 @@ The application is deployed on:
 
 This is a **proprietary project**. Contributions are **not accepted** at this time.
 
-If you find bugs or have suggestions, please open an issue but do not submit pull requests.
-
 ---
 
 ## ⚠️ Disclaimer
 
-This project is for educational and personal use only. The developer is not responsible for any misuse of this application.
+This project is for educational and personal use only. The developer is not responsible for any misuse.
 
 ---
 
@@ -257,18 +223,11 @@ STRICTLY PROHIBITED:
 ✗ Reverse engineering or decompiling the software
 ✗ Using the code in any other project without explicit written permission
 
-PERMITTED USE:
-━━━━━━━━━━━━━━
-✓ Viewing the code for personal educational reference only
-
 LEGAL NOTICE:
 ━━━━━━━━━━━━━
 Unauthorized use, reproduction, or distribution of this software, or any 
 portion of it, may result in severe civil and criminal penalties, and will 
 be prosecuted to the maximum extent possible under the law.
-
-For licensing inquiries or permission requests, contact:
-GitHub: https://github.com/sahilkumarsahoo07
 ```
 
 ---

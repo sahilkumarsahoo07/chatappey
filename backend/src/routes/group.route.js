@@ -16,7 +16,8 @@ import {
     deleteGroupMessageForMe,
     updateMemberRole,
     pinMessage,
-    unpinMessage
+    unpinMessage,
+    voteGroupPoll
 } from "../controllers/group.controllers.js";
 
 const router = express.Router();
@@ -42,6 +43,7 @@ router.post("/:groupId/messages", protectRoute, sendGroupMessage);
 router.put("/:groupId/messages/read", protectRoute, markGroupMessagesAsRead);
 router.delete("/:groupId/messages/:messageId/all", protectRoute, deleteGroupMessageForAll);
 router.delete("/:groupId/messages/:messageId/me", protectRoute, deleteGroupMessageForMe);
+router.post("/:groupId/messages/:messageId/vote", protectRoute, voteGroupPoll);
 
 export default router;
 

@@ -503,7 +503,7 @@ export const getGroupMessages = async (req, res) => {
 export const sendGroupMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { text, image, isForwarded, mentions } = req.body;
+        const { text, image, isForwarded, mentions, poll } = req.body;
         const senderId = req.user._id;
 
         const group = await Group.findById(groupId);
@@ -546,14 +546,15 @@ export const sendGroupMessage = async (req, res) => {
             image: imageUrl,
             readBy: [senderId],
             isForwarded: isForwarded || false,
-            mentions: validMentions
+            mentions: validMentions,
+            poll: poll || undefined
         });
 
         await newMessage.save();
 
         // Update group's lastMessage
         group.lastMessage = {
-            text: text || (imageUrl ? "📷 Photo" : ""),
+            text: text || (imageUrl ? "📷 Photo" : poll ? "📊 Poll" : ""),
             senderId,
             senderName: sender.fullName,
             createdAt: newMessage.createdAt
@@ -857,6 +858,55 @@ export const unpinMessage = async (req, res) => {
         res.status(200).json(updatedGroup);
     } catch (error) {
         console.error("Error in unpinMessage:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Vote on a poll in group message
+export const voteGroupPoll = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const { optionIndex } = req.body;
+        const userId = req.user._id;
+
+        const group = await Group.findById(groupId);
+        if (!group) return res.status(404).json({ error: "Group not found" });
+
+        // Check if user is a member
+        const isMember = group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString());
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this group" });
+
+        const message = await GroupMessage.findById(messageId);
+        if (!message || !message.poll) return res.status(404).json({ error: "Poll not found" });
+
+        // Remove previous votes by this user
+        message.poll.options.forEach(opt => {
+            opt.votes = opt.votes.filter(id => id.toString() !== userId.toString());
+        });
+
+        // Add new vote
+        if (optionIndex !== undefined && optionIndex >= 0 && optionIndex < message.poll.options.length) {
+            message.poll.options[optionIndex].votes.push(userId);
+        }
+
+        await message.save();
+
+        // Broadcast poll update to all group members
+        group.members.forEach(member => {
+            const memberId = member.user || member;
+            const socketId = getReceiverSocketId(memberId.toString());
+            if (socketId) {
+                io.to(socketId).emit("group:pollUpdated", {
+                    groupId,
+                    messageId,
+                    poll: message.poll
+                });
+            }
+        });
+
+        res.status(200).json(message);
+    } catch (error) {
+        console.error("Error in voteGroupPoll:", error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 };

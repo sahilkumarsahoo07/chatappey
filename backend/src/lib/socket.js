@@ -96,12 +96,22 @@ const userSocketMap = {}; // { userId: socketId }
 const activeCallsMap = {}; // { roomID: { caller, receiver, callType, startTime } }
 
 io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
-
   const userId = socket.handshake.query.userId;
   if (userId) {
     userSocketMap[userId] = socket.id;
-    console.log(`User ID ${userId} mapped to socket ${socket.id}`);
+
+    // Join user's groups for room-based communication
+    (async () => {
+      try {
+        const Group = (await import("../models/group.model.js")).default;
+        const userGroups = await Group.find({ 'members.user': userId }).select('_id');
+        userGroups.forEach(group => {
+          socket.join(group._id.toString());
+        });
+      } catch (error) {
+        console.error("Error joining group rooms:", error);
+      }
+    })();
 
     // Notify the user that they're online (for updating pending messages to delivered)
     socket.emit("userOnline", { userId });
@@ -136,30 +146,60 @@ io.on("connection", (socket) => {
   });
 
   socket.on("blocked", (data) => {
-    console.log(`User blocked: ${data.blockerId} blocked ${data.blockedId}`);
     io.to(getReceiverSocketId(data.blockerId)).emit("user-blocked", data);
     io.to(getReceiverSocketId(data.blockedId)).emit("user-blocked", data);
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
 
   socket.on("unblocked", (data) => {
-    console.log(`User unblocked: ${data.unblockedId} by ${data.unblockerId}`);
     io.to(getReceiverSocketId(data.unblockerId)).emit("unblocked", data);
     io.to(getReceiverSocketId(data.unblockedId)).emit("unblocked", data);
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
 
+  // Typing indicators
+  socket.on("typing", (data) => {
+    const receiverSocketId = getReceiverSocketId(data.receiverId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("typing", { senderId: userId });
+    }
+  });
+
+  socket.on("stopTyping", (data) => {
+    const receiverSocketId = getReceiverSocketId(data.receiverId);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("stopTyping", { senderId: userId });
+    }
+  });
+
+  // Group typing events
+  socket.on("group:typing", async ({ groupId }) => {
+    try {
+      const User = (await import("../models/user.model.js")).default;
+      const user = await User.findById(userId).select('fullName');
+
+      // Broadcast to all group members except sender
+      socket.to(groupId).emit("group:typing", {
+        groupId,
+        userId,
+        userName: user?.fullName || "User"
+      });
+    } catch (error) {
+      console.error("Error in group:typing:", error);
+    }
+  });
+
+  socket.on("group:stopTyping", ({ groupId }) => {
+    // Broadcast to all group members except sender
+    socket.to(groupId).emit("group:stopTyping", {
+      groupId,
+      userId
+    });
+  });
+
   // Call signaling events
   socket.on("call:initiate", async ({ to, from, fromData, callType, roomID }) => {
-    console.log('=== CALL:INITIATE RECEIVED ON SERVER ===');
-    console.log(`From: ${fromData?.fullName} (${from})`);
-    console.log(`To: ${to}`);
-    console.log(`Call Type: ${callType}`);
-    console.log(`Room ID: ${roomID}`);
-
     const receiverSocketId = getReceiverSocketId(to);
-    console.log(`Receiver socket ID: ${receiverSocketId}`);
-    console.log(`Receiver online: ${receiverSocketId ? 'YES' : 'NO'}`);
 
     // Save initial call record
     try {
@@ -171,7 +211,6 @@ io.on("connection", (socket) => {
         roomID,
         duration: 0,
       });
-      console.log('✅ Call record created in database');
 
       // Track active call
       activeCallsMap[roomID] = {
@@ -185,22 +224,16 @@ io.on("connection", (socket) => {
     }
 
     if (receiverSocketId) {
-      console.log(`✅ Emitting call:incoming to receiver socket ${receiverSocketId}`);
       io.to(receiverSocketId).emit("call:incoming", {
         from,
         fromData,
         callType,
         roomID
       });
-      console.log('✅ call:incoming event emitted successfully');
-    } else {
-      console.log('❌ Receiver is not online or not connected');
     }
   });
 
   socket.on("call:answer", async ({ to, roomID }) => {
-    console.log(`Call answered to ${to}, room: ${roomID}`);
-
     // Update call record with startTime and status
     try {
       const call = await Call.findOne({ roomID });
@@ -208,7 +241,6 @@ io.on("connection", (socket) => {
         call.status = "completed";
         call.startTime = new Date();
         await call.save();
-        console.log('✅ Call record updated with startTime');
       }
     } catch (error) {
       console.error('❌ Error updating call record:', error);
@@ -221,15 +253,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call:reject", async ({ to, roomID }) => {
-    console.log(`Call rejected to ${to}`);
-
     // Update call record status to rejected
     try {
       const call = await Call.findOne({ roomID });
       if (call) {
         call.status = "rejected";
         await call.save();
-        console.log('✅ Call record updated to rejected');
       }
 
       // Remove from active calls
@@ -245,8 +274,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call:end", async ({ to, roomID, duration }) => {
-    console.log(`Call ended to ${to}, duration: ${duration}`);
-
     // Update call record with endTime and duration
     try {
       const call = await Call.findOne({ roomID });
@@ -266,7 +293,6 @@ io.on("connection", (socket) => {
         }
 
         await call.save();
-        console.log('✅ Call record updated with endTime and duration');
       }
 
       // Remove from active calls
@@ -284,7 +310,6 @@ io.on("connection", (socket) => {
 
 
   socket.on("disconnect", async () => {
-    console.log("A user disconnected:", socket.id);
     if (userId && userSocketMap[userId] === socket.id) {
       delete userSocketMap[userId];
 
@@ -296,7 +321,6 @@ io.on("connection", (socket) => {
 
         // Emit the user-logged-out event so other clients update their UI
         io.emit("user-logged-out", { userId, lastLogout: logoutTime });
-        console.log(`Updated lastLogout for user ${userId}`);
       } catch (error) {
         console.error("Error updating lastLogout on disconnect:", error);
       }

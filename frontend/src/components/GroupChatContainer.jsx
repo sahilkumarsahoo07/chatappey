@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -24,7 +24,9 @@ const GroupChatContainer = () => {
         deleteGroupMessageForMe,
         pinMessage,
         unpinMessage,
-        groups
+        groups,
+        votePoll,
+        typingUsers
     } = useGroupStore();
     const { users, setSelectedUser } = useChatStore();
     const { authUser } = useAuthStore();
@@ -57,12 +59,18 @@ const GroupChatContainer = () => {
         }
     }, [selectedGroup?._id, getGroupMessages]);
 
-    // Auto scroll to bottom
-    useEffect(() => {
-        if (isAtBottom && messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    // Auto scroll to bottom - always scroll like regular chat
+    const scrollToBottom = () => {
+        if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    }, [groupMessages, isAtBottom]);
+    };
+
+    useLayoutEffect(() => {
+        if (containerRef.current && groupMessages) {
+            scrollToBottom();
+        }
+    }, [groupMessages]);
 
     const handleScroll = (e) => {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
@@ -314,19 +322,36 @@ const GroupChatContainer = () => {
                                                                 className="rounded-lg mb-2 max-w-xs"
                                                             />
                                                         )}
+                                                        {/* Poll support */}
+                                                        {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
+                                                            <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
+                                                                <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
+                                                                <div className="space-y-2">
+                                                                    {message.poll.options.map((opt, i) => {
+                                                                        const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
+                                                                        const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
+                                                                        const isVoted = opt.votes?.includes(authUser._id) || false;
+                                                                        return (
+                                                                            <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
+                                                                                <div className="flex justify-between text-xs mb-1 font-medium">
+                                                                                    <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
+                                                                                    <span>{percent}%</span>
+                                                                                </div>
+                                                                                <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
+                                                                                    <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                                <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
+                                                            </div>
+                                                        )}
                                                         {message.text && (
                                                             <p className="whitespace-pre-wrap break-words">
                                                                 {renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
                                                             </p>
                                                         )}
-                                                        <p
-                                                            className={`text-xs mt-1 ${isMyMessage
-                                                                ? "text-primary-content/70"
-                                                                : "text-base-content/50"
-                                                                }`}
-                                                        >
-                                                            {formatMessageTime(message.createdAt)}
-                                                        </p>
                                                     </div>
 
                                                     {/* 3-dot menu button - desktop only */}
@@ -549,6 +574,28 @@ const GroupChatContainer = () => {
                                 );
                             })
                         )}
+
+                        {/* Typing Indicator */}
+                        {typingUsers.length > 0 && (
+                            <div className="chat chat-start mb-2 px-2">
+                                <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
+                                    <div className="flex gap-1">
+                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                                    </div>
+                                    <span className="text-xs opacity-70">
+                                        {typingUsers.length === 1
+                                            ? `${typingUsers[0].userName} is typing...`
+                                            : typingUsers.length === 2
+                                                ? `${typingUsers[0].userName} and ${typingUsers[1].userName} are typing...`
+                                                : `${typingUsers.length} people are typing...`
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
                         <div ref={messagesEndRef} />
                     </>
                 )}

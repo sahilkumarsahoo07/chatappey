@@ -23,6 +23,12 @@ const groupMessageSchema = new mongoose.Schema(
         image: {
             type: String
         },
+        audio: {
+            type: String // Audio URL
+        },
+        file: {
+            type: String // File URL
+        },
         readBy: [
             {
                 type: mongoose.Schema.Types.ObjectId,
@@ -44,7 +50,40 @@ const groupMessageSchema = new mongoose.Schema(
                 type: mongoose.Schema.Types.ObjectId,
                 ref: "User"
             }
-        ]
+        ],
+        // NEW FEATURES
+        reactions: [
+            {
+                userId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User"
+                },
+                emoji: {
+                    type: String,
+                    required: true
+                }
+            }
+        ],
+        isEdited: {
+            type: Boolean,
+            default: false
+        },
+        isPinned: {
+            type: Boolean,
+            default: false
+        },
+        poll: {
+            question: String,
+            options: [
+                {
+                    text: String,
+                    votes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }]
+                }
+            ]
+        },
+        scheduledFor: {
+            type: Date
+        }
     },
     { timestamps: true }
 );
