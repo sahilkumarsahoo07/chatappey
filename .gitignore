@@ -6,9 +6,9 @@ backend/node_modules/
 frontend/node_modules/
 
 # Environment variables
-# .env (Uncommented as requested by user)
-# backend/.env
-# frontend/.env
+.env
+backend/.env
+frontend/.env
 *.local
 
 # Build outputs
