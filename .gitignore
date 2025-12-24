@@ -1,0 +1,35 @@
+# Root .gitignore for ChatAppey
+
+# Node modules
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment variables
+.env
+backend/.env
+frontend/.env
+*.local
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor files
+.vscode/
+.idea/
+*.suo
+*.sln
+*.sw?
+.DS_Store
+
+# OS related
+Thumbs.db
+db.json
