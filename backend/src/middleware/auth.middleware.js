@@ -61,6 +61,12 @@ export const protectRoute = async (req, res, next) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Verify token version for global logout
+    const tokenVersion = decoded.tokenVersion !== undefined ? decoded.tokenVersion : 0;
+    if (tokenVersion !== user.tokenVersion) {
+      return res.status(401).json({ message: "Unauthorized - Session Expired" });
+    }
+
     req.user = user;
     next();
   } catch (error) {

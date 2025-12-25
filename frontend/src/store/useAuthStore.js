@@ -19,8 +19,15 @@ export const useAuthStore = create((set, get) => ({
     isLoggingIn: false,
     isUpdatingProfile: false,
     isCheckingAuth: true,
+    isVerifyingOTP: false,
     onlineUsers: [],
     socket: null,
+
+    // Admin State
+    adminStats: null,
+    adminUsers: [],
+    adminMessages: [],
+    isAdminLoading: false,
 
     checkAuth: async () => {
         try {
@@ -53,6 +60,59 @@ export const useAuthStore = create((set, get) => ({
             toast.error(error.response.data.message);
         } finally {
             set({ isSigningUp: false });
+        }
+    },
+
+    signupOTP: async (data) => {
+        set({ isSigningUp: true });
+        try {
+            const res = await axiosInstance.post("/auth/signup-otp", data);
+            toast.success(res.data.message || "OTP sent to your email");
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Something went wrong");
+            return false;
+        } finally {
+            set({ isSigningUp: false });
+        }
+    },
+
+    verifySignup: async (data) => {
+        set({ isVerifyingOTP: true });
+        try {
+            const res = await axiosInstance.post("/auth/verify-signup", data);
+            set({ authUser: res.data });
+
+            if (res.data.token) {
+                localStorage.setItem("token", res.data.token);
+            }
+
+            toast.success("Account verified successfully");
+            get().connectSocket();
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Invalid OTP");
+            return false;
+        } finally {
+            set({ isVerifyingOTP: false });
+        }
+    },
+
+    loginWithGoogle: () => {
+        const frontendUrl = window.location.origin;
+        const backendUrl = import.meta.env.MODE === "development" ? "http://localhost:5001" : "https://chatappey.onrender.com";
+        window.location.href = `${backendUrl}/api/auth/google`;
+    },
+
+    setAuthUserFromToken: async (token) => {
+        set({ isCheckingAuth: true });
+        try {
+            localStorage.setItem("token", token);
+            await get().checkAuth();
+        } catch (error) {
+            console.log("Error in setAuthUserFromToken:", error);
+        } finally {
+            set({ isCheckingAuth: false });
         }
     },
 
@@ -92,6 +152,21 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
+    logoutGlobal: async () => {
+        try {
+            await axiosInstance.post("/auth/logout-global");
+            set({ authUser: null });
+
+            // Remove token from localStorage
+            localStorage.removeItem("token");
+
+            toast.success("Logged out from all devices");
+            get().disconnectSocket();
+        } catch (error) {
+            toast.error(error.response.data.message);
+        }
+    },
+
     updateProfile: async (data) => {
         set({ isUpdatingProfile: true });
         try {
@@ -125,6 +200,43 @@ export const useAuthStore = create((set, get) => ({
         } catch (error) {
             console.log("Error updating name:", error);
             toast.error(error.response?.data?.message || "Failed to update name");
+        }
+    },
+
+    changePassword: async (passwordData) => {
+        try {
+            const res = await axiosInstance.put("/auth/change-password", passwordData);
+            toast.success(res.data.message || "Password updated successfully");
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to update password");
+            return false;
+        }
+    },
+
+    updatePrivacySettings: async (privacyData) => {
+        try {
+            const res = await axiosInstance.put("/auth/update-privacy", privacyData);
+            set({ authUser: res.data });
+            toast.success("Privacy settings updated");
+        } catch (error) {
+            console.error("Error updating privacy settings:", error);
+            toast.error(error.response?.data?.message || "Failed to update privacy settings");
+        }
+    },
+
+    updateAppearanceSettings: async (appearanceData) => {
+        console.log("🎨 updateAppearanceSettings called with:", appearanceData);
+        try {
+            console.log("📡 Sending PUT request to /auth/update-appearance");
+            const res = await axiosInstance.put("/auth/update-appearance", appearanceData);
+            console.log("✅ Response received:", res.data);
+            set({ authUser: res.data });
+            toast.success("Appearance updated");
+        } catch (error) {
+            console.error("❌ Error updating appearance:", error);
+            console.error("Error details:", error.response?.data);
+            toast.error(error.response?.data?.message || "Failed to update appearance");
         }
     },
 
@@ -382,12 +494,20 @@ export const useAuthStore = create((set, get) => ({
                         user._id === userId ? { ...user, lastLogout } : user
                     ),
                 }));
+                set((state) => ({
+                    onlineUsers: state.onlineUsers.filter((id) => id !== userId),
+                }));
             });
+        });
 
-            // Update online users - remove the user who logged out
-            set((state) => ({
-                onlineUsers: state.onlineUsers.filter((id) => id !== userId),
-            }));
+        socket.on("global-logout", ({ userId }) => {
+            const currentUserId = get().authUser?._id;
+            if (currentUserId === userId) {
+                set({ authUser: null });
+                localStorage.removeItem("token");
+                get().disconnectSocket();
+                // toast.error("Security: All sessions invalidated. Please re-login.", { id: "global-logout-toast" });
+            }
         });
 
         // Global notification listener for when no chat is selected
@@ -508,5 +628,128 @@ export const useAuthStore = create((set, get) => ({
     },
     disconnectSocket: () => {
         if (get().socket?.connected) get().socket.disconnect();
+    },
+
+    // Admin Actions
+    fetchAdminStats: async () => {
+        try {
+            const res = await axiosInstance.get("/admin/stats");
+            set({ adminStats: res.data });
+        } catch (error) {
+            console.error("Error in fetchAdminStats:", error);
+        }
+    },
+
+    fetchAdminUsers: async () => {
+        set({ isAdminLoading: true });
+        try {
+            const res = await axiosInstance.get("/users", { baseURL: `${BASE_URL}/api/admin` }); // Testing if /admin/users works better
+            // Wait, let's use the full relative path
+            const res2 = await axiosInstance.get("/admin/users");
+            set({ adminUsers: res2.data });
+        } catch (error) {
+            console.error("Error in fetchAdminUsers:", error);
+        } finally {
+            set({ isAdminLoading: false });
+        }
+    },
+
+    fetchAdminMessages: async () => {
+        set({ isAdminLoading: true });
+        try {
+            const res = await axiosInstance.get("/admin/messages");
+            set({ adminMessages: res.data });
+        } catch (error) {
+            console.error("Error in fetchAdminMessages:", error);
+        } finally {
+            set({ isAdminLoading: false });
+        }
+    },
+
+    updateUserStatus: async (userId, statusData) => {
+        try {
+            const res = await axiosInstance.put(`/admin/users/${userId}/status`, statusData);
+            toast.success("User status updated");
+            get().fetchAdminUsers(); // Refresh list
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to update status");
+            return false;
+        }
+    },
+
+    adminUpdatePassword: async (userId, newPassword) => {
+        try {
+            const res = await axiosInstance.put(`/admin/users/${userId}/password`, { newPassword });
+            toast.success("Password updated by admin");
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to update password");
+            return false;
+        }
+    },
+
+    promoteUserToAdmin: async (userId) => {
+        try {
+            const res = await axiosInstance.put(`/admin/users/${userId}/promote`);
+            toast.success("User promoted to Admin");
+            get().fetchAdminUsers();
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Promotion failed");
+            return false;
+        }
+    },
+
+    selectiveDeleteUserContent: async (userId, deleteFlags) => {
+        try {
+            const res = await axiosInstance.post(`/admin/users/${userId}/selective-delete`, deleteFlags);
+            toast.success("Selective deletion successful");
+            get().fetchAdminUsers();
+            get().fetchAdminStats();
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Selective deletion failed");
+            return false;
+        }
+    },
+
+    deleteUserByAdmin: async (userId) => {
+        try {
+            const res = await axiosInstance.delete(`/admin/users/${userId}`);
+            toast.success("User and data deleted permanently");
+            get().fetchAdminUsers(); // Refresh list
+            get().fetchAdminStats(); // Refresh stats
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Deletion failed");
+            return false;
+        }
+    },
+
+    nuclearWipe: async () => {
+        try {
+            const res = await axiosInstance.delete("/admin/nuclear-wipe");
+            toast.success("Nuclear wipe successful");
+            get().fetchAdminStats();
+            get().fetchAdminUsers();
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Nuclear wipe failed");
+            return false;
+        }
+    },
+
+    deleteMessageByAdmin: async (messageId) => {
+        try {
+            const res = await axiosInstance.delete(`/admin/messages/${messageId}`);
+            toast.success("Message deleted successfully");
+            get().fetchAdminMessages();
+            get().fetchAdminStats();
+            return true;
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to delete message");
+            return false;
+        }
     },
 }));

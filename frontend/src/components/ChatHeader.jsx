@@ -78,7 +78,7 @@ const ChatHeader = () => {
             })} at ${formatTime(lastSeen)}`;
         }
 
-        return "Last seen recently";
+        return "Offline";
     };
 
     useEffect(() => {

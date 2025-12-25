@@ -76,6 +76,37 @@ export const getUsersForSidebar = async (req, res) => {
                 // Check if we are friends
                 const isFriend = myFriends.includes(user._id.toString());
 
+                // Check last seen privacy
+                const targetUser = await User.findById(user._id).select('privacyLastSeen privacyProfilePic privacyAbout');
+                const privacyLastSeen = targetUser?.privacyLastSeen || "everyone";
+                const privacyProfilePic = targetUser?.privacyProfilePic || "everyone";
+                const privacyAbout = targetUser?.privacyAbout || "everyone";
+
+                let showLastSeen = true;
+                let showProfilePic = true;
+                let showAbout = true;
+
+                // Check last seen privacy
+                if (privacyLastSeen === "none") {
+                    showLastSeen = false;
+                } else if (privacyLastSeen === "contacts") {
+                    showLastSeen = isFriend;
+                }
+
+                // Check profile pic privacy
+                if (privacyProfilePic === "none") {
+                    showProfilePic = false;
+                } else if (privacyProfilePic === "contacts") {
+                    showProfilePic = isFriend;
+                }
+
+                // Check about privacy
+                if (privacyAbout === "none") {
+                    showAbout = false;
+                } else if (privacyAbout === "contacts") {
+                    showAbout = isFriend;
+                }
+
                 // Check for pending friend request
                 const pendingRequest = await FriendRequest.findOne({
                     $or: [
@@ -86,6 +117,9 @@ export const getUsersForSidebar = async (req, res) => {
 
                 return {
                     ...user.toObject(),
+                    profilePic: showProfilePic ? user.profilePic : null,
+                    about: showAbout ? user.about : null,
+                    lastLogout: showLastSeen ? user.lastLogout : null,
                     lastMessage: lastMessage || null,
                     isBlockedByMe,
                     hasBlockedMe,
@@ -392,9 +426,9 @@ export const markMessagesAsRead = async (req, res) => {
             }
         );
 
-        // Notify sender via socket that messages were read
+        // Notify sender via socket that messages were read (if privacy allows)
         const senderSocketId = getReceiverSocketId(otherUserId);
-        if (senderSocketId && messagesToUpdate.length > 0) {
+        if (senderSocketId && messagesToUpdate.length > 0 && req.user.privacyReadReceipts !== false) {
             io.to(senderSocketId).emit("messagesRead", {
                 readBy: myId,
                 chatWith: otherUserId,

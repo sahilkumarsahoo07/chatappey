@@ -51,14 +51,22 @@ const Sidebar = () => {
             refreshUsers();
         };
 
+        const handlePrivacyUpdate = (data) => {
+            // Refresh user list when someone changes their privacy settings
+            console.log("Privacy settings updated for user:", data.userId);
+            refreshUsers();
+        };
+
         socket.on("newMessage", handleNewMessage);
         socket.on("newUserSignup", handleNewUserSignup);
         socket.on("userListUpdate", handleUserListUpdate);
+        socket.on("privacy-settings-updated", handlePrivacyUpdate);
 
         return () => {
             socket.off("newMessage", handleNewMessage);
             socket.off("newUserSignup", handleNewUserSignup);
             socket.off("userListUpdate", handleUserListUpdate);
+            socket.off("privacy-settings-updated", handlePrivacyUpdate);
         };
     }, [refreshUsers]);
 

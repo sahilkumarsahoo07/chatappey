@@ -317,10 +317,17 @@ io.on("connection", (socket) => {
       try {
         const User = (await import("../models/user.model.js")).default;
         const logoutTime = new Date();
-        await User.findByIdAndUpdate(userId, { lastLogout: logoutTime });
+        const user = await User.findByIdAndUpdate(userId, { lastLogout: logoutTime }, { new: true }).select('privacyLastSeen friends');
 
-        // Emit the user-logged-out event so other clients update their UI
-        io.emit("user-logged-out", { userId, lastLogout: logoutTime });
+        // Emit the user-logged-out event
+        // If privacy is 'none', we don't send the timestamp. 
+        // For 'contacts', it's complex to broadcast selectively, so we send the event 
+        // but the frontend/sidebar controller will handle the display logic based on their own fetched data.
+        // However, for immediate offline status update, we always emit the event.
+
+        const lastLogoutPayload = (user?.privacyLastSeen === "none") ? null : logoutTime;
+
+        io.emit("user-logged-out", { userId, lastLogout: lastLogoutPayload });
       } catch (error) {
         console.error("Error updating lastLogout on disconnect:", error);
       }

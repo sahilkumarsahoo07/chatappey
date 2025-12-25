@@ -15,6 +15,7 @@ import LoginHelp from './pages/LoginHelp';
 import CallHistoryPage from './pages/CallHistoryPage';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
+import AdminPage from './pages/AdminPage';
 import { useAuthStore } from './store/useAuthStore';
 import { Loader } from 'lucide-react';
 
@@ -32,7 +33,16 @@ function App() {
   // console.log(onlineUsers)
 
   useEffect(() => {
-    checkAuth();
+    // Check for token in URL (from Google OAuth)
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("token");
+    if (token) {
+      useAuthStore.getState().setAuthUserFromToken(token);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      checkAuth();
+    }
   }, [checkAuth]);
 
   // Request notification permission when user is authenticated
@@ -66,6 +76,7 @@ function App() {
         <Route path='/privacy' element={<PrivacyPage />} />
         <Route path='/otp' element={<Otp />} />
         <Route path='/profile' element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
+        <Route path='/admin' element={authUser?.role === 'admin' ? <AdminPage /> : <Navigate to="/" />} />
       </Routes>
 
       <Toaster

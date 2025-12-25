@@ -857,3 +857,24 @@ summary,
 .settings-item {
     cursor: pointer;
 }
+
+/* ============================================
+   SETTINGS PAGE HELPERS
+   ============================================ */
+
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.mask-fade-right {
+    mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+.h-15 {
+    height: 3.75rem;
+}

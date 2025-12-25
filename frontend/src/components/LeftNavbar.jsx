@@ -3,7 +3,7 @@ import { THEMES } from "../constants";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
-import { LogOut, MessageCircleHeart, Palette, User, Settings, MessageSquare, Users, Bell, Phone } from "lucide-react";
+import { LogOut, MessageCircleHeart, Palette, User, Settings, MessageSquare, Users, Bell, Phone, ShieldAlert } from "lucide-react";
 import { useThemeStore } from "../store/useThemeStore";
 import { useNotificationStore } from "../store/useNotificationStore";
 import defaultImg from '../public/avatar.png';
@@ -43,6 +43,11 @@ const LeftNavbar = () => {
         { to: "/notifications", icon: Bell, label: "Notifications", badge: unreadCount },
         { to: "/settings", icon: Settings, label: "Settings" },
     ];
+
+    // Add Admin item if user is admin
+    if (authUser?.role === "admin") {
+        navItems.splice(4, 0, { to: "/admin", icon: ShieldAlert, label: "Admin" });
+    }
 
     return (
         <>

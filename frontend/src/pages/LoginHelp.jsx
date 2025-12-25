@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "../store/useAuthStore";
-import { Mail, Loader2, Lock, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Mail, Loader2, Lock, ArrowLeft, Eye, EyeOff, Check, KeyRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthImagePattern from "../components/AuthImagePattern";
 import toast from "react-hot-toast";
@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 const LoginHelp = () => {
     const navigate = useNavigate();
     const [email, setEmail] = useState("");
-    const [otp, setOtp] = useState("");
+    const [otp, setOtp] = useState(Array(6).fill(""));
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [newPassword, setNewPassword] = useState("");
@@ -17,9 +17,9 @@ const LoginHelp = () => {
     const [showPasswordFields, setShowPasswordFields] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [countdown, setCountdown] = useState(30);
-    const [otpId, setOtpId] = useState("");
 
     const { sendOtp, verifyOtp, resetPassword } = useAuthStore();
+    const inputRefs = useRef([]);
 
     // Countdown timer effect
     useEffect(() => {
@@ -30,32 +30,18 @@ const LoginHelp = () => {
         return () => clearTimeout(timer);
     }, [countdown, showOtpField]);
 
-    // Reset countdown when OTP field is shown
+    // Focus first OTP input when step changes
     useEffect(() => {
-        if (showOtpField) {
-            setCountdown(30);
+        if (showOtpField && !showPasswordFields) {
+            setTimeout(() => {
+                if (inputRefs.current[0]) inputRefs.current[0].focus();
+            }, 100);
         }
-    }, [showOtpField]);
-
-    // const handleResendOtp = () => {
-    // setIsSubmitting(true);
-    // // Simulate API call to resend OTP
-    // setTimeout(() => {
-    //     setIsSubmitting(false);
-    //     setCountdown(60); // Reset countdown
-    //     toast.success("OTP resent successfully");
-    // }, 1000);
-    // };
+    }, [showOtpField, showPasswordFields]);
 
     const validateEmail = () => {
         if (!email.trim()) return toast.error("Email is required");
         if (!/\S+@\S+\.\S+/.test(email)) return toast.error("Invalid email format");
-        return true;
-    };
-
-    const validateOtp = () => {
-        if (!otp.trim()) return toast.error("OTP is required");
-        if (otp.length !== 4) return toast.error("OTP must be 4 digits");
         return true;
     };
 
@@ -72,58 +58,71 @@ const LoginHelp = () => {
 
         setIsSubmitting(true);
         try {
-            const data = await sendOtp(email);
-            setOtpId(data.otpId);
+            await sendOtp(email);
             setShowOtpField(true);
             toast.success("OTP sent to your email");
         } catch (error) {
-            toast.error(error.response?.data?.message || "Failed to send OTP");
+            toast.error(error.response?.data?.message || "User not found or failed to send OTP");
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const handleOtpChange = (element, index) => {
+        if (isNaN(element.value)) return false;
+
+        const newOtp = [...otp];
+        newOtp[index] = element.value;
+        setOtp(newOtp);
+
+        // Focus next input
+        if (element.value !== "" && index < 5) {
+            inputRefs.current[index + 1].focus();
+        }
+    };
+
+    const handleOtpKeyDown = (e, index) => {
+        if (e.key === "Backspace") {
+            if (otp[index] === "" && index > 0) {
+                inputRefs.current[index - 1].focus();
+            }
+        }
+    };
+
+    const handlePaste = (e) => {
+        const data = e.clipboardData.getData("text");
+        if (!/^\d{6}$/.test(data)) return;
+
+        const digits = data.split("");
+        setOtp(digits);
+        inputRefs.current[5].focus();
+    };
 
     const handleVerifyOtp = async (e) => {
         e.preventDefault();
-        if (!validateOtp()) return;
+        const otpString = otp.join("");
+        if (otpString.length !== 6) return toast.error("Please enter a 6-digit OTP");
 
         setIsSubmitting(true);
         try {
-            await verifyOtp(email, otp);  // ✅ no otpId
+            await verifyOtp(email, otpString);
             setShowPasswordFields(true);
             toast.success("OTP verified");
         } catch (error) {
-            toast.error(error.response?.data?.message || "Invalid OTP");
+            toast.error(error.response?.data?.message || "Invalid or expired OTP");
         } finally {
             setIsSubmitting(false);
         }
     };
-
-    // const handleResetPassword = async (e) => {
-    // e.preventDefault();
-    // if (!validatePasswords()) return;
-
-    // setIsSubmitting(true);
-    // try {
-    //     await verifyOtp({ otpId, otp, newPassword });
-    //     toast.success("Password reset successfully");
-    //     navigate('/login');
-    // } catch (error) {
-    //     toast.error(error.response?.data?.message || "Failed to reset password");
-    // } finally {
-    //     setIsSubmitting(false);
-    // }
-    // };
 
     const handleResendOtp = async () => {
         if (countdown > 0) return;
 
         setIsSubmitting(true);
         try {
-            const data = await sendOtp(email);
-            setOtpId(data.otpId);
+            await sendOtp(email);
             setCountdown(30);
+            setOtp(Array(6).fill(""));
             toast.success("OTP resent successfully");
         } catch (error) {
             toast.error(error.response?.data?.message || "Failed to resend OTP");
@@ -134,22 +133,7 @@ const LoginHelp = () => {
 
     const handleResetPassword = async (e) => {
         e.preventDefault();
-
-        // Validate passwords
-        if (!newPassword || !confirmPassword) {
-            toast.error('Both password fields are required');
-            return;
-        }
-
-        if (newPassword.length < 6) {
-            toast.error('Password must be at least 6 characters');
-            return;
-        }
-
-        if (newPassword !== confirmPassword) {
-            toast.error('Passwords do not match');
-            return;
-        }
+        if (!validatePasswords()) return;
 
         setIsSubmitting(true);
         try {
@@ -163,24 +147,10 @@ const LoginHelp = () => {
         }
     };
 
-    // const handlePasswordReset = (e) => {
-    //     e.preventDefault();
-    //     if (validatePasswords()) {
-    //         setIsSubmitting(true);
-    //         // Simulate password reset API call
-    //         setTimeout(() => {
-    //             setIsSubmitting(false);
-    //             toast.success("Password updated successfully");
-    //             navigate("/login");
-    //         }, 1500);
-    //     }
-    // };
-
-
     return (
-        <div className="min-h-screen grid lg:grid-cols-2">
-            {/* left side */}
-            <div className="flex flex-col justify-center items-center p-6 sm:p-12 relative overflow-hidden">
+        <div className="min-h-screen grid lg:grid-cols-2 bg-base-100">
+            {/* Left Side - Form */}
+            <div className="flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
                 {/* Subtle Background Gradient */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-60">
                     <div className="absolute top-0 right-0 w-[500px] h-[500px] rounded-full 
@@ -188,236 +158,207 @@ const LoginHelp = () => {
                     <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full 
                         bg-gradient-to-br from-secondary/20 via-secondary/10 to-transparent blur-3xl"></div>
                 </div>
+
                 <div className="w-full max-w-md space-y-8 relative z-10">
-                    {/* LOGO */}
-                    <div className="text-center mb-8">
-                        <div className="flex flex-col items-center gap-2 group">
-                            <div
-                                className="size-12 rounded-xl bg-primary/10 flex items-center justify-center 
-              group-hover:bg-primary/20 transition-colors"
-                            >
-                                <Lock className="size-6 text-primary" />
+                    {/* LOGO & Header */}
+                    <div className="text-center animate-fade-in-up">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center 
+                                shadow-lg border border-primary/20 group-hover:scale-105 transition-transform duration-300">
+                                {showPasswordFields ? <KeyRound className="size-6 text-primary" /> : <Lock className="size-6 text-primary" />}
                             </div>
-                            <h1 className="text-2xl font-bold mt-2">
-                                {showPasswordFields ? "Set New Password" : showOtpField ? "Verify OTP" : "Forgot Password"}
+                            <h1 className="text-2xl font-bold text-base-content">
+                                {showPasswordFields ? "Secure New Password" : showOtpField ? "Verify OTP" : "Reset Password"}
                             </h1>
-                            <p className="text-base-content/60">
+                            <p className="text-base-content/50 text-sm">
                                 {showPasswordFields
-                                    ? "Enter your new password and confirm it"
+                                    ? "Create a new strong password for your account"
                                     : showOtpField
-                                        ? "Enter the 4-digit OTP sent to your email"
-                                        : "Enter your email to receive a password reset OTP"}
+                                        ? `Code sent to ${email}`
+                                        : "We'll send you a verification code to reset your password"}
                             </p>
                         </div>
                     </div>
 
                     {!showOtpField && !showPasswordFields && (
-                        <form onSubmit={handleGetOtp} className="space-y-6">
-                            <div className="form-control">
-                                <label className="label">
-                                    <span className="label-text font-medium">Email</span>
+                        <form onSubmit={handleGetOtp} className="space-y-6 animate-fade-in-up">
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-medium text-base-content/70 pl-1">
+                                    Email Address
                                 </label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Mail className="h-5 w-5 text-base-content/40 z-10" />
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                        <Mail className="h-[18px] w-[18px] text-base-content/40 group-focus-within:text-primary transition-colors" />
                                     </div>
                                     <input
                                         type="email"
-                                        className="input input-bordered w-full pl-10"
+                                        className="input input-bordered w-full pl-11 h-11 rounded-xl transition-all border-2 
+                                            focus:border-primary bg-base-100/50 backdrop-blur-sm shadow-sm"
                                         placeholder="you@example.com"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
+                                        required
                                     />
                                 </div>
                             </div>
 
-                            <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting || !email.trim()} >
+                            <button
+                                type="submit"
+                                className="btn btn-primary w-full h-11 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                                disabled={isSubmitting || !email.trim()}
+                            >
                                 {isSubmitting ? (
                                     <>
                                         <Loader2 className="size-5 animate-spin" />
-                                        Sending OTP...
+                                        <span>Sending OTP...</span>
                                     </>
                                 ) : (
-                                    "Get OTP"
+                                    <span>Get OTP Code</span>
                                 )}
                             </button>
                         </form>
                     )}
 
                     {showOtpField && !showPasswordFields && (
-                        <form onSubmit={handleVerifyOtp} className="space-y-6 mb-2">
-                            <div className="form-control">
-                                <label className="label">
-                                    <span className="label-text mb-5 font-medium">Enter 4-digit OTP</span>
-                                </label>
-                                <div className="flex justify-center gap-3 mb-4">
-                                    {[0, 1, 2, 3].map((index) => (
+                        <form onSubmit={handleVerifyOtp} className="space-y-8 animate-fade-in-up">
+                            <div className="space-y-6">
+                                <div className="flex justify-center gap-2 sm:gap-3">
+                                    {otp.map((data, index) => (
                                         <input
                                             key={index}
                                             type="text"
-                                            className="input input-bordered w-16 text-center text-xl"
-                                            maxLength={1}
-                                            value={otp[index] || ''}
-                                            onChange={(e) => {
-                                                const newOtp = otp.split('');
-                                                newOtp[index] = e.target.value.replace(/\D/g, '');
-                                                setOtp(newOtp.join(''));
-
-                                                // Auto focus to next input
-                                                if (e.target.value && index < 3) {
-                                                    document.getElementById(`otp-input-${index + 1}`).focus();
-                                                }
-                                            }}
-                                            onKeyDown={(e) => {
-                                                // Handle backspace to move to previous input
-                                                if (e.key === 'Backspace' && !otp[index] && index > 0) {
-                                                    document.getElementById(`otp-input-${index - 1}`).focus();
-                                                }
-                                            }}
-                                            id={`otp-input-${index}`}
+                                            maxLength="1"
+                                            ref={el => inputRefs.current[index] = el}
+                                            className="w-10 h-12 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-bold 
+                                                rounded-xl border-2 border-base-content/10 bg-base-100/50 backdrop-blur-sm
+                                                focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                            value={data}
+                                            onChange={(e) => handleOtpChange(e.target, index)}
+                                            onKeyDown={(e) => handleOtpKeyDown(e, index)}
+                                            onPaste={index === 0 ? handlePaste : undefined}
+                                            required
                                         />
                                     ))}
                                 </div>
 
-                                <div className="text-center mb-4">
+                                <div className="text-center">
                                     {countdown > 0 ? (
-                                        <p className="text-sm text-base-content/60">
-                                            Resend OTP in {countdown} seconds
+                                        <p className="text-xs text-base-content/40">
+                                            Resend OTP in <span className="font-mono text-primary">{countdown}s</span>
                                         </p>
                                     ) : (
                                         <button
                                             type="button"
-                                            className="btn btn-link text-sm"
+                                            className="text-sm font-medium text-primary hover:underline"
                                             onClick={handleResendOtp}
+                                            disabled={isSubmitting}
                                         >
-                                            Resend OTP
+                                            Resend OTP Code
                                         </button>
                                     )}
                                 </div>
 
                                 <button
                                     type="submit"
-                                    className="btn btn-primary w-full"
-                                    disabled={isSubmitting || otp.length !== 4}
+                                    className="btn btn-primary w-full h-11 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                                    disabled={isSubmitting || otp.join("").length !== 6}
                                 >
                                     {isSubmitting ? (
                                         <>
                                             <Loader2 className="size-5 animate-spin" />
-                                            Verifying...
+                                            <span>Verifying...</span>
                                         </>
                                     ) : (
-                                        "Verify OTP"
+                                        <>
+                                            <span>Verify OTP</span>
+                                            <Check className="size-5" />
+                                        </>
                                     )}
                                 </button>
                             </div>
 
                             <button
                                 type="button"
-                                className="btn btn-ghost text-sm flex items-center gap-1"
+                                className="w-full flex justify-center items-center gap-2 text-sm font-medium text-base-content/60 
+                                    hover:text-base-content transition-colors"
                                 onClick={() => setShowOtpField(false)}
                             >
                                 <ArrowLeft className="size-4" />
-                                Back to email
+                                <span>Change email / Back</span>
                             </button>
                         </form>
                     )}
 
                     {showPasswordFields && (
-                        <form onSubmit={handleResetPassword} className="space-y-6">
-                            <div className="form-control">
-                                <label className="label">
-                                    <span className="label-text font-medium">New Password</span>
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Lock className="h-5 w-5 text-base-content/40 z-10" />
-                                    </div>
-                                    <input
-                                        type={showNewPassword ? "text" : "password"}
-                                        className="input input-bordered w-full pl-10"
-                                        placeholder="••••••••"
-                                        value={newPassword}
-                                        onChange={(e) => setNewPassword(e.target.value)}
-                                        required
-                                        minLength={6}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                        onClick={() => setShowNewPassword(!showNewPassword)}
-                                    >
-                                        {showNewPassword ? (
-                                            <EyeOff className="h-5 w-5 text-base-content/40 z-10" />
-                                        ) : (
-                                            <Eye className="h-5 w-5 text-base-content/40 z-10" />
-                                        )}
-                                    </button>
-
-                                </div>
-                                <div className="mt-1 text-xs text-base-content/60">
-                                    {newPassword.length > 0 && (
-                                        <div className="space-y-1">
-                                            <div className={`flex items-center ${newPassword.length >= 6 ? 'text-success' : 'text-error'}`}>
-                                                {newPassword.length >= 6 ? '✓' : '•'} Minimum 6 characters
-                                            </div>
+                        <form onSubmit={handleResetPassword} className="space-y-6 animate-fade-in-up">
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-medium text-base-content/70 pl-1">New Password</label>
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                            <Lock className="h-5 w-5 text-base-content/40 group-focus-within:text-primary transition-colors" />
                                         </div>
+                                        <input
+                                            type={showNewPassword ? "text" : "password"}
+                                            className="input input-bordered w-full pl-11 pr-11 h-11 rounded-xl border-2 transition-all focus:border-primary"
+                                            placeholder="••••••••"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            required
+                                            minLength={6}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-base-content/40 hover:text-primary transition-colors"
+                                            onClick={() => setShowNewPassword(!showNewPassword)}
+                                        >
+                                            {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                        </button>
+                                    </div>
+                                    {newPassword && (
+                                        <div className={`mt-1 text-[10px] sm:text-xs flex items-center gap-1.5 ${newPassword.length >= 6 ? 'text-emerald-500' : 'text-error'}`}>
+                                            <Check className={`size-3 ${newPassword.length >= 6 ? 'opacity-100' : 'opacity-30'}`} />
+                                            <span>At least 6 characters required</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-medium text-base-content/70 pl-1">Confirm Password</label>
+                                    <div className="relative group">
+                                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                            <Lock className="h-5 w-5 text-base-content/40 group-focus-within:text-primary transition-colors" />
+                                        </div>
+                                        <input
+                                            type={showConfirmPassword ? "text" : "password"}
+                                            className={`input input-bordered w-full pl-11 pr-11 h-11 rounded-xl border-2 transition-all 
+                                                ${confirmPassword && newPassword !== confirmPassword ? 'border-error focus:border-error' : 'focus:border-primary'}`}
+                                            placeholder="••••••••"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            required
+                                        />
+                                        <button
+                                            type="button"
+                                            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-base-content/40 hover:text-primary transition-colors"
+                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        >
+                                            {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                        </button>
+                                    </div>
+                                    {confirmPassword && newPassword !== confirmPassword && (
+                                        <p className="mt-1 text-xs text-error font-medium">Passwords do not match</p>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="form-control">
-                                <label className="label">
-                                    <span className="label-text font-medium">Confirm Password</span>
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Lock className="h-5 w-5 text-base-content/40 z-10" />
-                                    </div>
-                                    <input
-                                        type={showConfirmPassword ? "text" : "password"}
-                                        className={`input input-bordered w-full pl-10 ${confirmPassword && newPassword !== confirmPassword ? 'input-error' : ''
-                                            }`}
-                                        placeholder="••••••••"
-                                        value={confirmPassword}
-                                        onChange={(e) => setConfirmPassword(e.target.value)}
-                                        required
-                                        minLength={6}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                    >
-                                        {showConfirmPassword ? (
-                                            <EyeOff className="h-5 w-5 text-base-content/40 z-10" />
-                                        ) : (
-                                            <Eye className="h-5 w-5 text-base-content/40 z-10" />
-                                        )}
-                                    </button>
-
-                                </div>
-                                {confirmPassword && newPassword !== confirmPassword && (
-                                    <label className="label">
-                                        <span className="label-text-alt text-error">Passwords don't match</span>
-                                    </label>
-                                )}
-                            </div>
-
                             <button
                                 type="submit"
-                                className="btn btn-primary w-full"
-                                disabled={
-                                    isSubmitting ||
-                                    newPassword.length < 6 ||
-                                    confirmPassword.length < 6 ||
-                                    newPassword !== confirmPassword
-                                }
+                                className="btn btn-primary w-full h-11 rounded-xl shadow-lg"
+                                disabled={isSubmitting || newPassword.length < 6 || newPassword !== confirmPassword}
                             >
                                 {isSubmitting ? (
-                                    <>
-                                        <Loader2 className="size-5 animate-spin" />
-                                        Updating...
-                                    </>
+                                    <Loader2 className="size-5 animate-spin mx-auto" />
                                 ) : (
                                     "Update Password"
                                 )}
@@ -425,10 +366,10 @@ const LoginHelp = () => {
                         </form>
                     )}
 
-                    <div className="text-center">
-                        <p className="text-base-content/60">
-                            Remember your password?{" "}
-                            <Link to="/login" className="link link-primary">
+                    <div className="text-center pt-4">
+                        <p className="text-base-content/60 text-sm">
+                            Wait, I remember it!{" "}
+                            <Link to="/login" className="text-primary font-semibold hover:underline">
                                 Sign in
                             </Link>
                         </p>
@@ -436,10 +377,10 @@ const LoginHelp = () => {
                 </div>
             </div>
 
-            {/* right side */}
+            {/* Right Side - Pattern */}
             <AuthImagePattern
                 title="Reset your password"
-                subtitle="Secure your account with a new password"
+                subtitle="Ensure your account stays secure with a strong new password."
             />
         </div>
     );

@@ -1,0 +1,42 @@
+/* ===================================
+   DAISYUI-COMPATIBLE BUBBLE STYLES
+   =================================== */
+
+/* Sharp Style - Minimal Roundness */
+.chat-bubble.bubble-style-sharp {
+    border-radius: 0.25rem;
+    /* 4px - almost square */
+}
+
+/* Classic Style - Sharper, More Angular */
+.chat-bubble.bubble-style-classic {
+    border-radius: 0.5rem;
+    /* 8px - slightly rounded */
+}
+
+/* Rounded Style - Default Medium Roundness */
+.chat-bubble.bubble-style-rounded {
+    border-radius: 1rem;
+    /* 16px - balanced */
+}
+
+/* Smooth Style - Very Smooth */
+.chat-bubble.bubble-style-smooth {
+    border-radius: 1.25rem;
+    /* 20px - very smooth */
+}
+
+/* Ultra Style - Maximum Roundness */
+.chat-bubble.bubble-style-ultra {
+    border-radius: 1.5rem;
+    /* 24px - very round */
+}
+
+/* Pill Style - Pill-Shaped */
+.chat-bubble.bubble-style-pill {
+    border-radius: 2rem;
+    /* 32px - pill shape */
+}
+
+/* Ensure DaisyUI tail works with all styles */
+/* Don't override the ::before pseudo-element that creates the tail */

@@ -329,7 +329,6 @@ const ChatContainer = () => {
                 </div>
 
                 <div className={`chat-bubble flex flex-col relative group ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
-                  style={{ borderRadius: message.senderId === authUser._id ? '20px 20px 4px 20px' : '20px 20px 20px 4px', padding: '12px 16px' }}
                   onTouchStart={(e) => message.text !== "This message was deleted" && handleTouchStart(e, message._id)}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchEnd}
