@@ -211,8 +211,35 @@ export const updateGroup = async (req, res) => {
 
         let imageUrl = group.image;
         if (image && image !== group.image) {
-            const uploadResponse = await cloudinary.uploader.upload(image);
-            imageUrl = uploadResponse.secure_url;
+            try {
+                // Check if the image is a base64 data URI or a URL
+                const isBase64 = image.startsWith("data:");
+                const isCloudinaryUrl = image.includes("cloudinary.com");
+
+                if (isBase64) {
+                    // Upload base64 image to Cloudinary
+                    const uploadResponse = await cloudinary.uploader.upload(image, {
+                        folder: "group_images",
+                        resource_type: "auto"
+                    });
+                    imageUrl = uploadResponse.secure_url;
+                } else if (isCloudinaryUrl) {
+                    // Already a Cloudinary URL, use as-is
+                    imageUrl = image;
+                } else {
+                    // For other URLs, try uploading the URL to Cloudinary
+                    const uploadResponse = await cloudinary.uploader.upload(image, {
+                        folder: "group_images",
+                        resource_type: "auto"
+                    });
+                    imageUrl = uploadResponse.secure_url;
+                }
+            } catch (uploadError) {
+                console.error("Cloudinary upload error:", uploadError);
+                return res.status(400).json({
+                    error: `Failed to upload image: ${uploadError.message || "Unknown error"}`
+                });
+            }
         }
 
         group.name = name?.trim() || group.name;
@@ -239,7 +266,7 @@ export const updateGroup = async (req, res) => {
 
         res.status(200).json(updatedGroup);
     } catch (error) {
-        console.error("Error in updateGroup:", error.message);
+        console.error("Error in updateGroup:", error.message, error.stack);
         res.status(500).json({ error: "Internal server error" });
     }
 };

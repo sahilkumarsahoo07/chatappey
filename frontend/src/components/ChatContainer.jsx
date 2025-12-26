@@ -10,7 +10,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import defaultImg from "../public/avatar.png";
-import { Ban, Check, CheckCheck, Download, Forward, MoreVertical, Search, UserPlus, Reply, FileText, Pin, Clock, Mic, Play, Pause, Smile, Pencil } from "lucide-react";
+import { Ban, Check, CheckCheck, Download, Forward, MoreVertical, Search, UserPlus, Reply, FileText, Pin, Clock, Mic, Play, Pause, Smile, Pencil, X, ZoomIn, ZoomOut } from "lucide-react";
 import "./ChatContainer.css";
 import { Menu, MenuItem, Dialog, DialogTitle, DialogActions, Button, Typography, DialogContent, Avatar, List, ListItem, ListItemAvatar, ListItemText, Divider, Box, InputAdornment, TextField, } from "@mui/material";
 import toast from "react-hot-toast";
@@ -119,6 +119,8 @@ const ChatContainer = () => {
   const [isForwardLoading, setIsForwardLoading] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [imageZoom, setImageZoom] = useState(1);
   const longPressTimerRef = useRef(null);
   const longPressMessageRef = useRef(null);
 
@@ -355,7 +357,15 @@ const ChatContainer = () => {
                     </div>
                   )}
 
-                  {message.image && (<img src={message.image} alt="Attachment" className="max-w-[200px] md:max-w-[280px] rounded-xl mb-2 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(message.image, '_blank')} onLoad={scrollToBottom} />)}
+                  {message.image && (
+                    <img
+                      src={message.image}
+                      alt="Attachment"
+                      className={`max-w-[200px] md:max-w-[280px] rounded-xl mb-2 ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
+                      onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
+                      onLoad={scrollToBottom}
+                    />
+                  )}
 
                   {message.audio && <AudioPlayer audioUrl={message.audio} isMyMessage={message.senderId === authUser._id} />}
 
@@ -565,6 +575,88 @@ const ChatContainer = () => {
       </div>
 
       <MessageInput />
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => { setPreviewImage(null); setImageZoom(1); }}
+          onWheel={(e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.1 : -0.1;
+            setImageZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
+          }}
+        >
+          {/* Close Button */}
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10"
+            onClick={() => { setPreviewImage(null); setImageZoom(1); }}
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+
+          {/* Top Center Controls - Zoom */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5 z-10">
+            <button
+              className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+              onClick={(e) => { e.stopPropagation(); setImageZoom(prev => Math.max(prev - 0.25, 0.5)); }}
+            >
+              <ZoomOut className="w-5 h-5 text-white" />
+            </button>
+            <span className="text-white text-sm font-medium min-w-[50px] text-center">{Math.round(imageZoom * 100)}%</span>
+            <button
+              className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+              onClick={(e) => { e.stopPropagation(); setImageZoom(prev => Math.min(prev + 0.25, 3)); }}
+            >
+              <ZoomIn className="w-5 h-5 text-white" />
+            </button>
+          </div>
+
+          {/* Download Button */}
+          <button
+            className="absolute top-4 left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-10 flex items-center gap-2"
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                const response = await fetch(previewImage);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `image_${Date.now()}.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+              } catch (error) {
+                toast.error("Failed to download");
+              }
+            }}
+          >
+            <Download className="w-5 h-5 text-white" />
+            <span className="text-white text-sm hidden md:inline">Download</span>
+          </button>
+
+          {/* Image Container */}
+          <div
+            className="flex items-center justify-center animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="rounded-lg shadow-2xl transition-transform duration-200 ease-out"
+              style={{
+                transform: `scale(${imageZoom})`,
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                objectFit: 'contain',
+                cursor: imageZoom > 1 ? 'zoom-out' : 'zoom-in'
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
