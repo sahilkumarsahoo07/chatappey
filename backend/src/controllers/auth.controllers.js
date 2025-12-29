@@ -3,9 +3,9 @@ import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
 import { io } from "../lib/socket.js";
-import nodemailer from 'nodemailer';
 import { v4 as uuidv4 } from 'uuid';
 import Otp from "../models/otp.model.js";
+import { sendEmail } from "../lib/otpSend.js";
 
 export const signup = async (req, res) => {
     const { fullName, email, password } = req.body;
@@ -233,35 +233,7 @@ export const updateAbout = async (req, res) => {
     }
 };
 
-// const transporter = nodemailer.createTransport({
-//   host: process.env.EMAIL_HOST || 'smtp.office365.com',
-//   port: process.env.EMAIL_PORT || 587,
-//   secure: false, // true for 465, false for other ports
-//   auth: {
-//     user: process.env.EMAIL_USER,
-//     pass: process.env.EMAIL_PASS
-//   },
-//   tls: {
-//     ciphers: 'SSLv3',
-//     rejectUnauthorized: process.env.NODE_ENV === 'production' // false for development
-//   },
-//   logger: true,
-//   debug: process.env.NODE_ENV !== 'production'
-// });
-
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,   // your gmail address
-        pass: process.env.EMAIL_PASS,   // the app password here
-    },
-    logger: true,
-    debug: process.env.NODE_ENV !== 'production',
-});
-
-
-
-// In-memory storage removed in favor of MongoDB
+// Email sending via Resend API (SMTP blocked on Render)
 
 export const signupOTP = async (req, res) => {
     const { fullName, email, password } = req.body;
@@ -294,12 +266,8 @@ export const signupOTP = async (req, res) => {
             type: "signup"
         });
 
-        // Email options
-        const mailOptions = {
-            from: `"Chat Appey" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Verify your Chat Appey account',
-            html: `
+        // Send email via Resend API (works on Render unlike SMTP)
+        const emailHtml = `
         <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
             <!-- Header with Gradient -->
             <div style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); padding: 40px 20px; text-align: center;">
@@ -339,10 +307,13 @@ export const signupOTP = async (req, res) => {
                 </p>
             </div>
         </div>
-        `
-        };
+        `;
 
-        await transporter.sendMail(mailOptions);
+        await sendEmail({
+            to: email,
+            subject: 'Verify your Chat Appey account',
+            html: emailHtml
+        });
 
         res.status(200).json({ message: "OTP sent to email" });
     } catch (error) {
@@ -394,12 +365,8 @@ export const verifySignup = async (req, res) => {
 
         const token = generateToken(user._id, res, user.tokenVersion);
 
-        // Send Welcome Email
-        const welcomeMailOptions = {
-            from: `"Chat Appey" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Welcome to Chat Appey!',
-            html: `
+        // Send Welcome Email via Resend API
+        const welcomeHtml = `
         <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
             <!-- Header with Hero Image/Pattern -->
             <div style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); padding: 60px 20px; text-align: center; color: #ffffff;">
@@ -414,7 +381,7 @@ export const verifySignup = async (req, res) => {
             <div style="padding: 40px 32px;">
                 <h2 style="color: #1e293b; font-size: 22px; font-weight: 700; margin-bottom: 20px;">Hey ${fullName.split(' ')[0]},</h2>
                 <p style="color: #475569; font-size: 16px; line-height: 1.7; margin-bottom: 32px;">
-                    We're thrilled to have you here! **Chat Appey** was built to bring people closer through secure, fast, and beautiful communication. 
+                    We're thrilled to have you here! Chat Appey was built to bring people closer through secure, fast, and beautiful communication. 
                     Your journey to better conversations starts right now.
                 </p>
                 
@@ -422,23 +389,14 @@ export const verifySignup = async (req, res) => {
                 <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; margin-bottom: 32px;">
                     <h3 style="color: #6366f1; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; margin-top: 0;">What's Next?</h3>
                     <ul style="list-style: none; padding: 0; margin: 0; color: #475569; font-size: 15px;">
-                        <li style="margin-bottom: 12px; display: flex; align-items: flex-start;">
-                            <span style="color: #6366f1; margin-right: 10px;">✦</span>
-                            <span>Set up your **Profile Picture** and bio</span>
-                        </li>
-                        <li style="margin-bottom: 12px; display: flex; align-items: flex-start;">
-                            <span style="color: #6366f1; margin-right: 10px;">✦</span>
-                            <span>Start **Chatting** with your friends</span>
-                        </li>
-                        <li style="margin-bottom: 0; display: flex; align-items: flex-start;">
-                            <span style="color: #6366f1; margin-right: 10px;">✦</span>
-                            <span>Explore our **Modern Themes**</span>
-                        </li>
+                        <li style="margin-bottom: 12px;">✦ Set up your Profile Picture and bio</li>
+                        <li style="margin-bottom: 12px;">✦ Start Chatting with your friends</li>
+                        <li style="margin-bottom: 0;">✦ Explore our Modern Themes</li>
                     </ul>
                 </div>
                 
                 <div style="text-align: center;">
-                    <a href="${process.env.FRONTEND_URL || 'https://chatappey.netlify.app/'}" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: #ffffff; padding: 16px 36px; border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none; shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);">Launch Chat Appey</a>
+                    <a href="${process.env.FRONTEND_URL || 'https://chatappey.netlify.app/'}" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: #ffffff; padding: 16px 36px; border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none;">Launch Chat Appey</a>
                 </div>
             </div>
             
@@ -448,18 +406,19 @@ export const verifySignup = async (req, res) => {
                     Stay connected, stay secure.<br/>
                     The Chat Appey Team
                 </p>
-                <div style="border-top: 1px solid #e2e8f0; pt-20px; padding-top: 20px;">
-                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">
-                        © ${new Date().getFullYear()} Chat Appey. All rights reserved.
-                    </p>
-                </div>
+                <p style="color: #94a3b8; font-size: 12px; margin: 0;">
+                    © ${new Date().getFullYear()} Chat Appey. All rights reserved.
+                </p>
             </div>
         </div>
-        `
-        };
+        `;
 
         // Send welcome email (async - don't block the response)
-        transporter.sendMail(welcomeMailOptions).catch(err => console.error("Error sending welcome email:", err));
+        sendEmail({
+            to: email,
+            subject: 'Welcome to Chat Appey!',
+            html: welcomeHtml
+        }).catch(err => console.error("Error sending welcome email:", err));
 
         res.status(201).json({
             _id: user._id,
@@ -514,12 +473,8 @@ export const sendOtp = async (req, res) => {
             type: "reset"
         });
 
-        // Email options
-        const mailOptions = {
-            from: `"Chat Appey" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: 'Your Password Reset OTP',
-            html: `
+        // Send email via Resend API
+        const resetHtml = `
         <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
             <!-- Header with Gradient -->
             <div style="background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); padding: 40px 20px; text-align: center;">
@@ -560,11 +515,13 @@ export const sendOtp = async (req, res) => {
                 </p>
             </div>
         </div>
-        `
-        };
+        `;
 
-        // Send email
-        const info = await transporter.sendMail(mailOptions);
+        await sendEmail({
+            to: email,
+            subject: 'Your Password Reset OTP',
+            html: resetHtml
+        });
 
         return res.status(200).json({
             success: true,
