@@ -1,10 +1,13 @@
-import { Resend } from 'resend';
+import Mailjet from 'node-mailjet';
 import nodemailer from 'nodemailer';
 
-// Only initialize Resend if API key is available
-let resend = null;
-if (process.env.RESEND_API_KEY) {
-    resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Mailjet client if API keys are available
+let mailjetClient = null;
+if (process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY) {
+    mailjetClient = new Mailjet({
+        apiKey: process.env.MAILJET_API_KEY,
+        apiSecret: process.env.MAILJET_SECRET_KEY
+    });
 }
 
 // Gmail SMTP transporter for local development or fallback
@@ -20,7 +23,7 @@ const gmailTransporter = nodemailer.createTransport({
 
 /**
  * Send email using appropriate service based on environment
- * - If RESEND_API_KEY is set + production: Uses Resend API
+ * - If MAILJET_API_KEY + MAILJET_SECRET_KEY are set + production: Uses Mailjet API
  * - Otherwise: Uses Gmail SMTP (fallback)
  * 
  * @param {Object} options - Email options
@@ -31,24 +34,38 @@ const gmailTransporter = nodemailer.createTransport({
  */
 export const sendEmail = async ({ to, subject, html }) => {
     const isProduction = process.env.NODE_ENV === 'production';
-    const hasResendKey = !!process.env.RESEND_API_KEY;
+    const hasMailjetKeys = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY);
 
-    // Use Resend only if in production AND API key is available
-    const useResend = isProduction && hasResendKey;
+    // Use Mailjet only if in production AND API keys are available
+    const useMailjet = isProduction && hasMailjetKeys;
 
     try {
-        if (useResend) {
-            // Use Resend API in production
-            console.log('📧 Sending email via Resend API (Production)');
-            const data = await resend.emails.send({
-                from: `Chat Appey <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
-                to: [to],
-                subject: subject,
-                html: html,
-            });
+        if (useMailjet) {
+            // Use Mailjet API in production
+            console.log('📧 Sending email via Mailjet API (Production)');
 
-            console.log('✅ Email sent successfully via Resend:', data);
-            return { success: true, data };
+            const result = await mailjetClient
+                .post('send', { version: 'v3.1' })
+                .request({
+                    Messages: [
+                        {
+                            From: {
+                                Email: process.env.MAILJET_FROM_EMAIL || 'noreply@chatappey.com',
+                                Name: 'Chat Appey'
+                            },
+                            To: [
+                                {
+                                    Email: to
+                                }
+                            ],
+                            Subject: subject,
+                            HTMLPart: html
+                        }
+                    ]
+                });
+
+            console.log('✅ Email sent successfully via Mailjet:', result.body);
+            return { success: true, data: result.body };
         } else {
             // Use Gmail SMTP in development or as fallback
             console.log(`📧 Sending email via Gmail SMTP (${isProduction ? 'Fallback' : 'Development'})`);
@@ -63,9 +80,9 @@ export const sendEmail = async ({ to, subject, html }) => {
             return { success: true, messageId: info.messageId };
         }
     } catch (error) {
-        console.error(`❌ Error sending email via ${useResend ? 'Resend' : 'Gmail'}:`, error.message);
+        console.error(`❌ Error sending email via ${useMailjet ? 'Mailjet' : 'Gmail'}:`, error.message);
         throw error;
     }
 };
 
-export default resend;
+export default mailjetClient;
