@@ -109,7 +109,10 @@ export const useChatStore = create((set, get) => ({
               image: optimisticMessage.image || newMessage.image,
               audio: optimisticMessage.audio || newMessage.audio,
               file: optimisticMessage.file || newMessage.file,
-              createdAt: optimisticMessage.createdAt
+              createdAt: optimisticMessage.createdAt,
+              // Preserve reply data from server response
+              replyTo: newMessage.replyTo,
+              replyToMessage: newMessage.replyToMessage
             };
           }
           return msg;

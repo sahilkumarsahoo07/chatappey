@@ -398,11 +398,10 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             }
         }
 
-        // Reset UI immediately
+        // Reset UI immediately (except reply state - clear after successful send)
         setText("");
         removeMedia();
         setSelectedMentions([]);
-        clearReplyingToMessage();
         setShowAttachmentMenu(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
@@ -415,6 +414,8 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             } else {
                 await sendMessage(messageData);
             }
+            // Clear reply state AFTER successful send
+            clearReplyingToMessage();
             if (messageData.scheduledFor) toast.success("Message scheduled");
         } catch (error) {
             console.error("Failed to send message:", error);
