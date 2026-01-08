@@ -76,7 +76,7 @@ export const useChatStore = create((set, get) => ({
       senderId: authUser._id,
       receiverId: selectedUser._id,
       createdAt: messageData.scheduledFor ? new Date(messageData.scheduledFor).toISOString() : new Date().toISOString(),
-      status: messageData.scheduledFor ? 'scheduled' : 'sending',
+      status: messageData.scheduledFor ? 'scheduled' : 'delivered', // Start with 'delivered' for smooth UX
       replyTo: replyingToMessage?._id || null,
       replyToMessage: replyingToMessage ? {
         text: replyingToMessage.text,
@@ -100,19 +100,23 @@ export const useChatStore = create((set, get) => ({
       const newMessage = res.data;
 
       // Replace optimistic message with real one from server
+      // CRITICAL: Keep the optimistic _id to prevent React key change (no shake!)
       const currentMessages = get().messages;
       set({
         messages: currentMessages.map(msg => {
           if (msg._id === optimisticMessage._id) {
             return {
-              ...newMessage,
+              ...msg, // Keep optimistic message as base (preserves temp ID)
+              ...newMessage, // Overlay real data from server
+              _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
               image: optimisticMessage.image || newMessage.image,
               audio: optimisticMessage.audio || newMessage.audio,
               file: optimisticMessage.file || newMessage.file,
               createdAt: optimisticMessage.createdAt,
               // Preserve reply data from server response
               replyTo: newMessage.replyTo,
-              replyToMessage: newMessage.replyToMessage
+              replyToMessage: newMessage.replyToMessage,
+              realId: newMessage._id // Store real ID for reference if needed
             };
           }
           return msg;
@@ -178,10 +182,44 @@ export const useChatStore = create((set, get) => ({
         (newMessage.senderId === currentSelectedUser?._id && newMessage.receiverId === authUser._id) ||
         (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
 
+      console.log('[Socket Debug] newMessage received:', {
+        messageId: newMessage._id,
+        senderId: newMessage.senderId,
+        receiverId: newMessage.receiverId,
+        authUserId: authUser._id,
+        currentSelectedUserId: currentSelectedUser?._id,
+        isMessageForCurrentChat,
+        isFromAuthUser: newMessage.senderId === authUser._id
+      });
+
       if (isMessageForCurrentChat && newMessage.senderId !== authUser._id) {
-        set({
-          messages: [...get().messages, newMessage],
+        // CRITICAL FIX: Check for duplicate by ID first
+        const messages = get().messages;
+        const alreadyExists = messages.some(m => m._id === newMessage._id);
+
+        console.log('[Socket Debug] Message for current chat:', {
+          alreadyExists,
+          messagesCount: messages.length
         });
+
+        if (!alreadyExists) {
+          // Check if chat is active (window focused + sender is current chat)
+          const isWindowFocused = document.hasFocus() && !document.hidden;
+          const isChatActive = isWindowFocused && currentSelectedUser?._id === newMessage.senderId;
+
+          console.log('[Socket Debug] Adding message to UI with status:', isChatActive ? 'read' : newMessage.status);
+
+          set({
+            messages: [...messages, {
+              ...newMessage,
+              status: isChatActive ? 'read' : newMessage.status // INSTANT blue ticks if chat is active!
+            }],
+          });
+        } else {
+          console.log('[Socket Debug] Message already exists, skipping');
+        }
+      } else {
+        console.log('[Socket Debug] Message NOT for current chat or from self, skipping UI update');
       }
 
       // Notification Logic

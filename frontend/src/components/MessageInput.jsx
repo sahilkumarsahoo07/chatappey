@@ -122,6 +122,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const timerRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const isTypingRef = useRef(false);
+    const isSendingRef = useRef(false); // Ref to prevent double sending
 
     // Modals & Menus
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
@@ -168,14 +169,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Typing Inteicator handling
-    useEffect(() => {
-        if (text.length > 0) {
-            setTyping(true);
-            const timeout = setTimeout(() => setTyping(false), 2000);
-            return () => clearTimeout(timeout);
-        }
-    }, [text, setTyping]);
+    // Removed expensive useEffect - typing indicator now handled in handleTextChange
 
 
     // --- Media Handlers ---
@@ -341,15 +335,18 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
     const handleSendMessage = async (e, extraData = {}) => {
         if (e) e.preventDefault();
-        if (isRestricted) return;
+
+        // Prevent double sending
+        if (isSendingRef.current || isRestricted) return;
 
         // Validation
         const hasText = text.trim().length > 0 || (extraData.text && extraData.text.trim().length > 0);
         const hasMedia = !!(imagePreview || gifPreview || filePreview || audioBlob);
         const hasPoll = !!extraData.poll;
-        const hasSchedule = !!extraData.scheduledFor;
 
         if (!hasText && !hasMedia && !hasPoll) return;
+
+        isSendingRef.current = true; // Lock sending
 
         // Clear typing indicator immediately
         if (socket) {
@@ -372,17 +369,13 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             ...extraData
         };
 
-        console.log("handleSendMessage extraData:", extraData);
-        console.log("handleSendMessage messageData:", messageData);
-
         if (imagePreview || gifPreview) {
             messageData.image = imagePreview || gifPreview;
         }
 
         if (filePreview) {
             messageData.file = filePreview.base64;
-            messageData.fileName = filePreview.name; // Send original filename
-            // Add filename to text if empty for preview
+            messageData.fileName = filePreview.name;
             if (!messageData.text) messageData.text = `📎 ${filePreview.name}`;
         }
 
@@ -390,19 +383,22 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             try {
                 const base64Audio = await blobToBase64(audioBlob);
                 messageData.audio = base64Audio;
-                // Add default text for voice messages if text is empty
                 if (!messageData.text) messageData.text = "🎤 Voice message";
             } catch (err) {
+                console.error("Audio processing failed", err);
                 toast.error("Failed to process audio");
+                isSendingRef.current = false; // Unlock on error
                 return;
             }
         }
 
-        // Reset UI immediately (except reply state - clear after successful send)
+        // OPTIMISTIC UPDATE: Clear ALL UI immediately
         setText("");
         removeMedia();
         setSelectedMentions([]);
         setShowAttachmentMenu(false);
+        clearReplyingToMessage(); // Clear reply state INSTANTLY
+
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -414,13 +410,17 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             } else {
                 await sendMessage(messageData);
             }
-            // Clear reply state AFTER successful send
-            clearReplyingToMessage();
             if (messageData.scheduledFor) toast.success("Message scheduled");
         } catch (error) {
             console.error("Failed to send message:", error);
             toast.error("Failed to send message");
-            // Restore draft if needed (omitted for brevity)
+            // NOTE: In a perfect world, we'd restore the draft here. 
+            // For now, prioritising "no double send" over "draft restoration on error".
+        } finally {
+            // Small delay before unlocking to prevent "mash enter" duplicates
+            setTimeout(() => {
+                isSendingRef.current = false;
+            }, 500);
         }
     };
 
@@ -479,7 +479,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const val = e.target.value;
         setText(val);
 
-        // Emit typing event
+        // Optimized typing indicator - only emit on first character and debounce
         if (socket && val.trim()) {
             if (!isTypingRef.current) {
                 isTypingRef.current = true;
@@ -506,27 +506,40 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             }, 1000);
         }
 
-        // ... Mention detection logic ...
+        // Optimized mention detection - only run when @ is typed or in mention mode
         if (isGroupChat && groupMembers.length > 0) {
             const cursorPos = e.target.selectionStart;
-            const textBefore = val.slice(0, cursorPos);
-            const lastAt = textBefore.lastIndexOf("@");
-            if (lastAt !== -1) {
-                const charBefore = lastAt > 0 ? textBefore[lastAt - 1] : " ";
-                if (charBefore === " " || charBefore === "\n" || lastAt === 0) {
-                    const search = textBefore.slice(lastAt + 1);
-                    if (!search.includes(" ")) {
-                        setShowMentions(true);
-                        setMentionSearch(search);
-                        setMentionStartIndex(lastAt);
+            const lastChar = val[cursorPos - 1];
+
+            // Only check mentions if we just typed @ OR we're already in mention mode
+            if (lastChar === '@' || showMentions) {
+                const textBefore = val.slice(0, cursorPos);
+                const lastAt = textBefore.lastIndexOf("@");
+                if (lastAt !== -1) {
+                    const charBefore = lastAt > 0 ? textBefore[lastAt - 1] : " ";
+                    if (charBefore === " " || charBefore === "\n" || lastAt === 0) {
+                        const search = textBefore.slice(lastAt + 1);
+                        if (!search.includes(" ")) {
+                            setShowMentions(true);
+                            setMentionSearch(search);
+                            setMentionStartIndex(lastAt);
+                        } else setShowMentions(false);
                     } else setShowMentions(false);
                 } else setShowMentions(false);
-            } else setShowMentions(false);
+            } else if (showMentions) {
+                // Close mentions if we're in mention mode but no @ found
+                setShowMentions(false);
+            }
         }
 
+        // Optimized textarea auto-resize using requestAnimationFrame
         if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+            requestAnimationFrame(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.style.height = 'auto';
+                    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+                }
+            });
         }
     };
 

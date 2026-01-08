@@ -38,7 +38,7 @@ const LeftNavbar = () => {
     // Navigation items for reuse
     const navItems = [
         { to: "/", icon: MessageSquare, label: "Messages" },
-        { to: "/contacts", icon: Users, label: "Contacts" },
+        { to: "/contacts", icon: Users, label: "Search Users" },
         { to: "/calls", icon: Phone, label: "Calls" },
         { to: "/notifications", icon: Bell, label: "Notifications", badge: unreadCount },
         { to: "/settings", icon: Settings, label: "Settings" },

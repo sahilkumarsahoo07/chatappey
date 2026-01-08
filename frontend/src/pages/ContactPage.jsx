@@ -1,4 +1,4 @@
-import { Users, Mail, UserPlus, Clock, Bell, Search, X, Send } from "lucide-react";
+import { Users, Mail, UserPlus, Clock, Bell, Search, X, Send, Check } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useEffect, useState } from "react";
@@ -39,18 +39,44 @@ const ContactPage = () => {
         }
     };
 
-    // Filter out: current user, existing friends, and apply search
+    // Filter out only current user and apply search
     const filteredUsers = users.filter((user) => {
         const isMe = user._id === authUser._id;
-        const isFriend = user.isFriend;
-        const matchesSearch = user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchQuery.toLowerCase());
+        const query = searchQuery.toLowerCase();
 
-        return !isMe && !isFriend && matchesSearch;
+        // Smart email search:
+        // If query has '@', search full email
+        // If query has no '@', ONLY search the username part (before @)
+        // This prevents "gmail" from showing everyone
+        const emailParts = user.email.toLowerCase().split('@');
+        const emailUsername = emailParts[0];
+        const emailMatch = query.includes('@')
+            ? user.email.toLowerCase().includes(query)
+            : emailUsername.includes(query);
+
+        const matchesSearch = user.fullName.toLowerCase().includes(query) || emailMatch;
+
+        return !isMe && matchesSearch;
     });
 
     const renderActionButton = (user) => {
         const isSending = sendingRequest === user._id;
+
+        // If already friends
+        if (user.isFriend) {
+            return (
+                <div className="flex flex-col items-center gap-1 w-full">
+                    <button
+                        disabled
+                        className="btn btn-sm btn-success gap-2 w-full"
+                    >
+                        <Check className="w-4 h-4" />
+                        Already Friends
+                    </button>
+                    <span className="text-xs text-success font-medium">Connected</span>
+                </div>
+            );
+        }
 
         // If pending request sent by me
         if (user.hasPendingRequest && user.pendingRequestSentByMe) {
@@ -152,79 +178,105 @@ const ContactPage = () => {
                     </div>
 
                     {/* Users Grid */}
-                    {filteredUsers.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {filteredUsers.map((user) => {
-                                const isOnline = onlineUsers.includes(user._id);
+                    {searchQuery.trim().length >= 3 ? (
+                        filteredUsers.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {filteredUsers.map((user) => {
+                                    const isOnline = onlineUsers.includes(user._id);
 
-                                return (
-                                    <div
-                                        key={user._id}
-                                        className="card bg-base-100 shadow-lg hover:shadow-xl transition-all duration-300 border border-base-300 hover:border-primary/50"
-                                    >
-                                        <div className="card-body p-6">
-                                            {/* Avatar Section */}
-                                            <div className="flex flex-col items-center mb-4">
-                                                <div className="relative mb-3">
-                                                    <div className="avatar">
-                                                        <div className="w-20 h-20 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                                                            <img
-                                                                src={user.profilePic || defaultImg}
-                                                                alt={user.fullName}
-                                                            />
+                                    return (
+                                        <div
+                                            key={user._id}
+                                            className="card bg-base-100 shadow-lg hover:shadow-xl transition-all duration-300 border border-base-300 hover:border-primary/50"
+                                        >
+                                            <div className="card-body p-6">
+                                                {/* Avatar Section */}
+                                                <div className="flex flex-col items-center mb-4">
+                                                    <div className="relative mb-3">
+                                                        <div className="avatar">
+                                                            <div className="w-20 h-20 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                                                                <img
+                                                                    src={user.profilePic || defaultImg}
+                                                                    alt={user.fullName}
+                                                                />
+                                                            </div>
                                                         </div>
+                                                        {isOnline && (
+                                                            <span className="absolute bottom-1 right-1 w-5 h-5 bg-green-500 rounded-full ring-2 ring-base-100"></span>
+                                                        )}
                                                     </div>
-                                                    {isOnline && (
-                                                        <span className="absolute bottom-1 right-1 w-5 h-5 bg-green-500 rounded-full ring-2 ring-base-100"></span>
-                                                    )}
+
+                                                    {/* User Info */}
+                                                    <h3 className="font-bold text-lg text-center truncate w-full">
+                                                        {user.fullName}
+                                                    </h3>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className={`badge badge-sm ${isOnline ? 'badge-success' : 'badge-ghost'}`}>
+                                                            {isOnline ? 'Online' : 'Offline'}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
-                                                {/* User Info */}
-                                                <h3 className="font-bold text-lg text-center truncate w-full">
-                                                    {user.fullName}
-                                                </h3>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`badge badge-sm ${isOnline ? 'badge-success' : 'badge-ghost'}`}>
-                                                        {isOnline ? 'Online' : 'Offline'}
-                                                    </span>
+                                                {/* Email */}
+                                                <div className="flex items-center gap-2 text-sm text-base-content/70 mb-4 justify-center">
+                                                    <Mail className="w-4 h-4 flex-shrink-0" />
+                                                    <span className="truncate">{user.email}</span>
                                                 </div>
-                                            </div>
 
-                                            {/* Email */}
-                                            <div className="flex items-center gap-2 text-sm text-base-content/70 mb-4 justify-center">
-                                                <Mail className="w-4 h-4 flex-shrink-0" />
-                                                <span className="truncate">{user.email}</span>
-                                            </div>
+                                                {/* About */}
+                                                {user.about && (
+                                                    <p className="text-sm text-base-content/60 italic text-center line-clamp-2 mb-4 min-h-[2.5rem]">
+                                                        "{user.about}"
+                                                    </p>
+                                                )}
 
-                                            {/* About */}
-                                            {user.about && (
-                                                <p className="text-sm text-base-content/60 italic text-center line-clamp-2 mb-4 min-h-[2.5rem]">
-                                                    "{user.about}"
-                                                </p>
-                                            )}
-
-                                            {/* Action Button */}
-                                            <div className="card-actions justify-center mt-auto">
-                                                {renderActionButton(user)}
+                                                {/* Action Button */}
+                                                <div className="card-actions justify-center mt-auto">
+                                                    {renderActionButton(user)}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        /* Empty State */
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            /* No results for search */
+                            <div className="text-center py-16">
+                                <div className="inline-block p-6 bg-base-100 rounded-3xl shadow-lg mb-4">
+                                    <Users className="w-16 h-16 text-base-content/30 mx-auto" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-base-content/70 mb-2">
+                                    User not found
+                                </h3>
+                                <p className="text-base-content/50 max-w-md mx-auto">
+                                    We couldn't find anyone matching "<span className="font-semibold">{searchQuery}</span>". Try a different name or email address.
+                                </p>
+                            </div>
+                        )
+                    ) : searchQuery.trim().length > 0 ? (
+                        /* User typed but less than 3 characters */
                         <div className="text-center py-16">
                             <div className="inline-block p-6 bg-base-100 rounded-3xl shadow-lg mb-4">
-                                <Users className="w-16 h-16 text-base-content/30 mx-auto" />
+                                <Search className="w-16 h-16 text-primary/50 mx-auto" />
                             </div>
                             <h3 className="text-2xl font-bold text-base-content/70 mb-2">
-                                {searchQuery ? 'No users found' : 'No new people to connect'}
+                                Keep typing...
                             </h3>
                             <p className="text-base-content/50 max-w-md mx-auto">
-                                {searchQuery
-                                    ? 'Try searching with a different name or email'
-                                    : 'You\'ve already connected with everyone! Check your notifications for pending requests.'}
+                                Type at least 3 characters to search for people
+                            </p>
+                        </div>
+                    ) : (
+                        /* Empty State - No search query */
+                        <div className="text-center py-16">
+                            <div className="inline-block p-6 bg-base-100 rounded-3xl shadow-lg mb-4">
+                                <Search className="w-16 h-16 text-base-content/30 mx-auto" />
+                            </div>
+                            <h3 className="text-2xl font-bold text-base-content/70 mb-2">
+                                Search for people
+                            </h3>
+                            <p className="text-base-content/50 max-w-md mx-auto">
+                                Start typing in the search box to find people to connect with
                             </p>
                         </div>
                     )}

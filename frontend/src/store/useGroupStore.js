@@ -250,10 +250,15 @@ export const useGroupStore = create((set, get) => ({
                         )
                     });
                 } else {
-                    // Standard replacement
+                    // Standard replacement - KEEP optimistic ID to prevent shake
                     set({
                         groupMessages: currentMessages.map(msg =>
-                            msg._id === optimisticMessage._id ? newMessage : msg
+                            msg._id === optimisticMessage._id ? {
+                                ...msg, // Keep optimistic as base
+                                ...newMessage, // Overlay real data
+                                _id: optimisticMessage._id, // CRITICAL: Keep temp ID
+                                realId: newMessage._id // Store real ID for reference
+                            } : msg
                         )
                     });
                 }
@@ -466,6 +471,13 @@ export const useGroupStore = create((set, get) => ({
 
             // If this is in the currently selected group, add the message
             if (selectedGroup?._id === groupId) {
+                // CRITICAL FIX: Always check for duplicate by ID first
+                const alreadyExists = groupMessages.some(m => m._id === message._id);
+                if (alreadyExists) {
+                    // Message already in list, don't add duplicate
+                    return;
+                }
+
                 // If it's my message, try to match it with an optimistic one to prevent flickering/duplicates
                 if (!isFromOther && !isSystem) {
                     const optimisticMsg = groupMessages.find(m =>
@@ -475,17 +487,17 @@ export const useGroupStore = create((set, get) => ({
                     );
 
                     if (optimisticMsg) {
+                        // Replace optimistic with real message
                         set({
                             groupMessages: groupMessages.map(m => m._id === optimisticMsg._id ? message : m)
                         });
-                    } else if (!groupMessages.some(m => m._id === message._id)) {
+                    } else {
+                        // No optimistic message found, add it
                         set({ groupMessages: [...groupMessages, message] });
                     }
                 } else {
-                    // System or other's message - add if not already there
-                    if (!groupMessages.some(m => m._id === message._id)) {
-                        set({ groupMessages: [...groupMessages, message] });
-                    }
+                    // System or other's message - add it
+                    set({ groupMessages: [...groupMessages, message] });
                 }
             }
 
