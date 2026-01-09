@@ -63,6 +63,12 @@ export const useChatStore = create((set, get) => ({
   sendMessage: async (messageData) => {
     const { selectedUser, messages, users, replyingToMessage } = get();
     const authUser = useAuthStore.getState().authUser;
+    const socket = useAuthStore.getState().socket;
+
+    if (!socket) {
+      toast.error("Connection error. Please refresh the page.");
+      return;
+    }
 
     // Create optimistic message to show instantly
     const optimisticMessage = {
@@ -90,65 +96,72 @@ export const useChatStore = create((set, get) => ({
     set({ messages: [...messages, optimisticMessage] });
 
     try {
-      const res = await axiosInstance.post(
-        `/messages/send/${selectedUser._id}`,
-        {
-          ...messageData,
-          replyTo: replyingToMessage?._id || null
+      // Send via WebSocket instead of HTTP
+      socket.emit("sendMessage", {
+        receiverId: selectedUser._id,
+        ...messageData,
+        replyTo: replyingToMessage?._id || null
+      }, (response) => {
+        if (response.error) {
+          // Handle error
+          const currentMessages = get().messages;
+          set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
+          toast.error(response.error);
+          return;
         }
-      );
-      const newMessage = res.data;
 
-      // Replace optimistic message with real one from server
-      // CRITICAL: Keep the optimistic _id to prevent React key change (no shake!)
-      const currentMessages = get().messages;
-      set({
-        messages: currentMessages.map(msg => {
-          if (msg._id === optimisticMessage._id) {
+        const newMessage = response.message;
+
+        // Replace optimistic message with real one from server
+        const currentMessages = get().messages;
+        set({
+          messages: currentMessages.map(msg => {
+            if (msg._id === optimisticMessage._id) {
+              return {
+                ...msg, // Keep optimistic message as base (preserves temp ID)
+                ...newMessage, // Overlay real data from server
+                _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
+                image: optimisticMessage.image || newMessage.image,
+                audio: optimisticMessage.audio || newMessage.audio,
+                file: optimisticMessage.file || newMessage.file,
+                createdAt: optimisticMessage.createdAt,
+                // Preserve reply data from server response
+                replyTo: newMessage.replyTo,
+                replyToMessage: newMessage.replyToMessage,
+                realId: newMessage._id // Store real ID for reference if needed
+              };
+            }
+            return msg;
+          })
+        });
+
+        // Instantly update sidebar by modifying users list locally
+        const updatedUsers = users.map(user => {
+          if (user._id === selectedUser._id) {
             return {
-              ...msg, // Keep optimistic message as base (preserves temp ID)
-              ...newMessage, // Overlay real data from server
-              _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
-              image: optimisticMessage.image || newMessage.image,
-              audio: optimisticMessage.audio || newMessage.audio,
-              file: optimisticMessage.file || newMessage.file,
-              createdAt: optimisticMessage.createdAt,
-              // Preserve reply data from server response
-              replyTo: newMessage.replyTo,
-              replyToMessage: newMessage.replyToMessage,
-              realId: newMessage._id // Store real ID for reference if needed
+              ...user,
+              lastMessage: {
+                text: newMessage.text,
+                image: newMessage.image,
+                createdAt: newMessage.createdAt,
+                senderId: newMessage.senderId,
+                status: newMessage.status
+              }
             };
           }
-          return msg;
-        })
-      });
+          return user;
+        });
 
-      // Instantly update sidebar by modifying users list locally
-      const updatedUsers = users.map(user => {
-        if (user._id === selectedUser._id) {
-          return {
-            ...user,
-            lastMessage: {
-              text: newMessage.text,
-              image: newMessage.image,
-              createdAt: newMessage.createdAt,
-              senderId: newMessage.senderId,
-              status: newMessage.status
-            }
-          };
-        }
-        return user;
-      });
+        // Sort users to move the current chat to the top
+        const sortedUsers = [...updatedUsers].sort((a, b) => {
+          const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+          const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+          return bTime - aTime;
+        });
 
-      // Sort users to move the current chat to the top
-      const sortedUsers = [...updatedUsers].sort((a, b) => {
-        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
-        return bTime - aTime;
+        set({ users: sortedUsers });
+        set({ replyingToMessage: null });
       });
-
-      set({ users: sortedUsers });
-      set({ replyingToMessage: null });
     } catch (error) {
       const currentMessages = get().messages;
       set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
@@ -495,9 +508,16 @@ export const useChatStore = create((set, get) => ({
   },
 
   markMessagesAsRead: async (userId) => {
+    const socket = useAuthStore.getState().socket;
+    if (!socket) {
+      console.error("Socket not available for marking messages as read");
+      return;
+    }
+
     try {
-      await axiosInstance.put(`/messages/read/${userId}`);
-      get().refreshUsers();
+      // Emit via WebSocket instead of HTTP
+      socket.emit("markMessagesAsRead", { userId });
+      // No need to refreshUsers() - WebSocket will handle updates
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }

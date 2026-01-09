@@ -201,6 +201,12 @@ export const useGroupStore = create((set, get) => ({
     sendGroupMessage: async (messageData, targetGroupId = null) => {
         const { selectedGroup, groupMessages, groups } = get();
         const authUser = useAuthStore.getState().authUser;
+        const socket = useAuthStore.getState().socket;
+
+        if (!socket) {
+            toast.error("Connection error. Please refresh the page.");
+            return;
+        }
 
         const groupId = targetGroupId || selectedGroup?._id;
         if (!groupId) return;
@@ -231,59 +237,70 @@ export const useGroupStore = create((set, get) => ({
         }
 
         try {
-            const res = await axiosInstance.post(
-                `/groups/${groupId}/messages`,
-                messageData
-            );
-            const newMessage = res.data;
-
-            // Replace optimistic message with real one (only if not forwarding)
-            if (!isForwarding) {
-                const currentMessages = get().groupMessages;
-                const alreadyAddedBySocket = currentMessages.some(m => m._id === newMessage._id);
-
-                if (alreadyAddedBySocket) {
-                    // Remove the optimistic one since socket already added the real one
-                    set({
-                        groupMessages: currentMessages.filter(msg =>
-                            msg._id !== optimisticMessage._id
-                        )
-                    });
-                } else {
-                    // Standard replacement - KEEP optimistic ID to prevent shake
-                    set({
-                        groupMessages: currentMessages.map(msg =>
-                            msg._id === optimisticMessage._id ? {
-                                ...msg, // Keep optimistic as base
-                                ...newMessage, // Overlay real data
-                                _id: optimisticMessage._id, // CRITICAL: Keep temp ID
-                                realId: newMessage._id // Store real ID for reference
-                            } : msg
-                        )
-                    });
-                }
-            }
-
-            // Update group's lastMessage in the list
-            set({
-                groups: groups.map(g => {
-                    if (g._id === groupId) {
-                        return {
-                            ...g,
-                            lastMessage: {
-                                text: newMessage.text || "📷 Photo",
-                                senderId: authUser._id,
-                                senderName: authUser.fullName,
-                                createdAt: newMessage.createdAt
-                            },
-                            updatedAt: newMessage.createdAt
-                        };
+            // Send via WebSocket instead of HTTP
+            socket.emit("sendGroupMessage", {
+                groupId,
+                ...messageData
+            }, (response) => {
+                if (response.error) {
+                    // Handle error
+                    if (!isForwarding) {
+                        set({
+                            groupMessages: get().groupMessages.filter(msg => msg._id !== optimisticMessage._id)
+                        });
                     }
-                    return g;
-                }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-            });
+                    toast.error(response.error);
+                    return;
+                }
 
-            return newMessage;
+                const newMessage = response.message;
+
+                // Replace optimistic message with real one (only if not forwarding)
+                if (!isForwarding) {
+                    const currentMessages = get().groupMessages;
+                    const alreadyAddedBySocket = currentMessages.some(m => m._id === newMessage._id);
+
+                    if (alreadyAddedBySocket) {
+                        // Remove the optimistic one since socket already added the real one
+                        set({
+                            groupMessages: currentMessages.filter(msg =>
+                                msg._id !== optimisticMessage._id
+                            )
+                        });
+                    } else {
+                        // Standard replacement - KEEP optimistic ID to prevent shake
+                        set({
+                            groupMessages: currentMessages.map(msg =>
+                                msg._id === optimisticMessage._id ? {
+                                    ...msg, // Keep optimistic as base
+                                    ...newMessage, // Overlay real data
+                                    _id: optimisticMessage._id, // CRITICAL: Keep temp ID
+                                    realId: newMessage._id // Store real ID for reference
+                                } : msg
+                            )
+                        });
+                    }
+                }
+
+                // Update group's lastMessage in the list
+                set({
+                    groups: groups.map(g => {
+                        if (g._id === groupId) {
+                            return {
+                                ...g,
+                                lastMessage: {
+                                    text: newMessage.text || "📷 Photo",
+                                    senderId: authUser._id,
+                                    senderName: authUser.fullName,
+                                    createdAt: newMessage.createdAt
+                                },
+                                updatedAt: newMessage.createdAt
+                            };
+                        }
+                        return g;
+                    }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+                });
+            });
         } catch (error) {
             // Remove optimistic message on error (only if not forwarding)
             if (!isForwarding) {
@@ -291,7 +308,9 @@ export const useGroupStore = create((set, get) => ({
                     groupMessages: get().groupMessages.filter(msg => msg._id !== optimisticMessage._id)
                 });
             }
-            toast.error(error.response?.data?.error || "Failed to send message");
+            // This catch block will only catch synchronous errors from socket.emit itself,
+            // not errors returned in the callback.
+            toast.error(error.message || "Failed to send message via WebSocket");
             throw error;
         }
     },

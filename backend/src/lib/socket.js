@@ -307,7 +307,293 @@ io.on("connection", (socket) => {
     }
   });
 
+  // WebSocket-based message sending for direct messages
+  socket.on("sendMessage", async (messageData, callback) => {
+    try {
+      const { receiverId, text, image, audio, file, fileName, replyTo, poll, scheduledFor, isScheduled } = messageData;
 
+      // Import models dynamically
+      const User = (await import("../models/user.model.js")).default;
+      const Message = (await import("../models/message.model.js")).default;
+      const FriendRequest = (await import("../models/friendRequest.model.js")).default;
+      const cloudinary = (await import("../lib/cloudinary.js")).default;
+
+      // Check if users are friends
+      const sender = await User.findById(userId).select('blockedUsers friends');
+      const isFriend = sender.friends.some(friendId => friendId.toString() === receiverId.toString());
+
+      if (!isFriend) {
+        return callback?.({ error: "Cannot send message. You must be friends to chat." });
+      }
+
+      // Check if sender is blocked by receiver
+      const receiver = await User.findById(receiverId).select('blockedUsers');
+      if (receiver && receiver.blockedUsers.some(blockedId => blockedId.toString() === userId.toString())) {
+        return callback?.({ error: "Cannot send message. You have been blocked by this user." });
+      }
+
+      // Check if receiver is blocked by sender
+      if (sender && sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
+        return callback?.({ error: "Cannot send message. You have blocked this user." });
+      }
+
+      let imageUrl, audioUrl, fileUrl;
+
+      // Upload Image
+      if (image) {
+        const uploadResponse = await cloudinary.uploader.upload(image);
+        imageUrl = uploadResponse.secure_url;
+      }
+
+      // Upload Audio
+      if (audio) {
+        const uploadResponse = await cloudinary.uploader.upload(audio, {
+          resource_type: "auto"
+        });
+        if (uploadResponse) {
+          audioUrl = uploadResponse.secure_url;
+        } else {
+          console.error("Audio upload failed to Cloudinary");
+        }
+      }
+
+      // Upload File
+      if (file) {
+        const uploadOptions = {
+          resource_type: "raw"
+        };
+
+        if (fileName) {
+          const sanitizedName = fileName.split('/').pop().split('\\').pop();
+          const nameWithoutExt = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
+          uploadOptions.public_id = nameWithoutExt;
+        }
+
+        const uploadResponse = await cloudinary.uploader.upload(file, uploadOptions);
+        fileUrl = uploadResponse.secure_url;
+      }
+
+      // Handle reply data if present
+      let replyToMessageData = null;
+      if (replyTo) {
+        const originalMessage = await Message.findById(replyTo).populate('senderId', 'fullName');
+        if (originalMessage) {
+          replyToMessageData = {
+            text: originalMessage.text,
+            image: originalMessage.image,
+            senderId: originalMessage.senderId._id,
+            senderName: originalMessage.senderId.fullName
+          };
+        }
+      }
+
+      // Check if receiver is online
+      const receiverSocketId = getReceiverSocketId(receiverId);
+
+      // Determine status
+      let initialStatus = receiverSocketId ? "delivered" : "sent";
+
+      // Check if message should be scheduled
+      const shouldBeScheduled = isScheduled || !!scheduledFor;
+
+      if (shouldBeScheduled) {
+        initialStatus = "scheduled";
+      }
+
+      const newMessage = new Message({
+        senderId: userId,
+        receiverId,
+        text,
+        image: imageUrl,
+        audio: audioUrl,
+        file: fileUrl,
+        fileName: fileName || null,
+        status: initialStatus,
+        replyTo: replyTo || null,
+        replyToMessage: replyToMessageData,
+        poll: poll ? {
+          question: poll.question,
+          options: poll.options.map(opt => ({ text: opt.text, votes: [] }))
+        } : undefined,
+        scheduledFor: shouldBeScheduled ? new Date(scheduledFor) : undefined
+      });
+
+      await newMessage.save();
+
+      // Only emit if NOT scheduled
+      if (!shouldBeScheduled) {
+        if (receiverSocketId) {
+          // Send new message to receiver
+          io.to(receiverSocketId).emit("newMessage", newMessage);
+
+          // Notify sender that message was delivered
+          const senderSocketId = getReceiverSocketId(userId);
+          if (senderSocketId) {
+            io.to(senderSocketId).emit("messageDelivered", {
+              messageId: newMessage._id,
+              status: "delivered"
+            });
+          }
+        }
+      }
+
+      // Send success response to sender
+      callback?.({ success: true, message: newMessage });
+    } catch (error) {
+      console.error("Error in sendMessage socket handler:", error.message);
+      callback?.({ error: error.message || "Internal server error" });
+    }
+  });
+
+  // WebSocket-based message sending for group messages
+  socket.on("sendGroupMessage", async (messageData, callback) => {
+    try {
+      const { groupId, text, image, audio, file, fileName, isForwarded, mentions, poll } = messageData;
+
+      // Import models dynamically
+      const Group = (await import("../models/group.model.js")).default;
+      const GroupMessage = (await import("../models/groupMessage.model.js")).default;
+      const cloudinary = (await import("../lib/cloudinary.js")).default;
+
+      // Check if group exists and user is a member
+      const group = await Group.findById(groupId);
+      if (!group) {
+        return callback?.({ error: "Group not found" });
+      }
+
+      const isMember = group.members.some(m =>
+        (m.user?._id || m.user).toString() === userId.toString()
+      );
+
+      if (!isMember) {
+        return callback?.({ error: "You are not a member of this group" });
+      }
+
+      // Check announcement-only restriction
+      const memberInfo = group.members.find(m => (m.user?._id || m.user).toString() === userId.toString());
+      if (group.announcementOnly && memberInfo?.role !== 'admin' && memberInfo?.role !== 'owner') {
+        return callback?.({ error: "Only admins can send messages in this group" });
+      }
+
+      let imageUrl, audioUrl, fileUrl;
+
+      // Upload Image
+      if (image) {
+        const uploadResponse = await cloudinary.uploader.upload(image);
+        imageUrl = uploadResponse.secure_url;
+      }
+
+      // Upload Audio
+      if (audio) {
+        const uploadResponse = await cloudinary.uploader.upload(audio, {
+          resource_type: "auto"
+        });
+        if (uploadResponse) {
+          audioUrl = uploadResponse.secure_url;
+        }
+      }
+
+      // Upload File
+      if (file) {
+        const uploadOptions = { resource_type: "raw" };
+        if (fileName) {
+          const sanitizedName = fileName.split('/').pop().split('\\').pop();
+          const nameWithoutExt = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
+          uploadOptions.public_id = nameWithoutExt;
+        }
+        const uploadResponse = await cloudinary.uploader.upload(file, uploadOptions);
+        fileUrl = uploadResponse.secure_url;
+      }
+
+      const newMessage = new GroupMessage({
+        groupId,
+        senderId: userId,
+        text,
+        image: imageUrl,
+        audio: audioUrl,
+        file: fileUrl,
+        fileName: fileName || null,
+        isForwarded: isForwarded || false,
+        mentions: mentions || [],
+        poll: poll ? {
+          question: poll.question,
+          options: poll.options.map(opt => ({ text: opt.text, votes: [] }))
+        } : undefined,
+        readBy: [userId]
+      });
+
+      await newMessage.save();
+
+      // Populate sender info
+      await newMessage.populate('senderId', 'fullName profilePic');
+
+      // Update group's lastMessage and updatedAt
+      group.lastMessage = {
+        text: text || "📷 Photo",
+        senderId: userId,
+        createdAt: newMessage.createdAt
+      };
+      group.updatedAt = new Date();
+      await group.save();
+
+      // Broadcast to all group members
+      io.to(groupId).emit("group:newMessage", {
+        groupId,
+        message: newMessage
+      });
+
+      // Send success response to sender
+      callback?.({ success: true, message: newMessage });
+    } catch (error) {
+      console.error("Error in sendGroupMessage socket handler:", error.message);
+      callback?.({ error: error.message || "Internal server error" });
+    }
+  });
+
+  // WebSocket-based mark messages as read
+  socket.on("markMessagesAsRead", async ({ userId: otherUserId }) => {
+    try {
+      const myId = userId;
+
+      // Import models dynamically
+      const Message = (await import("../models/message.model.js")).default;
+      const User = (await import("../models/user.model.js")).default;
+
+      // Get messages that need to be marked as read
+      const messagesToUpdate = await Message.find({
+        senderId: otherUserId,
+        receiverId: myId,
+        status: { $ne: "read" }
+      }).select('_id');
+
+      // Mark all messages from the other user as read
+      await Message.updateMany(
+        {
+          senderId: otherUserId,
+          receiverId: myId,
+          status: { $ne: "read" }
+        },
+        {
+          $set: { status: "read" }
+        }
+      );
+
+      // Get user's privacy settings for read receipts
+      const user = await User.findById(myId).select('privacyReadReceipts');
+
+      // Notify sender via socket that messages were read (if privacy allows)
+      const senderSocketId = getReceiverSocketId(otherUserId);
+      if (senderSocketId && messagesToUpdate.length > 0 && user?.privacyReadReceipts !== false) {
+        io.to(senderSocketId).emit("messagesRead", {
+          readBy: myId,
+          chatWith: otherUserId,
+          messageIds: messagesToUpdate.map(msg => msg._id.toString())
+        });
+      }
+    } catch (error) {
+      console.error("Error in markMessagesAsRead socket handler:", error.message);
+    }
+  });
 
   socket.on("disconnect", async () => {
     if (userId && userSocketMap[userId] === socket.id) {

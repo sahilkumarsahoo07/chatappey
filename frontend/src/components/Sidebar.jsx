@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
@@ -17,6 +17,7 @@ const Sidebar = () => {
     const [showNewChatModal, setShowNewChatModal] = useState(false);
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [activeTab, setActiveTab] = useState("chats"); // "chats" or "groups"
+    const refreshUsersTimeoutRef = useRef(null); // Debounce refresh
 
     useEffect(() => {
         getUsers();
@@ -34,27 +35,34 @@ const Sidebar = () => {
         const socket = useAuthStore.getState().socket;
         if (!socket) return;
 
+        // Debounced refresh to prevent excessive API calls
+        const debouncedRefresh = () => {
+            if (refreshUsersTimeoutRef.current) {
+                clearTimeout(refreshUsersTimeoutRef.current);
+            }
+            refreshUsersTimeoutRef.current = setTimeout(() => {
+                refreshUsers();
+            }, 500); // Wait 500ms before refreshing
+        };
+
         const handleNewMessage = (newMessage) => {
-            // Refresh user list silently to update last message and reorder
-            refreshUsers();
+            // Debounce refresh to prevent multiple rapid calls
+            debouncedRefresh();
         };
 
         const handleNewUserSignup = (newUser) => {
-            // Refresh user list when a new user signs up
             console.log("New user signed up:", newUser);
-            refreshUsers();
+            debouncedRefresh();
         };
 
         const handleUserListUpdate = (data) => {
-            // Refresh user list when any user connects
             console.log("User list updated, user connected:", data.userId);
-            refreshUsers();
+            debouncedRefresh();
         };
 
         const handlePrivacyUpdate = (data) => {
-            // Refresh user list when someone changes their privacy settings
             console.log("Privacy settings updated for user:", data.userId);
-            refreshUsers();
+            debouncedRefresh();
         };
 
         socket.on("newMessage", handleNewMessage);
@@ -63,6 +71,9 @@ const Sidebar = () => {
         socket.on("privacy-settings-updated", handlePrivacyUpdate);
 
         return () => {
+            if (refreshUsersTimeoutRef.current) {
+                clearTimeout(refreshUsersTimeoutRef.current);
+            }
             socket.off("newMessage", handleNewMessage);
             socket.off("newUserSignup", handleNewUserSignup);
             socket.off("userListUpdate", handleUserListUpdate);

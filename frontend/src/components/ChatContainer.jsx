@@ -123,6 +123,7 @@ const ChatContainer = () => {
   const [imageZoom, setImageZoom] = useState(1);
   const longPressTimerRef = useRef(null);
   const longPressMessageRef = useRef(null);
+  const blockedUsersCache = useRef(null); // Cache for blocked users
 
   const { messages, getMessages, isMessagesLoading, selectedUser, setSelectedUser, subscribeToMessages, unsubscribeFromMessages, deleteForAllMessage, users, forwardMessage, sendFriendRequest, setReplyingToMessage, isTyping, togglePinMessage, votePoll, sendReaction, editMessage } = useChatStore();
   const { authUser, getOneBlockedUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
@@ -152,11 +153,19 @@ const ChatContainer = () => {
   }, [messages.length, isTyping]);
 
 
+  // Optimized: Check blocked status with caching
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const data = await getOneBlockedUser();
-        setIsBlocked(data.blockedUsers.some(user => user._id === selectedUser._id));
+        // Use cache if available and fresh (< 30 seconds old)
+        const now = Date.now();
+        if (blockedUsersCache.current && now - blockedUsersCache.current.timestamp < 30000) {
+          setIsBlocked(blockedUsersCache.current.data.some(user => user._id === selectedUser._id));
+        } else {
+          const data = await getOneBlockedUser();
+          blockedUsersCache.current = { data: data.blockedUsers, timestamp: now };
+          setIsBlocked(data.blockedUsers.some(user => user._id === selectedUser._id));
+        }
       } catch (error) {
         console.error("Error checking blocked status:", error);
       }
@@ -167,10 +176,11 @@ const ChatContainer = () => {
   useEffect(() => {
     const unsubscribe = subscribeToBlockEvents(async ({ blockerId, blockedId }) => {
       if (authUser._id === blockerId || authUser._id === blockedId) {
-        const blocked = await getOneBlockedUser().then(data =>
-          data.blockedUsers.some(user => user._id === selectedUser._id)
-        );
-        setIsBlocked(blocked);
+        // Invalidate cache on block/unblock events
+        blockedUsersCache.current = null;
+        const data = await getOneBlockedUser();
+        blockedUsersCache.current = { data: data.blockedUsers, timestamp: Date.now() };
+        setIsBlocked(data.blockedUsers.some(user => user._id === selectedUser._id));
       }
     });
     return unsubscribe;
