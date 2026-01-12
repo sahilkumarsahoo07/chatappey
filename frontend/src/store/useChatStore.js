@@ -286,9 +286,18 @@ export const useChatStore = create((set, get) => ({
       const senderId = newMessage.senderId === authUser._id ? newMessage.receiverId : newMessage.senderId;
       const senderIndex = users.findIndex((u) => u._id === senderId);
 
+      // CRITICAL: Check if chat is already open - if so, don't increment unreadCount
+      const isChatAlreadyOpen = currentSelectedUser?._id === senderId && isWindowFocused;
+      
       if (senderIndex !== -1) {
         const updatedUsers = [...users];
         const sender = updatedUsers[senderIndex];
+
+        // If chat is already open, unreadCount should be 0
+        // If message is for me and chat is NOT open, increment unreadCount
+        const shouldIncrementUnread = newMessage.receiverId === authUser._id && 
+                                       !isChatAlreadyOpen && 
+                                       !shouldMarkRead;
 
         const updatedSender = {
           ...sender,
@@ -297,11 +306,11 @@ export const useChatStore = create((set, get) => ({
             image: newMessage.image,
             createdAt: newMessage.createdAt,
             senderId: newMessage.senderId,
-            status: (shouldMarkRead || (isWindowFocused && isSenderActiveCurrentChat)) ? 'read' : 'delivered'
+            status: (shouldMarkRead || isChatAlreadyOpen) ? 'read' : 'delivered'
           },
-          unreadCount: (shouldMarkRead || isSenderActiveCurrentChat)
-            ? 0
-            : (newMessage.receiverId === authUser._id ? (sender.unreadCount || 0) + 1 : sender.unreadCount)
+          unreadCount: (shouldMarkRead || isChatAlreadyOpen)
+            ? 0  // Chat is open, no unread
+            : (shouldIncrementUnread ? (sender.unreadCount || 0) + 1 : sender.unreadCount)
         };
 
         updatedUsers.splice(senderIndex, 1);
@@ -311,9 +320,11 @@ export const useChatStore = create((set, get) => ({
         get().refreshUsers();
       }
 
+      // Mark messages as read immediately if chat is open and visible
       const isVisible = !document.hidden;
       if (isVisible && isMessageForCurrentChat && newMessage.receiverId === authUser._id) {
         if (newMessage.senderId === currentSelectedUser?._id) {
+          // Mark as read immediately - this will also update unreadCount to 0
           get().markMessagesAsRead(currentSelectedUser._id);
         }
       }
@@ -368,17 +379,27 @@ export const useChatStore = create((set, get) => ({
       const { selectedUser, messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
       if (selectedUser && readBy === selectedUser._id && chatWith === authUser._id) {
+        // Update messages status to 'read'
+        const updatedMessages = messages.map((msg) =>
+          msg.senderId === authUser._id && msg.status !== "read"
+            ? { ...msg, status: "read" }
+            : msg
+        );
+        
+        // Update users list: set unreadCount to 0 and update lastMessage status
+        const updatedUsers = users.map(user =>
+          user._id === readBy
+            ? { 
+                ...user, 
+                unreadCount: 0,  // INSTANTLY remove unread badge when messages are read
+                lastMessage: user.lastMessage ? { ...user.lastMessage, status: 'read' } : null 
+              }
+            : user
+        );
+        
         set({
-          messages: messages.map((msg) =>
-            msg.senderId === authUser._id && msg.status !== "read"
-              ? { ...msg, status: "read" }
-              : msg
-          ),
-          users: users.map(user =>
-            user._id === readBy
-              ? { ...user, lastMessage: user.lastMessage ? { ...user.lastMessage, status: 'read' } : null }
-              : user
-          )
+          messages: updatedMessages,
+          users: updatedUsers
         });
       }
     });
@@ -529,10 +550,19 @@ export const useChatStore = create((set, get) => ({
       return;
     }
 
+    // INSTANTLY update unreadCount to 0 before sending to server (optimistic update)
+    const { users } = get();
+    const updatedUsers = users.map(user =>
+      user._id === userId
+        ? { ...user, unreadCount: 0 }  // Remove badge immediately
+        : user
+    );
+    set({ users: updatedUsers });
+
     try {
-      // Emit via WebSocket instead of HTTP
+      // Emit via WebSocket - server will confirm and update message statuses
       socket.emit("markMessagesAsRead", { userId });
-      // No need to refreshUsers() - WebSocket will handle updates
+      // No need to refreshUsers() - WebSocket will handle message status updates
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }
