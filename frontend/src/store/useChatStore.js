@@ -64,13 +64,18 @@ export const useChatStore = create((set, get) => ({
     const { selectedUser, messages, users, replyingToMessage } = get();
     const authUser = useAuthStore.getState().authUser;
     const socket = useAuthStore.getState().socket;
+    const onlineUsers = useAuthStore.getState().onlineUsers || [];
 
     if (!socket) {
       toast.error("Connection error. Please refresh the page.");
       return;
     }
 
+    // Check if receiver is online
+    const isReceiverOnline = onlineUsers.includes(selectedUser._id);
+    
     // Create optimistic message to show instantly
+    // Start with 'sent' (single tick), will upgrade to 'delivered' if receiver is online
     const optimisticMessage = {
       _id: `temp-${Date.now()}`, // Temporary ID
       text: messageData.text,
@@ -82,7 +87,7 @@ export const useChatStore = create((set, get) => ({
       senderId: authUser._id,
       receiverId: selectedUser._id,
       createdAt: messageData.scheduledFor ? new Date(messageData.scheduledFor).toISOString() : new Date().toISOString(),
-      status: messageData.scheduledFor ? 'scheduled' : 'delivered', // Start with 'delivered' for smooth UX
+      status: messageData.scheduledFor ? 'scheduled' : 'sent', // Start with 'sent' (single tick)
       replyTo: replyingToMessage?._id || null,
       replyToMessage: replyingToMessage ? {
         text: replyingToMessage.text,
@@ -92,81 +97,91 @@ export const useChatStore = create((set, get) => ({
       } : null
     };
 
-    // Add message to UI INSTANTLY
-    set({ messages: [...messages, optimisticMessage] });
+    // Add message to UI INSTANTLY (synchronous state update)
+    // Determine initial status based on receiver online status
+    const initialStatus = (isReceiverOnline && !messageData.scheduledFor) ? 'delivered' : optimisticMessage.status;
+    const messageToAdd = { ...optimisticMessage, status: initialStatus };
+    
+    // Add message to state immediately - no delays
+    set({ messages: [...messages, messageToAdd] });
 
-    try {
-      // Send via WebSocket instead of HTTP
-      socket.emit("sendMessage", {
-        receiverId: selectedUser._id,
-        ...messageData,
-        replyTo: replyingToMessage?._id || null
-      }, (response) => {
-        if (response.error) {
-          // Handle error
-          const currentMessages = get().messages;
-          set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
-          toast.error(response.error);
-          return;
-        }
-
-        const newMessage = response.message;
-
-        // Replace optimistic message with real one from server
+    // Send via WebSocket (non-blocking, fire-and-forget)
+    socket.emit("sendMessage", {
+      receiverId: selectedUser._id,
+      ...messageData,
+      replyTo: replyingToMessage?._id || null
+    }, (response) => {
+      // Process response immediately (no setTimeout delay)
+      if (response.error) {
+        // Handle error
         const currentMessages = get().messages;
-        set({
-          messages: currentMessages.map(msg => {
-            if (msg._id === optimisticMessage._id) {
-              return {
-                ...msg, // Keep optimistic message as base (preserves temp ID)
-                ...newMessage, // Overlay real data from server
-                _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
-                image: optimisticMessage.image || newMessage.image,
-                audio: optimisticMessage.audio || newMessage.audio,
-                file: optimisticMessage.file || newMessage.file,
-                createdAt: optimisticMessage.createdAt,
-                // Preserve reply data from server response
-                replyTo: newMessage.replyTo,
-                replyToMessage: newMessage.replyToMessage,
-                realId: newMessage._id // Store real ID for reference if needed
-              };
-            }
-            return msg;
-          })
-        });
+        set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
+        toast.error(response.error);
+        return;
+      }
 
-        // Instantly update sidebar by modifying users list locally
-        const updatedUsers = users.map(user => {
-          if (user._id === selectedUser._id) {
-            return {
-              ...user,
-              lastMessage: {
-                text: newMessage.text,
-                image: newMessage.image,
-                createdAt: newMessage.createdAt,
-                senderId: newMessage.senderId,
-                status: newMessage.status
-              }
-            };
-          }
-          return user;
-        });
+      const newMessage = response.message;
 
-        // Sort users to move the current chat to the top
-        const sortedUsers = [...updatedUsers].sort((a, b) => {
-          const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-          const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
-          return bTime - aTime;
-        });
-
-        set({ users: sortedUsers });
-        set({ replyingToMessage: null });
-      });
-    } catch (error) {
+      // Batch all updates together to minimize re-renders
       const currentMessages = get().messages;
-      set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
-      toast.error(error.response?.data?.message || "Failed to send message");
-    }
+      const updatedMessages = currentMessages.map(msg => {
+        if (msg._id === optimisticMessage._id) {
+          // Preserve the status from optimistic update (sent or delivered)
+          // Server might return different status, but we keep our optimistic one
+          const preservedStatus = msg.status === 'delivered' ? 'delivered' : 
+                                 (newMessage.status === 'delivered' || newMessage.status === 'read') ? newMessage.status : 
+                                 msg.status; // Keep 'sent' if not upgraded yet
+          
+          return {
+            ...msg, // Keep optimistic message as base (preserves temp ID)
+            ...newMessage, // Overlay real data from server
+            _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
+            status: preservedStatus, // Use preserved status
+            image: optimisticMessage.image || newMessage.image,
+            audio: optimisticMessage.audio || newMessage.audio,
+            file: optimisticMessage.file || newMessage.file,
+            createdAt: optimisticMessage.createdAt,
+            // Preserve reply data from server response
+            replyTo: newMessage.replyTo,
+            replyToMessage: newMessage.replyToMessage,
+            realId: newMessage._id // Store real ID for reference if needed
+          };
+        }
+        return msg;
+      });
+
+      // Update users list (defer sorting to prevent blocking)
+      const currentUsers = get().users;
+      const updatedUsers = currentUsers.map(user => {
+        if (user._id === selectedUser._id) {
+          return {
+            ...user,
+            lastMessage: {
+              text: newMessage.text,
+              image: newMessage.image,
+              createdAt: newMessage.createdAt,
+              senderId: newMessage.senderId,
+              status: updatedMessages.find(m => m._id === optimisticMessage._id)?.status || newMessage.status
+            }
+          };
+        }
+        return user;
+      });
+
+      // Sort users and update state IMMEDIATELY (no requestAnimationFrame delay)
+      const sortedUsers = [...updatedUsers].sort((a, b) => {
+        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      // Batch all state updates together - update immediately
+      set({ 
+        messages: updatedMessages,
+        users: sortedUsers,
+        replyingToMessage: null 
+      });
+    });
   },
 
   subscribeToMessages: () => {

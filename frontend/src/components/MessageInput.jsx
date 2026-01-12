@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo, memo } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -9,6 +9,7 @@ import GifPicker from "./GifPicker";
 import PollCreator from "./PollCreator";
 import ScheduleMessageModal from "./ScheduleMessageModal";
 import "./MessageInput.css";
+import { useShallow } from "zustand/react/shallow";
 
 // Voice Preview Player Component
 const VoicePreviewPlayer = ({ audioUrl }) => {
@@ -136,14 +137,21 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const mentionsRef = useRef(null);
     const attachmentMenuRef = useRef(null);
 
-    const { sendMessage, replyingToMessage, clearReplyingToMessage, setTyping, selectedUser } = useChatStore();
+    const { sendMessage, replyingToMessage, clearReplyingToMessage, selectedUser } = useChatStore(useShallow((state) => ({
+        sendMessage: state.sendMessage,
+        replyingToMessage: state.replyingToMessage,
+        clearReplyingToMessage: state.clearReplyingToMessage,
+        selectedUser: state.selectedUser,
+    })));
     const { selectedGroup } = useGroupStore();
     const { socket } = useAuthStore();
 
     const isRestricted = isGroupChat && announcementOnly && !isAdmin;
-    const filteredMembers = groupMembers.filter(member =>
-        member.user?.fullName?.toLowerCase().includes(mentionSearch.toLowerCase())
-    );
+    const filteredMembers = useMemo(() => {
+        return groupMembers.filter(member =>
+            member.user?.fullName?.toLowerCase().includes(mentionSearch.toLowerCase())
+        );
+    }, [groupMembers, mentionSearch]);
 
     // Effects
     useEffect(() => {
@@ -362,66 +370,100 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             }
         }
 
-        // Prepare data
-        const messageData = {
-            text: extraData.text || text.trim(),
-            mentions: selectedMentions,
-            ...extraData
-        };
+        // Capture current values before clearing UI
+        const currentText = extraData.text || text.trim();
+        const currentImage = imagePreview || gifPreview;
+        const currentFile = filePreview;
+        const currentAudioBlob = audioBlob;
+        const currentMentions = [...selectedMentions];
 
-        if (imagePreview || gifPreview) {
-            messageData.image = imagePreview || gifPreview;
-        }
-
-        if (filePreview) {
-            messageData.file = filePreview.base64;
-            messageData.fileName = filePreview.name;
-            if (!messageData.text) messageData.text = `📎 ${filePreview.name}`;
-        }
-
-        if (audioBlob) {
-            try {
-                const base64Audio = await blobToBase64(audioBlob);
-                messageData.audio = base64Audio;
-                if (!messageData.text) messageData.text = "🎤 Voice message";
-            } catch (err) {
-                console.error("Audio processing failed", err);
-                toast.error("Failed to process audio");
-                isSendingRef.current = false; // Unlock on error
-                return;
-            }
-        }
-
-        // OPTIMISTIC UPDATE: Clear ALL UI immediately
+        // OPTIMISTIC UPDATE: Clear ALL UI IMMEDIATELY (synchronous for instant feedback)
+        // Use flushSync for immediate DOM updates if available, otherwise synchronous
         setText("");
         removeMedia();
         setSelectedMentions([]);
         setShowAttachmentMenu(false);
-        clearReplyingToMessage(); // Clear reply state INSTANTLY
-
+        clearReplyingToMessage();
+        
+        // Clear file inputs synchronously
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
-        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            // Force immediate reflow for instant visual feedback
+            textareaRef.current.offsetHeight;
+        }
 
-        // Send
-        try {
-            if (onSend) {
-                await onSend(messageData);
-            } else {
-                await sendMessage(messageData);
-            }
-            if (messageData.scheduledFor) toast.success("Message scheduled");
-        } catch (error) {
-            console.error("Failed to send message:", error);
-            toast.error("Failed to send message");
-            // NOTE: In a perfect world, we'd restore the draft here. 
-            // For now, prioritising "no double send" over "draft restoration on error".
-        } finally {
-            // Small delay before unlocking to prevent "mash enter" duplicates
+        // Prepare data (use captured values)
+        const messageData = {
+            text: currentText,
+            mentions: currentMentions,
+            ...extraData
+        };
+
+        if (currentImage) {
+            messageData.image = currentImage;
+        }
+
+        if (currentFile) {
+            messageData.file = currentFile.base64;
+            messageData.fileName = currentFile.name;
+            if (!messageData.text) messageData.text = `📎 ${currentFile.name}`;
+        }
+
+        // Process audio asynchronously without blocking UI
+        if (currentAudioBlob) {
+            // Process audio in background, don't block UI
+            blobToBase64(currentAudioBlob).then((base64Audio) => {
+                messageData.audio = base64Audio;
+                if (!messageData.text) messageData.text = "🎤 Voice message";
+                
+                // Send message with audio (non-blocking)
+                if (onSend) {
+                    onSend(messageData).catch(err => {
+                        console.error("Failed to send message:", err);
+                        toast.error("Failed to send message");
+                    });
+                } else {
+                    sendMessage(messageData).catch(err => {
+                        console.error("Failed to send message:", err);
+                        toast.error("Failed to send message");
+                    });
+                }
+            }).catch((err) => {
+                console.error("Audio processing failed", err);
+                toast.error("Failed to process audio");
+                isSendingRef.current = false;
+            });
+            
+            // Unlock after a short delay for audio messages
             setTimeout(() => {
                 isSendingRef.current = false;
-            }, 500);
+            }, 300);
+            return; // Exit early for audio messages
         }
+
+        // Send non-audio messages IMMEDIATELY (synchronous call, no Promise wrapper)
+        // The sendMessage function handles optimistic updates internally
+        if (onSend) {
+            onSend(messageData).then(() => {
+                if (messageData.scheduledFor) toast.success("Message scheduled");
+            }).catch((error) => {
+                console.error("Failed to send message:", error);
+                toast.error("Failed to send message");
+            });
+        } else {
+            // Call sendMessage immediately - it will add optimistic message instantly
+            sendMessage(messageData).then(() => {
+                if (messageData.scheduledFor) toast.success("Message scheduled");
+            }).catch((error) => {
+                console.error("Failed to send message:", error);
+                toast.error("Failed to send message");
+            });
+        }
+        
+        // Unlock immediately for non-audio messages (no setTimeout delay)
+        isSendingRef.current = false;
     };
 
     // --- Event Handlers (Paste, KeyDown, TextChange) ---
@@ -630,7 +672,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         <div className="flex-1 min-w-0 flex items-center gap-2 bg-base-200/80 hover:bg-base-200 rounded-3xl px-4 py-2 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                             <textarea
                                 ref={textareaRef}
-                                className="flex-1 bg-transparent py-2 outline-none resize-none min-h-[24px] max-h-[120px] text-base placeholder:text-base-content/40 custom-scrollbar"
+                                className="message-textarea flex-1 bg-transparent py-2 outline-none resize-none min-h-[24px] max-h-[120px] text-base placeholder:text-base-content/40 custom-scrollbar"
                                 placeholder={isRecording ? "Recording..." : "Type a message..."}
                                 value={text}
                                 onChange={handleTextChange}
@@ -720,4 +762,4 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     );
 };
 
-export default MessageInput;
+export default memo(MessageInput);

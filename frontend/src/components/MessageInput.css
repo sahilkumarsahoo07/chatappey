@@ -1,9 +1,8 @@
 /* Modern Message Input Styling */
 
 .message-input-container {
-    background: linear-gradient(to top, oklch(var(--b1)) 0%, oklch(var(--b1) / 0.95) 100%);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    /* Simplified background to avoid expensive blur during typing */
+    background: oklch(var(--b1));
     border-top: 1px solid oklch(var(--bc) / 0.1);
     position: relative;
     padding: 12px 16px;
@@ -26,7 +25,8 @@
 .message-textarea {
     background: transparent;
     border: none;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Limit transitions to color only so height/size changes are instant */
+    transition: color 0.2s ease, background-color 0.2s ease;
     resize: none;
     min-height: 24px;
     max-height: 120px;
