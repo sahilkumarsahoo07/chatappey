@@ -2,13 +2,14 @@ import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
-import { io } from "../lib/socket.js";
+import { io, updateIncognitoStatus } from "../lib/socket.js";
 import { v4 as uuidv4 } from 'uuid';
 import Otp from "../models/otp.model.js";
 import { sendEmail } from "../lib/otpSend.js";
 
 export const signup = async (req, res) => {
     const { fullName, email, password } = req.body;
+
     try {
         if (!fullName || !email || !password) {
             return res.status(400).json({ message: "All fields are required" });
@@ -230,6 +231,44 @@ export const updateAbout = async (req, res) => {
     } catch (error) {
         console.error("Error updating about:", error);
         res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+export const toggleIncognito = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Toggle state
+        user.isIncognito = !user.isIncognito;
+        await user.save();
+
+        // Update socket server internal state (this will also emit getOnlineUsers)
+        updateIncognitoStatus(userId, user.isIncognito);
+
+        // Notify socket server to update incognito list (for other client-side logic if any)
+        io.emit("incognito-update", { userId: userId.toString(), isIncognito: user.isIncognito });
+
+        // If incognito is turned ON, we should also emit user-logged-out to make them disappear immediately
+        if (user.isIncognito) {
+            io.emit("user-logged-out", { userId: userId.toString(), lastLogout: new Date() });
+        } else {
+            // If turned OFF, they should appear online if connected
+            io.emit("userListUpdate", { userId: userId.toString() });
+        }
+
+        res.status(200).json({
+            success: true,
+            isIncognito: user.isIncognito,
+            message: `Incognito mode ${user.isIncognito ? 'enabled' : 'disabled'}`
+        });
+    } catch (error) {
+        console.error("Error toggling incognito:", error);
+        res.status(500).json({ message: "Internal server error" });
     }
 };
 

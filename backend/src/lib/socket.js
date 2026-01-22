@@ -92,6 +92,33 @@ export function getReceiverSocketId(userId) {
 // Used to store online users
 const userSocketMap = {}; // { userId: socketId }
 
+// Track incognito users
+const incognitoUsers = new Set();
+
+// Helper to update incognito status (exported for controller use)
+export const updateIncognitoStatus = (userId, status) => {
+  const strUserId = userId.toString();
+  if (status) {
+    incognitoUsers.add(strUserId);
+  } else {
+    incognitoUsers.delete(strUserId);
+  }
+
+  // Immediately broadcast the updated online list to all clients
+  const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
+  io.emit("getOnlineUsers", visibleOnlineUsers);
+};
+
+// Start cleaning incognito users interval (cleanup stale IDs)
+setInterval(() => {
+  // Optional: Verify active sockets for these IDs
+  for (const userId of incognitoUsers) {
+    if (!userSocketMap[userId]) {
+      incognitoUsers.delete(userId);
+    }
+  }
+}, 3600000); // 1 hour
+
 // Track active calls for updating call records
 const activeCallsMap = {}; // { roomID: { caller, receiver, callType, startTime } }
 
@@ -99,6 +126,21 @@ io.on("connection", (socket) => {
   const userId = socket.handshake.query.userId;
   if (userId) {
     userSocketMap[userId] = socket.id;
+
+    // Check for incognito status on connect
+    (async () => {
+      try {
+        const User = (await import("../models/user.model.js")).default;
+        const user = await User.findById(userId).select('isIncognito');
+        if (user?.isIncognito) {
+          incognitoUsers.add(userId);
+        } else {
+          incognitoUsers.delete(userId);
+        }
+      } catch (err) {
+        console.error("Error checking incognito status:", err);
+      }
+    })();
 
     // Join user's groups for room-based communication
     (async () => {
@@ -120,12 +162,17 @@ io.on("connection", (socket) => {
     io.emit("userListUpdate", { userId });
   }
 
-  // Notify all clients about current online users
-  io.emit("getOnlineUsers", Object.keys(userSocketMap));
+  // Notify all clients about current online users (filter out incognito)
+  const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
+  io.emit("getOnlineUsers", visibleOnlineUsers);
 
   // Handle updating message status to delivered when receiver comes online
   socket.on("updatePendingMessages", (data) => {
     const { senderId, receiverId } = data;
+
+    // If receiver is incognito, DO NOT send delivered receipt
+    if (incognitoUsers.has(receiverId.toString())) return;
+
     const senderSocketId = getReceiverSocketId(senderId);
 
     if (senderSocketId) {
@@ -137,6 +184,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("messageSeen", (message) => {
+    // If reader (current socket user) is incognito, do NOT process seen receipt
+    // logic: message.senderId is the person who Sent the message. 
+    // We are the Reader (userId). The event comes from Reader.
+    // If I am incognito, I don't want the sender to know I saw it.
+
+    if (incognitoUsers.has(userId.toString())) return;
+
     const senderSocketId = getReceiverSocketId(message.senderId);
     io.emit("deleteMessageForMe", message);
 
@@ -391,7 +445,8 @@ io.on("connection", (socket) => {
       const receiverSocketId = getReceiverSocketId(receiverId);
 
       // Determine status
-      let initialStatus = receiverSocketId ? "delivered" : "sent";
+      // If receiver is incognito, force status to 'sent' even if they are online
+      let initialStatus = (receiverSocketId && !incognitoUsers.has(receiverId.toString())) ? "delivered" : "sent";
 
       // Check if message should be scheduled
       const shouldBeScheduled = isScheduled || !!scheduledFor;
@@ -423,16 +478,19 @@ io.on("connection", (socket) => {
       // Only emit if NOT scheduled
       if (!shouldBeScheduled) {
         if (receiverSocketId) {
-          // Send new message to receiver
+          // Send new message to receiver (ALWAYS send to receiver so they get the msg)
           io.to(receiverSocketId).emit("newMessage", newMessage);
 
           // Notify sender that message was delivered
-          const senderSocketId = getReceiverSocketId(userId);
-          if (senderSocketId) {
-            io.to(senderSocketId).emit("messageDelivered", {
-              messageId: newMessage._id,
-              status: "delivered"
-            });
+          // ONLY if receiver is NOT incognito
+          if (!incognitoUsers.has(receiverId.toString())) {
+            const senderSocketId = getReceiverSocketId(userId);
+            if (senderSocketId) {
+              io.to(senderSocketId).emit("messageDelivered", {
+                messageId: newMessage._id,
+                status: "delivered"
+              });
+            }
           }
         }
       }
@@ -579,7 +637,10 @@ io.on("connection", (socket) => {
       );
 
       // Get user's privacy settings for read receipts
-      const user = await User.findById(myId).select('privacyReadReceipts');
+      const user = await User.findById(myId).select('privacyReadReceipts isIncognito');
+
+      // If user is incognito, DO NOT send read receipts
+      if (user?.isIncognito || incognitoUsers.has(myId)) return;
 
       // Notify sender via socket that messages were read (if privacy allows)
       const senderSocketId = getReceiverSocketId(otherUserId);
@@ -618,7 +679,8 @@ io.on("connection", (socket) => {
         console.error("Error updating lastLogout on disconnect:", error);
       }
     }
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
+    io.emit("getOnlineUsers", visibleOnlineUsers);
   });
 });
 

@@ -240,6 +240,21 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
+    updateIncognito: async () => {
+        try {
+            const res = await axiosInstance.put("/auth/update-incognito");
+            // Update local user state
+            const updatedUser = { ...get().authUser, isIncognito: res.data.isIncognito };
+            set({ authUser: updatedUser });
+            toast.success(res.data.message);
+            return true;
+        } catch (error) {
+            console.error("Error updating incognito:", error);
+            toast.error(error.response?.data?.message || "Failed to update incognito mode");
+            return false;
+        }
+    },
+
     // Add to your useAuthStore
     sendOtp: async (email) => {
         try {

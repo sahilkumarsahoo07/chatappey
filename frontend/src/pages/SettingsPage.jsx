@@ -521,6 +521,29 @@ const SettingsPage = () => {
                             <option value="none">Only Me</option>
                         </select>
                     </div>
+
+                    {/* Admin Only Incognito Mode */}
+                    {authUser?.role === "admin" && (
+                        <div className="p-4 flex items-center justify-between hover:bg-base-200/40 transition-all duration-300 group animate-in slide-in-from-left-2 duration-700 delay-100 border-l-4 border-l-red-500/50 bg-red-500/5">
+                            <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                    <p className="text-sm font-black tracking-tight group-hover:text-red-500 transition-colors">Incognito Mode</p>
+                                    <span className="badge badge-error badge-xs font-bold text-white tracking-tighter">ADMIN</span>
+                                </div>
+                                <p className="text-[9px] text-base-content/50 font-medium max-w-xs">
+                                    Become invisible. You will appear offline and messages you read will stay as "Sent".
+                                </p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="toggle toggle-error toggle-sm"
+                                checked={authUser?.isIncognito || false}
+                                onChange={async () => {
+                                    await useAuthStore.getState().updateIncognito();
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 

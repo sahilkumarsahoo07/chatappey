@@ -1,5 +1,5 @@
 import express from "express";
-import { checkAuth, login, logout, logoutGlobal, signup, updateProfile, updateName, updateAbout, sendOtp, verifyOtp, resetPassword, blockUser, unblockUser, getBlockedUsers, signupOTP, verifySignup, changePassword, updatePrivacySettings, updateAppearanceSettings } from "../controllers/auth.controllers.js";
+import { checkAuth, login, logout, logoutGlobal, signup, updateProfile, updateName, updateAbout, sendOtp, verifyOtp, resetPassword, blockUser, unblockUser, getBlockedUsers, signupOTP, verifySignup, changePassword, updatePrivacySettings, updateAppearanceSettings, toggleIncognito } from "../controllers/auth.controllers.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import multer from 'multer';
 import passport from "passport";
@@ -34,6 +34,9 @@ router.put("/update-privacy", protectRoute, updatePrivacySettings);
 router.put("/update-appearance", protectRoute, updateAppearanceSettings);
 
 router.get("/check", protectRoute, checkAuth);
+
+// Update incognito
+router.put("/update-incognito", protectRoute, toggleIncognito);
 
 router.post("/block", protectRoute, blockUser);
 router.post("/unblock", protectRoute, unblockUser);

@@ -98,6 +98,10 @@ const userSchema = new mongoose.Schema(
             enum: ["sharp", "classic", "rounded", "smooth", "ultra", "pill"],
             default: "rounded",
         },
+        isIncognito: {
+            type: Boolean,
+            default: false,
+        },
     },
     {
         timestamps: true
