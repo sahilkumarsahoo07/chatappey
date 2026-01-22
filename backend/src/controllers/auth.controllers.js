@@ -98,6 +98,7 @@ export const login = async (req, res) => {
             email: user.email,
             profilePic: user.profilePic,
             role: user.role,
+            isIncognito: user.isIncognito,
             token: token,
         });
     } catch (error) {
@@ -121,11 +122,15 @@ export const login = async (req, res) => {
 export const logout = async (req, res) => {
     try {
         const userId = req.user._id;
-        const logoutTime = new Date();
 
-        // Find the user and update the `lastLogout` field
-        await User.findByIdAndUpdate(userId, { lastLogout: logoutTime });
-        io.emit("user-logged-out", { userId, lastLogout: logoutTime });
+        // Check if user is incognito - if so, DO NOT update lastLogout
+        // We want to preserve their "offline since..." time from before they went incognito
+        if (!req.user.isIncognito) {
+            const logoutTime = new Date();
+            // Find the user and update the `lastLogout` field
+            await User.findByIdAndUpdate(userId, { lastLogout: logoutTime });
+            io.emit("user-logged-out", { userId, lastLogout: logoutTime });
+        }
 
         // res.json({ message: userId });
         res.cookie("jwt", "", { maxAge: 0 });

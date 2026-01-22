@@ -122,27 +122,41 @@ setInterval(() => {
 // Track active calls for updating call records
 const activeCallsMap = {}; // { roomID: { caller, receiver, callType, startTime } }
 
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   const userId = socket.handshake.query.userId;
+
   if (userId) {
+    // 1. Immediately check DB for incognito status BEFORE adding to online map
+    // This prevents the race condition where they appear online for a split second
+    let userIsIncognito = false;
+    try {
+      const User = (await import("../models/user.model.js")).default;
+      const user = await User.findById(userId).select('isIncognito');
+      userIsIncognito = !!user?.isIncognito;
+
+      if (userIsIncognito) {
+        incognitoUsers.add(userId.toString());
+      } else {
+        // Only remove if we are sure (though it shouldn't be there usually on new connect)
+        incognitoUsers.delete(userId.toString());
+      }
+    } catch (err) {
+      console.error("Error checking incognito status on connect:", err);
+    }
+
+    // CRITICAL: Check if socket disconnected during the DB check above
+    // If we don't check this, we may add a "dead" socket to the map and never catch the disconnect
+    if (!socket.connected) {
+      console.log(`Socket ${socket.id} for user ${userId} disconnected during auth. Aborting setup.`);
+      // Clean up incognito if we added it
+      incognitoUsers.delete(userId.toString());
+      return; // Exit early - do not add to userSocketMap or broadcast
+    }
+
+    // 2. Now it is safe to add to the socket map
     userSocketMap[userId] = socket.id;
 
-    // Check for incognito status on connect
-    (async () => {
-      try {
-        const User = (await import("../models/user.model.js")).default;
-        const user = await User.findById(userId).select('isIncognito');
-        if (user?.isIncognito) {
-          incognitoUsers.add(userId);
-        } else {
-          incognitoUsers.delete(userId);
-        }
-      } catch (err) {
-        console.error("Error checking incognito status:", err);
-      }
-    })();
-
-    // Join user's groups for room-based communication
+    // 3. Join user's groups (can remain async/background as it doesn't affect online status)
     (async () => {
       try {
         const Group = (await import("../models/group.model.js")).default;
@@ -155,14 +169,16 @@ io.on("connection", (socket) => {
       }
     })();
 
-    // Notify the user that they're online (for updating pending messages to delivered)
+    // 4. Notify the user they are connected
     socket.emit("userOnline", { userId });
 
-    // Notify all clients to refresh their user list (for new users to appear)
-    io.emit("userListUpdate", { userId });
+    // 5. Notify others ONLY if NOT incognito
+    if (!incognitoUsers.has(userId.toString())) {
+      io.emit("userListUpdate", { userId });
+    }
   }
 
-  // Notify all clients about current online users (filter out incognito)
+  // 6. Broadcast online users (Filtered)
   const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
   io.emit("getOnlineUsers", visibleOnlineUsers);
 
