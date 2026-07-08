@@ -2,6 +2,7 @@ import { create } from "zustand";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
+import { showBrowserNotification, playNotificationSound, showInAppNotification } from "../lib/notifications";
 
 export const useGroupStore = create((set, get) => ({
     groups: [],
@@ -217,6 +218,7 @@ export const useGroupStore = create((set, get) => ({
         // Create optimistic message
         const optimisticMessage = {
             _id: `temp-${Date.now()}`,
+            optimisticId: `temp-${Date.now()}`,
             groupId: groupId,
             senderId: {
                 _id: authUser._id,
@@ -273,8 +275,8 @@ export const useGroupStore = create((set, get) => ({
                             groupMessages: currentMessages.map(msg =>
                                 msg._id === optimisticMessage._id ? {
                                     ...msg, // Keep optimistic as base
-                                    ...newMessage, // Overlay real data
-                                    _id: optimisticMessage._id, // CRITICAL: Keep temp ID
+                                    ...newMessage, // Overlay real data (will have the real _id!)
+                                    optimisticId: optimisticMessage.optimisticId, // Keep temp ID for stable React key
                                     realId: newMessage._id // Store real ID for reference
                                 } : msg
                             )
@@ -520,6 +522,42 @@ export const useGroupStore = create((set, get) => ({
                 }
             }
 
+            // Notification Logic for Group Messages
+            const isWindowFocused = document.hasFocus() && !document.hidden;
+            const isGroupActive = selectedGroup?._id === groupId;
+
+            if (isFromOther && !isSystem) {
+                playNotificationSound();
+
+                if (!isWindowFocused) {
+                    const group = groups.find(g => g._id === groupId) || selectedGroup || { name: "New Group Message" };
+                    showBrowserNotification(group.name || "New Group Message", {
+                        body: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}`,
+                        icon: message.senderId?.profilePic || group.image || "/avatar.png",
+                        tag: `group-${groupId}`,
+                        requireInteraction: false,
+                        silent: false,
+                        url: `/?group=${groupId}`,
+                        groupId,
+                        group: {
+                            _id: group._id || groupId,
+                            name: group.name,
+                            image: group.image,
+                            members: group.members,
+                        },
+                    });
+                } else if (!isGroupActive) {
+                    const group = groups.find(g => g._id === groupId) || selectedGroup || { name: "New Group Message" };
+                    showInAppNotification(
+                        { text: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}` },
+                        { fullName: group.name, profilePic: group.image || "/avatar.png" },
+                        () => {
+                            get().setSelectedGroup(group);
+                        }
+                    );
+                }
+            }
+
             // Update group's lastMessage and unread count in the list
             set({
                 groups: groups.map(g => {
@@ -620,7 +658,7 @@ export const useGroupStore = create((set, get) => ({
     // Set selected group
     setSelectedGroup: (group) => {
         if (group && (!get().selectedGroup || get().selectedGroup._id !== group._id)) {
-            set({ selectedGroup: group, groupMessages: [] });
+            set({ selectedGroup: group, groupMessages: [], typingUsers: [] });
         } else {
             set({ selectedGroup: group });
         }

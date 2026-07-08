@@ -10,8 +10,13 @@ import {
     isDocumentVisible
 } from "../lib/notifications";
 
-// const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "https://chatappey.onrender.com";
+const getBaseUrl = () => {
+    if (import.meta.env.MODE === "development") {
+        return `http://${window.location.hostname}:5001`;
+    }
+    return "https://chatappey.onrender.com";
+};
+const BASE_URL = getBaseUrl();
 
 export const useAuthStore = create((set, get) => ({
     authUser: null,
@@ -99,9 +104,7 @@ export const useAuthStore = create((set, get) => ({
     },
 
     loginWithGoogle: () => {
-        const frontendUrl = window.location.origin;
-        const backendUrl = import.meta.env.MODE === "development" ? "http://localhost:5001" : "https://chatappey.onrender.com";
-        window.location.href = `${backendUrl}/api/auth/google`;
+        window.location.href = `${BASE_URL}/api/auth/google`;
     },
 
     setAuthUserFromToken: async (token) => {
@@ -380,7 +383,8 @@ export const useAuthStore = create((set, get) => ({
             },
             reconnection: true,
             reconnectionDelay: 1000,
-            reconnectionAttempts: 5,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: Infinity,
         });
         socket.connect();
 
@@ -398,6 +402,14 @@ export const useAuthStore = create((set, get) => ({
         socket.on("reconnect", (attemptNumber) => {
             console.log("Socket reconnected after", attemptNumber, "attempts");
             toast.success("Connection restored");
+            // Refresh messages of the active chat and the sidebar users list
+            import("./useChatStore").then(({ useChatStore }) => {
+                const selectedUser = useChatStore.getState().selectedUser;
+                if (selectedUser) {
+                    useChatStore.getState().getMessages(selectedUser._id);
+                }
+                useChatStore.getState().refreshUsers();
+            });
         });
 
         socket.on("reconnect_error", (error) => {
@@ -449,7 +461,17 @@ export const useAuthStore = create((set, get) => ({
                     body: `${fromData?.fullName || 'Someone'} is calling you...`,
                     icon: fromData?.profilePic || '/avatar.png',
                     tag: 'incoming-call',
-                    requireInteraction: true, // Keep notification until user interacts
+                    requireInteraction: true,
+                    url: from ? `/?chat=${from}` : "/",
+                    chatId: from || null,
+                    peer: fromData
+                      ? {
+                          _id: fromData._id || from,
+                          fullName: fromData.fullName,
+                          profilePic: fromData.profilePic,
+                          isFriend: true,
+                        }
+                      : null,
                 });
             }
 
@@ -541,6 +563,7 @@ export const useAuthStore = create((set, get) => ({
                         body: data.notification.message || "Sent you a friend request",
                         icon: data.notification.fromUserId.profilePic || "/avatar.png",
                         tag: "friend-request",
+                        url: "/notifications",
                     });
                 }
             });
@@ -563,6 +586,9 @@ export const useAuthStore = create((set, get) => ({
                         body: "Accepted your friend request",
                         icon: data.notification.fromUserId.profilePic || "/avatar.png",
                         tag: "friend-request-accepted",
+                        url: data.notification.fromUserId?._id
+                            ? `/?chat=${data.notification.fromUserId._id}`
+                            : "/",
                     });
                 }
             });
@@ -597,6 +623,7 @@ export const useAuthStore = create((set, get) => ({
                         body: data.notification.message || "Sent you a message with friend request",
                         icon: data.notification.fromUserId.profilePic || "/avatar.png",
                         tag: "request-message",
+                        url: "/notifications",
                     });
                 }
             });

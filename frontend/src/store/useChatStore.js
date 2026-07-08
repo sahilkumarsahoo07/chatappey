@@ -80,6 +80,7 @@ export const useChatStore = create((set, get) => ({
     // Start with 'sent' (single tick), will upgrade to 'delivered' if receiver is online
     const optimisticMessage = {
       _id: `temp-${Date.now()}`, // Temporary ID
+      optimisticId: `temp-${Date.now()}`, // Stable React key
       text: messageData.text,
       image: messageData.image,
       audio: messageData.audio,
@@ -136,9 +137,9 @@ export const useChatStore = create((set, get) => ({
                                  msg.status; // Keep 'sent' if not upgraded yet
           
           return {
-            ...msg, // Keep optimistic message as base (preserves temp ID)
+            ...msg, // Keep optimistic message as base
             ...newMessage, // Overlay real data from server
-            _id: optimisticMessage._id, // CRITICAL: Keep temp ID to prevent shake
+            optimisticId: optimisticMessage.optimisticId, // Stable React key
             status: preservedStatus, // Use preserved status
             image: optimisticMessage.image || newMessage.image,
             audio: optimisticMessage.audio || newMessage.audio,
@@ -159,6 +160,7 @@ export const useChatStore = create((set, get) => ({
         if (user._id === selectedUser._id) {
           return {
             ...user,
+            chatDeletedForMe: false,
             lastMessage: {
               text: newMessage.text,
               image: newMessage.image,
@@ -275,9 +277,17 @@ export const useChatStore = create((set, get) => ({
           showBrowserNotification(senderForNotify.fullName, {
             body: newMessage.text || "📷 Photo",
             icon: senderForNotify.profilePic || "/avatar.png",
-            tag: newMessage._id,
+            tag: `chat-${newMessage.senderId}`,
             requireInteraction: false,
-            silent: false
+            silent: false,
+            url: `/?chat=${newMessage.senderId}`,
+            chatId: newMessage.senderId,
+            peer: {
+              _id: senderForNotify._id,
+              fullName: senderForNotify.fullName,
+              profilePic: senderForNotify.profilePic,
+              isFriend: senderForNotify.isFriend !== false,
+            },
           });
         } else if (!isSenderActiveCurrentChat) {
           showInAppNotification(newMessage, senderForNotify, () => {
@@ -308,6 +318,7 @@ export const useChatStore = create((set, get) => ({
 
         const updatedSender = {
           ...sender,
+          chatDeletedForMe: false, // new message brings chat back into the list
           lastMessage: {
             text: newMessage.text,
             image: newMessage.image,
@@ -639,9 +650,54 @@ export const useChatStore = create((set, get) => ({
   setSelectedUser: (selectedUser) => {
     const currentUser = get().selectedUser;
     if (selectedUser && (!currentUser || currentUser._id !== selectedUser._id)) {
-      set({ selectedUser, messages: [] });
+      set({ selectedUser, messages: [], isTyping: false });
     } else {
       set({ selectedUser });
+    }
+  },
+
+  /**
+   * Delete entire chat for me only — hides from chat list (friend still searchable).
+   * Other person still has the messages.
+   */
+  deleteChatForMe: async (userId) => {
+    try {
+      await axiosInstance.delete(`/messages/chat/${userId}`);
+
+      const { selectedUser, users } = get();
+      set({
+        users: users.map((u) =>
+          u._id === userId
+            ? {
+                ...u,
+                lastMessage: null,
+                unreadCount: 0,
+                chatDeletedForMe: true, // hide from Chats list until new msg / restart chat
+              }
+            : u
+        ),
+        ...(selectedUser?._id === userId
+          ? { selectedUser: null, messages: [], isTyping: false, replyingToMessage: null }
+          : {}),
+      });
+
+      // Don't leave /?chat=id in the address bar after delete
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("chat") === userId) {
+          window.history.replaceState({}, document.title, "/");
+        } else if (selectedUser?._id === userId && window.location.search) {
+          window.history.replaceState({}, document.title, window.location.pathname || "/");
+        }
+      } catch (_) {
+        /* ignore */
+      }
+
+      toast.success("Chat deleted for you");
+      return true;
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Failed to delete chat");
+      return false;
     }
   },
 

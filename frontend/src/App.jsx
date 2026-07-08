@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useEffect } from 'react'
 import './App.css'
 import LeftNavbar from './components/LeftNavbar';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import SignUpPage from './pages/SignUpPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -19,22 +17,24 @@ import PrivacyPage from './pages/PrivacyPage';
 import AdminPage from './pages/AdminPage';
 import { useAuthStore } from './store/useAuthStore';
 import { useChatStore } from './store/useChatStore';
-import { Loader } from 'lucide-react';
 
 import { Toaster } from 'react-hot-toast';
 import { useThemeStore } from './store/useThemeStore';
 import Otp from './components/Otp';
 import { requestNotificationPermission } from './lib/notifications';
+import {
+  applyConversationSwitch,
+  flushPendingNotificationOpen,
+} from './lib/openFromNotification';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
 
 function App() {
-  const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
+  const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
   const socket = useAuthStore((state) => state.socket);
   const { theme } = useThemeStore();
   const { subscribeToMessages, unsubscribeFromMessages } = useChatStore();
-
-  // console.log(onlineUsers)
+  const navigate = useNavigate();
 
   // Subscribe to messages globally when authUser and socket are available
   useEffect(() => {
@@ -62,6 +62,40 @@ function App() {
     if (authUser) {
       requestNotificationPermission();
     }
+  }, [authUser]);
+
+  // Soft navigate home + open chat (no full page refresh)
+  useEffect(() => {
+    const onSpaOpen = (e) => {
+      const detail = e.detail || {};
+      try {
+        sessionStorage.setItem("pendingNotificationOpen", JSON.stringify(detail));
+      } catch (_) {
+        /* ignore */
+      }
+      navigate("/");
+      // Apply after route paints
+      requestAnimationFrame(() => {
+        applyConversationSwitch(detail);
+        flushPendingNotificationOpen();
+      });
+    };
+    window.addEventListener("spa-go-home-open-chat", onSpaOpen);
+    return () => window.removeEventListener("spa-go-home-open-chat", onSpaOpen);
+  }, [navigate]);
+
+  // Cold start with /?chat= or /?group= (only when app was closed)
+  useEffect(() => {
+    if (!authUser) return;
+    const params = new URLSearchParams(window.location.search);
+    const chatId = params.get("chat");
+    const groupId = params.get("group");
+    if (!chatId && !groupId) {
+      flushPendingNotificationOpen();
+      return;
+    }
+    applyConversationSwitch({ chatId, groupId });
+    window.history.replaceState({}, document.title, "/");
   }, [authUser]);
 
   // console.log({ authUser })

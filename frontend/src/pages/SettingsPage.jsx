@@ -689,7 +689,7 @@ const SettingsPage = () => {
                         <p className="text-[10px] text-base-content/50 font-medium max-w-md">Enable system-wide desktop alerts.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={() => showBrowserNotification("Test Notification", { body: "This is a test notification from ChatAppey" })} className="btn btn-ghost btn-xs font-black text-red-500 hover:bg-red-500/10 px-3 rounded-lg tracking-tighter">Run Test</button>
+                        <button onClick={() => showBrowserNotification("Test Notification", { body: "This is a test notification from ChatAppey", url: "/" })} className="btn btn-ghost btn-xs font-black text-red-500 hover:bg-red-500/10 px-3 rounded-lg tracking-tighter">Run Test</button>
                         <button onClick={async () => {
                             const granted = await requestNotificationPermission();
                             if (granted) toast.success("Welcome aboard! Alerts enabled."); else toast.error("Bummer! Permission denied.");

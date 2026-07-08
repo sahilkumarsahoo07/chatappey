@@ -31,31 +31,19 @@ const ProfilePage = () => {
     //     };
     // };
 
-    const handleImageUpload = async (e) => {
+        const handleImageUpload = async (e) => {
         const file = e.target.files[0];
+        if (!file) return;
+
         const reader = new FileReader();
 
         reader.onloadend = async () => {
-            const base64 = reader.result;
-
-            try {
-                const res = await axios.put(
-                    "http://localhost:5001/api/auth/update-profile",
-                    { profilePic: base64 },
-                    {
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        withCredentials: true
-                    }
-                );
-                setSelectedImg(res.data.profilePic); // assuming your backend returns the updated profile image URL
-            } catch (err) {
-                console.error("Upload error:", err);
-            }
+            const base64Image = reader.result;
+            setSelectedImg(base64Image);
+            await updateProfile({ profilePic: base64Image });
         };
 
-        reader.readAsDataURL(file); // Converts image to base64
+        reader.readAsDataURL(file);
     };
 
 

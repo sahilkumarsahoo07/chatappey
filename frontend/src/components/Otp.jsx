@@ -1,5 +1,5 @@
-// src/components/Otp.jsx
 import React, { useState } from "react";
+import { axiosInstance } from "../lib/axios";
 
 const Otp = () => {
     const [email, setEmail] = useState("");
@@ -19,13 +19,8 @@ const Otp = () => {
         setError("");
 
         try {
-            const response = await fetch("http://localhost:5001/api/send-otp", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-            });
-
-            const data = await response.json();
+            const response = await axiosInstance.post("/auth/send-otp", { email });
+            const data = response.data;
             if (data.success) {
                 setOtpSent(true);
                 setCode(data.code); // store OTP if needed for verification step
@@ -33,7 +28,7 @@ const Otp = () => {
                 setError(data.message || "Failed to send OTP.");
             }
         } catch (err) {
-            setError("Error sending OTP.");
+            setError(err.response?.data?.message || "Error sending OTP.");
         } finally {
             setLoading(false);
         }

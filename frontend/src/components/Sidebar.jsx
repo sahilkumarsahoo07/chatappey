@@ -7,13 +7,15 @@ import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import CreateGroupModal from "./CreateGroupModal";
 import { Search, MessageCircle, Edit, X, Check, CheckCheck, Users, Plus } from "lucide-react";
 import defaultImg from '../public/avatar.png'
+import SidebarChatRow from "./SidebarChatRow";
 
 const Sidebar = () => {
-    const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers } = useChatStore();
+    const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers, deleteChatForMe } = useChatStore();
     const { onlineUsers = [], authUser } = useAuthStore();
     const { theme } = useThemeStore();
     const { groups, selectedGroup, setSelectedGroup, getGroups, subscribeToGroupEvents, unsubscribeFromGroupEvents } = useGroupStore();
     const [searchQuery, setSearchQuery] = useState("");
+    const [friendSearchQuery, setFriendSearchQuery] = useState("");
     const [showNewChatModal, setShowNewChatModal] = useState(false);
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [activeTab, setActiveTab] = useState("chats"); // "chats" or "groups"
@@ -23,6 +25,12 @@ const Sidebar = () => {
         getUsers();
         getGroups();
     }, [getUsers, getGroups]);
+
+    // Sync sidebar tab when notification/store opens a chat or group
+    useEffect(() => {
+        if (selectedUser) setActiveTab("chats");
+        else if (selectedGroup) setActiveTab("groups");
+    }, [selectedUser?._id, selectedGroup?._id]);
 
     // Subscribe to group events
     useEffect(() => {
@@ -154,23 +162,61 @@ const Sidebar = () => {
 
     // Calculate total unread counts for badges on tabs
     const totalChatUnread = useMemo(() => {
-        return users.reduce((acc, user) => acc + (user.unreadCount || 0), 0);
+        return users.reduce((acc, user) => {
+            if (user.chatDeletedForMe || !user.lastMessage) return acc;
+            return acc + (user.unreadCount || 0);
+        }, 0);
     }, [users]);
 
     const totalGroupUnread = useMemo(() => {
         return groups.reduce((acc, group) => acc + (group.unreadCount || 0), 0);
     }, [groups]);
 
-    // Filter to only show friends and apply search query
-    const filteredUsers = sortedUsers
-        .filter((user) => user.isFriend) // Only show friends
-        .filter((user) => user.fullName.toLowerCase().includes(searchQuery.toLowerCase()));
+    // Empty search = active chats only. Typing = search ALL friends (incl. deleted / never messaged).
+    const filteredUsers = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        const friends = sortedUsers.filter((user) => user.isFriend);
 
-    // Handle starting a new chat
+        if (!q) {
+            return friends.filter((user) => !user.chatDeletedForMe && !!user.lastMessage);
+        }
+
+        return friends.filter(
+            (user) =>
+                user.fullName?.toLowerCase().includes(q) ||
+                user.email?.toLowerCase().includes(q)
+        );
+    }, [sortedUsers, searchQuery]);
+
+    const isFriendSearchActive = searchQuery.trim().length > 0;
+
+    // Friends for New Chat modal (friends only)
+    const searchableFriends = useMemo(() => {
+        const q = friendSearchQuery.trim().toLowerCase();
+        return sortedUsers
+            .filter((user) => user.isFriend)
+            .filter((user) => {
+                if (!q) return true;
+                return (
+                    user.fullName?.toLowerCase().includes(q) ||
+                    user.email?.toLowerCase().includes(q)
+                );
+            });
+    }, [sortedUsers, friendSearchQuery]);
+
+    // Open chat with a friend (restores deleted chats into the list after you message)
     const handleStartChat = (user) => {
-        setSelectedGroup(null); // Clear group selection
-        setSelectedUser(user);
+        setSelectedGroup(null);
+        if (user.chatDeletedForMe) {
+            useChatStore.setState({
+                users: useChatStore.getState().users.map((u) =>
+                    u._id === user._id ? { ...u, chatDeletedForMe: false } : u
+                ),
+            });
+        }
+        setSelectedUser({ ...user, chatDeletedForMe: false });
         setShowNewChatModal(false);
+        setFriendSearchQuery("");
         setSearchQuery("");
     };
 
@@ -192,25 +238,66 @@ const Sidebar = () => {
         <>
             <aside className="h-full w-full md:w-20 lg:w-80 border-r border-base-300 flex flex-col bg-base-100">
                 {/* Header */}
-                <div className="p-4 pb-3">
-                    <div className="flex items-center justify-between mb-3">
+                <div className="p-4 pb-3 md:px-2 lg:px-4">
+                    <div className="flex items-center justify-between mb-3 md:mb-0 lg:mb-3">
                         <h1 className="text-xl font-bold text-base-content md:hidden lg:block">ChatAppey</h1>
                         <button
                             className="p-1.5 rounded-lg hover:bg-base-200 transition-colors md:hidden lg:block"
                             onClick={() => setShowNewChatModal(true)}
-                            title="New Chat"
+                            title="Search friends"
                         >
                             <Edit className="size-5 text-primary" />
                         </button>
                     </div>
 
-                    {/* Search Bar */}
+                    {/* Tablet (md): icon-only rail — search opens friends modal */}
+                    <div className="hidden md:flex lg:hidden flex-col items-center gap-2 mb-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowNewChatModal(true)}
+                            className="p-2.5 rounded-xl bg-base-200 hover:bg-primary/15 text-base-content/70 hover:text-primary transition-colors"
+                            title="Search friends"
+                            aria-label="Search friends"
+                        >
+                            <Search className="size-5" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab(activeTab === "chats" ? "groups" : "chats")}
+                            className={`p-2.5 rounded-xl transition-colors ${
+                                activeTab === "groups"
+                                    ? "bg-primary text-primary-content"
+                                    : "bg-base-200 text-base-content/70 hover:bg-primary/15 hover:text-primary"
+                            }`}
+                            title={activeTab === "chats" ? "Show groups" : "Show chats"}
+                            aria-label={activeTab === "chats" ? "Show groups" : "Show chats"}
+                        >
+                            {activeTab === "chats" ? (
+                                <Users className="size-5" />
+                            ) : (
+                                <MessageCircle className="size-5" />
+                            )}
+                        </button>
+                        {activeTab === "groups" && (
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateGroupModal(true)}
+                                className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                title="Create group"
+                                aria-label="Create group"
+                            >
+                                <Plus className="size-5" />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Search Bar — phone + large desktop (not narrow tablet rail) */}
                     <div className="md:hidden lg:block">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-base-content/40" />
                             <input
                                 type="text"
-                                placeholder="Search"
+                                placeholder="Search friends"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2.5 bg-base-200 rounded-lg border-none focus:outline-none focus:ring-0 text-sm placeholder:text-base-content/40"
@@ -278,37 +365,50 @@ const Sidebar = () => {
                 {activeTab === "chats" && (
                     <div className="overflow-y-auto w-full flex-1 custom-scrollbar">
                         {filteredUsers.map((user) => {
+                            const hasActiveChat = !!user.lastMessage && !user.chatDeletedForMe;
                             const lastMessageData = getLastMessage(user);
-                            const timestamp = user.lastMessage ? formatTimestamp(user.lastMessage.createdAt) : "";
-                            const unreadCount = getUnreadCount(user);
+                            const timestamp = hasActiveChat && user.lastMessage
+                                ? formatTimestamp(user.lastMessage.createdAt)
+                                : "";
+                            const unreadCount = hasActiveChat ? getUnreadCount(user) : 0;
                             const isOnline = onlineUsers.includes(user._id);
-
-                            // Highlight if there are unread messages AND user is not currently selected
                             const hasUnreadMessages = unreadCount > 0 && selectedUser?._id !== user._id;
+                            const previewText = hasActiveChat
+                                ? lastMessageData.text
+                                : user.chatDeletedForMe
+                                    ? "Tap to start chat"
+                                    : "Tap to chat";
 
                             return (
-                                <button
+                                <SidebarChatRow
                                     key={user._id}
-                                    onClick={() => {
-                                        setSelectedGroup(null); // Clear group selection first
-                                        setSelectedUser(user);
-                                    }}
-                                    className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all ${selectedUser?._id === user._id
-                                        ? "bg-base-200"
-                                        : hasUnreadMessages
-                                            ? "bg-primary/5"
-                                            : ""
-                                        }`}
+                                    isSelected={selectedUser?._id === user._id}
+                                    hasUnread={hasUnreadMessages}
+                                    showDelete={hasActiveChat}
+                                    onOpen={() => handleStartChat(user)}
+                                    onDelete={() => deleteChatForMe(user._id)}
                                 >
-                                    {/* Avatar */}
+                                    {/* Avatar + unread badge (visible on all breakpoints, especially md icon rail) */}
                                     <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
                                         <img
                                             src={user.hasBlockedMe ? defaultImg : (user.profilePic || defaultImg)}
                                             alt={user.fullName}
-                                            className="size-12 object-cover rounded-full"
+                                            className="size-11 sm:size-12 object-cover rounded-full"
                                         />
                                         {isOnline && !user.hasBlockedMe && (
-                                            <span className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full ring-2 ring-base-100" />
+                                            <span className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full ring-2 ring-base-100 z-[1]" />
+                                        )}
+                                        {hasUnreadMessages && (
+                                            <span
+                                                className="absolute -top-0.5 -right-0.5 z-[2] min-w-[18px] h-[18px] px-1
+                                                  bg-primary text-primary-content rounded-full
+                                                  text-[10px] font-bold items-center justify-center
+                                                  ring-2 ring-base-100 shadow-sm
+                                                  hidden md:flex lg:hidden"
+                                                aria-label={`${unreadCount} unread`}
+                                            >
+                                                {unreadCount > 99 ? "99+" : unreadCount}
+                                            </span>
                                         )}
                                     </div>
 
@@ -316,35 +416,33 @@ const Sidebar = () => {
                                     <div className="md:hidden lg:flex flex-1 min-w-0">
                                         <div className="w-full flex flex-col">
                                             {/* Name and Timestamp Row */}
-                                            <div className="w-full flex items-baseline justify-between mb-1">
+                                            <div className="w-full flex items-baseline justify-between mb-1 gap-2">
                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                    <span className={`text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
+                                                    <span className={`text-[14px] sm:text-[15px] truncate ${hasUnreadMessages ? "font-bold" : "font-semibold"
                                                         } ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`}>
                                                         {user.fullName}
                                                     </span>
-                                                    {/* NEW Badge for newly created accounts */}
                                                     {isNewUser(user) && (
                                                         <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
                                                             NEW
                                                         </span>
                                                     )}
                                                 </div>
-                                                <span className={`text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
+                                                <span className={`text-[11px] sm:text-xs flex-shrink-0 ${hasUnreadMessages ? "text-primary font-semibold" : "text-base-content/50"
                                                     }`}>
                                                     {timestamp}
                                                 </span>
                                             </div>
                                             {/* Last Message Row */}
-                                            <div className="w-full flex items-center justify-between">
+                                            <div className="w-full flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-1 flex-1 min-w-0">
-                                                    <p className={`text-[13px] truncate flex-1 text-left ${hasUnreadMessages
+                                                    <p className={`text-[12px] sm:text-[13px] truncate flex-1 text-left ${hasUnreadMessages
                                                         ? `font-semibold ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`
                                                         : `${theme === 'light' ? 'text-gray-600' : 'text-base-content opacity-70'}`
                                                         }`}>
-                                                        {lastMessageData.text}
+                                                        {previewText}
                                                     </p>
-                                                    {/* Status indicator for messages sent by me */}
-                                                    {lastMessageData.isMine && lastMessageData.status && (
+                                                    {hasActiveChat && lastMessageData.isMine && lastMessageData.status && (
                                                         <span className="flex-shrink-0">
                                                             {lastMessageData.status === "read" ? (
                                                                 <CheckCheck className="w-3.5 h-3.5" style={{ color: '#3B82F6' }} />
@@ -356,23 +454,29 @@ const Sidebar = () => {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {unreadCount > 0 && (
+                                                {hasUnreadMessages && (
                                                     <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-primary text-primary-content rounded-full text-xs flex items-center justify-center font-semibold">
-                                                        {unreadCount}
+                                                        {unreadCount > 99 ? "99+" : unreadCount}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
                                     </div>
-                                </button>
+                                </SidebarChatRow>
                             );
                         })}
 
                         {filteredUsers.length === 0 && (
                             <div className="text-center text-base-content/40 py-8 px-4">
                                 <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
-                                <p className="text-sm font-semibold mb-1">No chats yet</p>
-                                <p className="text-xs">Add friends to start chatting</p>
+                                <p className="text-sm font-semibold mb-1">
+                                    {isFriendSearchActive ? "No friends found" : "No chats yet"}
+                                </p>
+                                <p className="text-xs">
+                                    {isFriendSearchActive
+                                        ? "Only your friends appear here — try another name"
+                                        : "Add friends, then search their name above"}
+                                </p>
                             </div>
                         )}
                     </div>
@@ -402,17 +506,29 @@ const Sidebar = () => {
                                 >
                                     {/* Group Avatar */}
                                     <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
-                                        <div className="size-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                                        <div className="size-11 sm:size-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
                                             {group.image ? (
                                                 <img
                                                     src={group.image}
                                                     alt={group.name}
-                                                    className="size-12 object-cover"
+                                                    className="size-11 sm:size-12 object-cover"
                                                 />
                                             ) : (
                                                 <Users className="size-6 text-primary" />
                                             )}
                                         </div>
+                                        {hasUnreadMessages && (
+                                            <span
+                                                className="absolute -top-0.5 -right-0.5 z-[2] min-w-[18px] h-[18px] px-1
+                                                  bg-primary text-primary-content rounded-full
+                                                  text-[10px] font-bold items-center justify-center
+                                                  ring-2 ring-base-100 shadow-sm
+                                                  hidden md:flex lg:hidden"
+                                                aria-label={`${unreadCount} unread`}
+                                            >
+                                                {unreadCount > 99 ? "99+" : unreadCount}
+                                            </span>
+                                        )}
                                     </div>
 
                                     {/* Group Info */}
@@ -467,40 +583,47 @@ const Sidebar = () => {
                 )}
             </aside>
 
-            {/* New Chat Modal */}
+            {/* New Chat / Search friends (friends only — includes deleted chats) */}
             {showNewChatModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-base-100 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
-                        {/* Modal Header */}
+                <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+                    <div className="bg-base-100 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] sm:max-h-[80vh] flex flex-col pb-[env(safe-area-inset-bottom)]">
+                        <div className="flex justify-center pt-3 sm:hidden">
+                            <div className="w-10 h-1 rounded-full bg-base-300" />
+                        </div>
                         <div className="p-4 border-b border-base-300 flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-base-content">New Chat</h2>
+                            <div>
+                                <h2 className="text-lg font-bold text-base-content">Search friends</h2>
+                                <p className="text-xs text-base-content/50 mt-0.5">Friends only — start or reopen a chat</p>
+                            </div>
                             <button
-                                onClick={() => setShowNewChatModal(false)}
+                                onClick={() => {
+                                    setShowNewChatModal(false);
+                                    setFriendSearchQuery("");
+                                }}
                                 className="p-2 rounded-lg hover:bg-base-200 transition-colors"
                             >
                                 <X className="size-5 text-base-content/60" />
                             </button>
                         </div>
 
-                        {/* Search in Modal */}
                         <div className="p-4 border-b border-base-300">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-base-content/40" />
                                 <input
                                     type="text"
-                                    placeholder="Search contacts..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search by name or email..."
+                                    value={friendSearchQuery}
+                                    onChange={(e) => setFriendSearchQuery(e.target.value)}
                                     className="w-full pl-10 pr-4 py-2.5 bg-base-200 rounded-lg border-none focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                                     autoFocus
                                 />
                             </div>
                         </div>
 
-                        {/* User List in Modal */}
                         <div className="flex-1 overflow-y-auto">
-                            {filteredUsers.map((user) => {
+                            {searchableFriends.map((user) => {
                                 const isOnline = onlineUsers.includes(user._id);
+                                const wasDeleted = !!user.chatDeletedForMe || !user.lastMessage;
 
                                 return (
                                     <button
@@ -508,7 +631,6 @@ const Sidebar = () => {
                                         onClick={() => handleStartChat(user)}
                                         className="w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 transition-all"
                                     >
-                                        {/* Avatar */}
                                         <div className="relative flex-shrink-0">
                                             <img
                                                 src={user.hasBlockedMe ? defaultImg : (user.profilePic || defaultImg)}
@@ -520,32 +642,42 @@ const Sidebar = () => {
                                             )}
                                         </div>
 
-                                        {/* User Info */}
                                         <div className="flex-1 min-w-0 text-left">
                                             <div className="flex items-center gap-2">
                                                 <div className="font-semibold text-[15px] text-base-content truncate">
                                                     {user.fullName}
                                                 </div>
-                                                {/* NEW Badge for newly created accounts */}
                                                 {isNewUser(user) && (
                                                     <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
                                                         NEW
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="text-xs text-base-content/60">
-                                                {user.hasBlockedMe ? "Unavailable" : (isOnline ? "Online" : "Offline")}
+                                            <div className="text-xs text-base-content/60 truncate">
+                                                {user.hasBlockedMe
+                                                    ? "Unavailable"
+                                                    : wasDeleted
+                                                        ? "Tap to start chat"
+                                                        : isOnline
+                                                            ? "Online"
+                                                            : "Offline"}
                                             </div>
                                         </div>
                                     </button>
                                 );
                             })}
 
-                            {filteredUsers.length === 0 && (
+                            {searchableFriends.length === 0 && (
                                 <div className="text-center text-base-content/40 py-12 px-4">
                                     <MessageCircle className="size-12 mx-auto mb-3 opacity-30" />
-                                    <p className="text-sm font-semibold mb-1">No friends yet</p>
-                                    <p className="text-xs">Go to Contacts to add friends</p>
+                                    <p className="text-sm font-semibold mb-1">
+                                        {friendSearchQuery.trim() ? "No friends found" : "No friends yet"}
+                                    </p>
+                                    <p className="text-xs">
+                                        {friendSearchQuery.trim()
+                                            ? "Try another name — only your friends are listed"
+                                            : "Go to Contacts to add friends"}
+                                    </p>
                                 </div>
                             )}
                         </div>

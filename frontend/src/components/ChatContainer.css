@@ -68,7 +68,23 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     animation: messageSlideIn 0.3s ease-out;
     word-wrap: break-word;
+    overflow-wrap: anywhere;
     max-width: 70%;
+}
+
+/* When wrapped for swipe gestures, width is controlled by .swipeable-message
+   (nested % max-width was collapsing bubbles to 1-char width on mobile) */
+.swipeable-message .chat-bubble {
+    max-width: none !important;
+    width: fit-content;
+    min-width: 2.75rem;
+}
+
+/* DaisyUI .chat is a grid — keep the swipe wrapper as a proper content-sized cell */
+.chat .swipeable-message {
+    max-width: min(85vw, 28rem);
+    min-width: 0;
+    width: max-content;
 }
 
 @keyframes messageSlideIn {
@@ -140,6 +156,8 @@
 .chat-bubble p {
     margin: 0;
     line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     word-break: break-word;
 }
 
@@ -378,4 +396,14 @@
 
 .highlight-message .chat-bubble {
     animation: highlight 2s ease-out;
+}
+
+.msg-menu-trigger {
+    touch-action: manipulation;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .group:hover .msg-menu-trigger {
+        opacity: 1;
+    }
 }

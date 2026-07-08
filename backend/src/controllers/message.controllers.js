@@ -66,7 +66,9 @@ export const getUsersForSidebar = async (req, res) => {
                                     { scheduledFor: { $lte: new Date() } },
                                     { senderId: loggedInUserObjectId }
                                 ]
-                            }
+                            },
+                            // Hide messages deleted for me
+                            { deletedFor: { $nin: [loggedInUserObjectId] } }
                         ]
                     }
                 },
@@ -92,7 +94,8 @@ export const getUsersForSidebar = async (req, res) => {
                     $match: {
                         receiverId: loggedInUserObjectId,
                         senderId: { $in: queryUserObjectIds },
-                        status: { $nin: ['read', 'scheduled'] }
+                        status: { $nin: ['read', 'scheduled'] },
+                        deletedFor: { $nin: [loggedInUserObjectId] }
                     }
                 },
                 {
@@ -229,7 +232,9 @@ export const getMessages = async (req, res) => {
                         { scheduledFor: { $lte: new Date() } }, // Scheduled time has passed
                         { senderId: myId } // I'm the sender, so I can see my own scheduled messages
                     ]
-                }
+                },
+                // Hide chats deleted for me
+                { deletedFor: { $nin: [myId] } }
             ]
         });
 
@@ -410,6 +415,41 @@ export const sendMessage = async (req, res) => {
     }
 };
 
+
+/**
+ * Delete entire chat with a user for me only (hide all messages from my sidebar/chat).
+ * Does not remove messages for the other person.
+ */
+export const deleteChatForMe = async (req, res) => {
+    try {
+        const myId = req.user._id;
+        const { id: otherUserId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+            return res.status(400).json({ error: "Invalid user id" });
+        }
+
+        const result = await Message.updateMany(
+            {
+                $or: [
+                    { senderId: myId, receiverId: otherUserId },
+                    { senderId: otherUserId, receiverId: myId },
+                ],
+            },
+            { $addToSet: { deletedFor: myId } }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Chat deleted for you",
+            modifiedCount: result.modifiedCount,
+            userId: otherUserId,
+        });
+    } catch (error) {
+        console.error("Error in deleteChatForMe:", error.message);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
 
 export const deleteForAllMessage = async (req, res) => {
     const { messageId } = req.params;
