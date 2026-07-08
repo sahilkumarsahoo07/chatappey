@@ -17,6 +17,7 @@ import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AdminPage from './pages/AdminPage';
 import { useAuthStore } from './store/useAuthStore';
+import { useChatStore } from './store/useChatStore';
 import { Loader } from 'lucide-react';
 
 import { Toaster } from 'react-hot-toast';
@@ -28,9 +29,19 @@ import CallWindow from './components/CallWindow';
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
+  const socket = useAuthStore((state) => state.socket);
   const { theme } = useThemeStore();
+  const { subscribeToMessages, unsubscribeFromMessages } = useChatStore();
 
   // console.log(onlineUsers)
+
+  // Subscribe to messages globally when authUser and socket are available
+  useEffect(() => {
+    if (authUser && socket) {
+      subscribeToMessages();
+      return () => unsubscribeFromMessages();
+    }
+  }, [authUser, socket, subscribeToMessages, unsubscribeFromMessages]);
 
   useEffect(() => {
     // Check for token in URL (from Google OAuth)
@@ -56,8 +67,8 @@ function App() {
 
   if (isCheckingAuth && !authUser)
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader className="size-10 animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-base-100">
+        {/* Loader removed based on user request */}
       </div>
     );
   return (

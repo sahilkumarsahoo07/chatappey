@@ -70,6 +70,13 @@ import { Server } from "socket.io";
 import http from "http";
 import express from "express";
 import Call from "../models/call.model.js";
+import mongoose from "mongoose";
+import User from "../models/user.model.js";
+import Message from "../models/message.model.js";
+import FriendRequest from "../models/friendRequest.model.js";
+import Group from "../models/group.model.js";
+import GroupMessage from "../models/groupMessage.model.js";
+import cloudinary from "./cloudinary.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -130,7 +137,6 @@ io.on("connection", async (socket) => {
     // This prevents the race condition where they appear online for a split second
     let userIsIncognito = false;
     try {
-      const User = (await import("../models/user.model.js")).default;
       const user = await User.findById(userId).select('isIncognito');
       userIsIncognito = !!user?.isIncognito;
 
@@ -159,7 +165,6 @@ io.on("connection", async (socket) => {
     // 3. Join user's groups (can remain async/background as it doesn't affect online status)
     (async () => {
       try {
-        const Group = (await import("../models/group.model.js")).default;
         const userGroups = await Group.find({ 'members.user': userId }).select('_id');
         userGroups.forEach(group => {
           socket.join(group._id.toString());
@@ -245,7 +250,6 @@ io.on("connection", async (socket) => {
   // Group typing events
   socket.on("group:typing", async ({ groupId }) => {
     try {
-      const User = (await import("../models/user.model.js")).default;
       const user = await User.findById(userId).select('fullName');
 
       // Broadcast to all group members except sender
@@ -380,16 +384,26 @@ io.on("connection", async (socket) => {
   // WebSocket-based message sending for direct messages
   socket.on("sendMessage", async (messageData, callback) => {
     try {
-      const { receiverId, text, image, audio, file, fileName, replyTo, poll, scheduledFor, isScheduled } = messageData;
+      const { receiverId, text, image, audio, file, fileName, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = messageData;
 
-      // Import models dynamically
-      const User = (await import("../models/user.model.js")).default;
-      const Message = (await import("../models/message.model.js")).default;
-      const FriendRequest = (await import("../models/friendRequest.model.js")).default;
-      const cloudinary = (await import("../lib/cloudinary.js")).default;
+      // Fetch sender, receiver, and reply target (if valid) in parallel to optimize latency
+      const fetchSender = User.findById(userId).select('blockedUsers friends');
+      const fetchReceiver = User.findById(receiverId).select('blockedUsers');
+      const fetchOriginalMessage = (replyTo && mongoose.Types.ObjectId.isValid(replyTo))
+        ? Message.findById(replyTo).populate('senderId', 'fullName')
+        : Promise.resolve(null);
+
+      const [sender, receiver, originalMessage] = await Promise.all([
+        fetchSender,
+        fetchReceiver,
+        fetchOriginalMessage
+      ]);
+
+      if (!sender) {
+        return callback?.({ error: "Sender not found." });
+      }
 
       // Check if users are friends
-      const sender = await User.findById(userId).select('blockedUsers friends');
       const isFriend = sender.friends.some(friendId => friendId.toString() === receiverId.toString());
 
       if (!isFriend) {
@@ -397,13 +411,12 @@ io.on("connection", async (socket) => {
       }
 
       // Check if sender is blocked by receiver
-      const receiver = await User.findById(receiverId).select('blockedUsers');
       if (receiver && receiver.blockedUsers.some(blockedId => blockedId.toString() === userId.toString())) {
         return callback?.({ error: "Cannot send message. You have been blocked by this user." });
       }
 
       // Check if receiver is blocked by sender
-      if (sender && sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
+      if (sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
         return callback?.({ error: "Cannot send message. You have blocked this user." });
       }
 
@@ -444,16 +457,23 @@ io.on("connection", async (socket) => {
       }
 
       // Handle reply data if present
-      let replyToMessageData = null;
+      let replyToMessageData = replyToMessage || null;
+      let validReplyTo = replyTo;
+      
       if (replyTo) {
-        const originalMessage = await Message.findById(replyTo).populate('senderId', 'fullName');
-        if (originalMessage) {
-          replyToMessageData = {
-            text: originalMessage.text,
-            image: originalMessage.image,
-            senderId: originalMessage.senderId._id,
-            senderName: originalMessage.senderId.fullName
-          };
+        if (mongoose.Types.ObjectId.isValid(replyTo)) {
+          if (originalMessage) {
+            replyToMessageData = {
+              text: originalMessage.text,
+              image: originalMessage.image,
+              senderId: originalMessage.senderId._id,
+              senderName: originalMessage.senderId.fullName
+            };
+          }
+        } else {
+          // If replyTo is an invalid ObjectId (like 'temp-123' from optimistic update)
+          // We can't save it as a reference in DB, but we can still save the replyToMessageData
+          validReplyTo = null;
         }
       }
 
@@ -480,7 +500,7 @@ io.on("connection", async (socket) => {
         file: fileUrl,
         fileName: fileName || null,
         status: initialStatus,
-        replyTo: replyTo || null,
+        replyTo: validReplyTo || null,
         replyToMessage: replyToMessageData,
         poll: poll ? {
           question: poll.question,
@@ -523,11 +543,6 @@ io.on("connection", async (socket) => {
   socket.on("sendGroupMessage", async (messageData, callback) => {
     try {
       const { groupId, text, image, audio, file, fileName, isForwarded, mentions, poll } = messageData;
-
-      // Import models dynamically
-      const Group = (await import("../models/group.model.js")).default;
-      const GroupMessage = (await import("../models/groupMessage.model.js")).default;
-      const cloudinary = (await import("../lib/cloudinary.js")).default;
 
       // Check if group exists and user is a member
       const group = await Group.findById(groupId);
@@ -629,10 +644,6 @@ io.on("connection", async (socket) => {
     try {
       const myId = userId;
 
-      // Import models dynamically
-      const Message = (await import("../models/message.model.js")).default;
-      const User = (await import("../models/user.model.js")).default;
-
       // Get messages that need to be marked as read
       const messagesToUpdate = await Message.find({
         senderId: otherUserId,
@@ -682,7 +693,6 @@ io.on("connection", async (socket) => {
       // ONLY update lastLogout and emit event if user was NOT incognito
       if (!isIncognito) {
         try {
-          const User = (await import("../models/user.model.js")).default;
           const logoutTime = new Date();
           const user = await User.findByIdAndUpdate(userId, { lastLogout: logoutTime }, { new: true }).select('privacyLastSeen friends');
 

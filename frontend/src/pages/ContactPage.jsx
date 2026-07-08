@@ -14,8 +14,15 @@ const ContactPage = () => {
     const [requestMessage, setRequestMessage] = useState("");
 
     useEffect(() => {
-        getUsers();
-    }, [getUsers]);
+        if (searchQuery.trim().length >= 3) {
+            const delayDebounceFn = setTimeout(() => {
+                getUsers(searchQuery);
+            }, 300); // 300ms debounce to prevent API calls on every keystroke
+            return () => clearTimeout(delayDebounceFn);
+        } else {
+            getUsers(); // Load friends list by default when query is empty or too short
+        }
+    }, [searchQuery, getUsers]);
 
     const handleOpenRequestModal = (user) => {
         setSelectedUser(user);

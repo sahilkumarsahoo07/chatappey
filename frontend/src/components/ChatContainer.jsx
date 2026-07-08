@@ -179,9 +179,7 @@ const ChatContainer = () => {
 
   useEffect(() => {
     getMessages(selectedUser._id);
-    subscribeToMessages();
-    return () => unsubscribeFromMessages();
-  }, [selectedUser._id, getMessages, subscribeToMessages, unsubscribeFromMessages]);
+  }, [selectedUser._id, getMessages]);
 
   const scrollToBottom = () => {
     if (containerRef.current) {
@@ -360,7 +358,7 @@ const ChatContainer = () => {
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchEnd}
             >
-              {message.replyTo && message.replyToMessage && message.text !== "This message was deleted" && (
+              {message.replyToMessage && message.text !== "This message was deleted" && (
                 <div className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
                   onClick={(e) => {
                     e.stopPropagation();

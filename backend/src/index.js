@@ -1,6 +1,6 @@
+import "dotenv/config";
 import express from "express"
 import authRoutes from './routes/auth.route.js'
-import dotenv from 'dotenv';
 import messageRoutes from './routes/message.route.js'
 import friendRequestRoutes from './routes/friendRequest.route.js'
 import notificationRoutes from './routes/notification.route.js'
@@ -15,8 +15,6 @@ import { app, server } from './lib/socket.js'
 import setupCronJobs from './lib/cron.js';
 import session from "express-session";
 import passport from "./lib/passport.js";
-
-dotenv.config();
 // const app = express();
 
 setupCronJobs();

@@ -4,133 +4,196 @@ import FriendRequest from "../models/friendRequest.model.js";
 
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
+import mongoose from "mongoose";
 
 export const getUsersForSidebar = async (req, res) => {
     try {
         const loggedInUserId = req.user._id;
-        const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
+        const { search } = req.query;
 
         // Get logged-in user's blocked users list and friends list
         const loggedInUser = await User.findById(loggedInUserId).select('blockedUsers friends');
-        const myBlockedUsers = loggedInUser.blockedUsers.map(id => id.toString());
-        const myFriends = loggedInUser.friends.map(id => id.toString());
+        const myBlockedUsers = loggedInUser?.blockedUsers ? loggedInUser.blockedUsers.map(id => id.toString()) : [];
+        const myFriends = loggedInUser?.friends ? loggedInUser.friends.map(id => id.toString()) : [];
 
-        // Get last message and block status for each user
-        const usersWithLastMessage = await Promise.all(
-            filteredUsers.map(async (user) => {
-                // Get last message, but exclude scheduled messages where I am the receiver
-                const lastMessage = await Message.findOne({
-                    $and: [
-                        {
-                            $or: [
-                                { senderId: loggedInUserId, receiverId: user._id },
-                                { senderId: user._id, receiverId: loggedInUserId },
+        let queryUsers;
+        if (search) {
+            const query = search.trim();
+            // Discover/Search mode: search all users except current user by name or email
+            queryUsers = await User.find({
+                _id: { $ne: loggedInUserId },
+                $or: [
+                    { fullName: { $regex: query, $options: "i" } },
+                    { email: { $regex: query, $options: "i" } }
+                ]
+            }).select("-password");
+        } else {
+            // Sidebar mode: only fetch friends to avoid loading the entire database
+            queryUsers = await User.find({
+                _id: { $in: myFriends }
+            }).select("-password");
+        }
+
+        if (!queryUsers || queryUsers.length === 0) {
+            return res.status(200).json([]);
+        }
+
+        const loggedInUserObjectId = new mongoose.Types.ObjectId(loggedInUserId);
+        const queryUserObjectIds = queryUsers.map(user => new mongoose.Types.ObjectId(user._id));
+
+        // Fetch last messages, unread counts, and pending requests in parallel
+        const [lastMessagesAgg, unreadCountsAgg, pendingRequests] = await Promise.all([
+            // 1. Bulk aggregate last messages for all queried users
+            Message.aggregate([
+                {
+                    $match: {
+                        $and: [
+                            {
+                                $or: [
+                                    { senderId: loggedInUserObjectId, receiverId: { $in: queryUserObjectIds } },
+                                    { receiverId: loggedInUserObjectId, senderId: { $in: queryUserObjectIds } }
+                                ]
+                            },
+                            {
+                                $or: [
+                                    { status: { $ne: 'scheduled' } },
+                                    { senderId: loggedInUserObjectId, status: 'scheduled' }
+                                ]
+                            },
+                            {
+                                $or: [
+                                    { scheduledFor: { $exists: false } },
+                                    { scheduledFor: { $lte: new Date() } },
+                                    { senderId: loggedInUserObjectId }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                {
+                    $sort: { createdAt: -1 }
+                },
+                {
+                    $group: {
+                        _id: {
+                            $cond: [
+                                { $eq: ["$senderId", loggedInUserObjectId] },
+                                "$receiverId",
+                                "$senderId"
                             ]
                         },
-                        {
-                            $or: [
-                                { status: { $ne: 'scheduled' } },
-                                { senderId: loggedInUserId, status: 'scheduled' } // I can see my own scheduled messages
-                            ]
-                        },
-                        // Additional check: ensure scheduledFor time has passed
-                        {
-                            $or: [
-                                { scheduledFor: { $exists: false } },
-                                { scheduledFor: { $lte: new Date() } },
-                                { senderId: loggedInUserId }
-                            ]
-                        }
-                    ]
-                })
-                    .sort({ createdAt: -1 })
-                    .select('text image createdAt senderId status');
-
-                // Debug: Log if we found a scheduled message for this user
-                if (lastMessage && lastMessage.status === 'scheduled') {
-                    console.log(`⚠️ SIDEBAR: Found scheduled message for user ${user.fullName}:`, {
-                        messageId: lastMessage._id,
-                        status: lastMessage.status,
-                        senderId: lastMessage.senderId,
-                        loggedInUserId,
-                        isSender: lastMessage.senderId.toString() === loggedInUserId.toString()
-                    });
+                        lastMessage: { $first: "$$ROOT" }
+                    }
                 }
-
-                // Count unread messages from this user (exclude scheduled)
-                const unreadCount = await Message.countDocuments({
-                    senderId: user._id,
-                    receiverId: loggedInUserId,
-                    status: { $nin: ['read', 'scheduled'] }
-                });
-
-                // Check if I blocked this user
-                const isBlockedByMe = myBlockedUsers.includes(user._id.toString());
-
-                // Check if this user blocked me
-                const userDoc = await User.findById(user._id).select('blockedUsers');
-                const hasBlockedMe = userDoc.blockedUsers.some(
-                    blockedId => blockedId.toString() === loggedInUserId.toString()
-                );
-
-                // Check if we are friends
-                const isFriend = myFriends.includes(user._id.toString());
-
-                // Check last seen privacy
-                const targetUser = await User.findById(user._id).select('privacyLastSeen privacyProfilePic privacyAbout');
-                const privacyLastSeen = targetUser?.privacyLastSeen || "everyone";
-                const privacyProfilePic = targetUser?.privacyProfilePic || "everyone";
-                const privacyAbout = targetUser?.privacyAbout || "everyone";
-
-                let showLastSeen = true;
-                let showProfilePic = true;
-                let showAbout = true;
-
-                // Check last seen privacy
-                if (privacyLastSeen === "none") {
-                    showLastSeen = false;
-                } else if (privacyLastSeen === "contacts") {
-                    showLastSeen = isFriend;
+            ]),
+            // 2. Bulk aggregate unread message counts
+            Message.aggregate([
+                {
+                    $match: {
+                        receiverId: loggedInUserObjectId,
+                        senderId: { $in: queryUserObjectIds },
+                        status: { $nin: ['read', 'scheduled'] }
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$senderId",
+                        count: { $sum: 1 }
+                    }
                 }
-
-                // Check profile pic privacy
-                if (privacyProfilePic === "none") {
-                    showProfilePic = false;
-                } else if (privacyProfilePic === "contacts") {
-                    showProfilePic = isFriend;
-                }
-
-                // Check about privacy
-                if (privacyAbout === "none") {
-                    showAbout = false;
-                } else if (privacyAbout === "contacts") {
-                    showAbout = isFriend;
-                }
-
-                // Check for pending friend request
-                const pendingRequest = await FriendRequest.findOne({
-                    $or: [
-                        { senderId: loggedInUserId, receiverId: user._id, status: 'pending' },
-                        { senderId: user._id, receiverId: loggedInUserId, status: 'pending' }
-                    ]
-                });
-
-                return {
-                    ...user.toObject(),
-                    profilePic: showProfilePic ? user.profilePic : null,
-                    about: showAbout ? user.about : null,
-                    lastLogout: showLastSeen ? user.lastLogout : null,
-                    lastMessage: lastMessage || null,
-                    isBlockedByMe,
-                    hasBlockedMe,
-                    isFriend,
-                    hasPendingRequest: !!pendingRequest,
-                    pendingRequestSentByMe: pendingRequest?.senderId.toString() === loggedInUserId.toString(),
-                    createdAt: user.createdAt, // Include createdAt for new user badge
-                    unreadCount, // Include unread message count
-                };
+            ]),
+            // 3. Bulk fetch pending friend requests
+            FriendRequest.find({
+                $or: [
+                    { senderId: loggedInUserObjectId, receiverId: { $in: queryUserObjectIds }, status: 'pending' },
+                    { receiverId: loggedInUserObjectId, senderId: { $in: queryUserObjectIds }, status: 'pending' }
+                ]
             })
-        );
+        ]);
+
+        // Map aggregation results to Maps for O(1) lookup
+        const lastMessageMap = new Map();
+        lastMessagesAgg.forEach(item => {
+            if (item._id) {
+                lastMessageMap.set(item._id.toString(), item.lastMessage);
+            }
+        });
+
+        const unreadCountMap = new Map();
+        unreadCountsAgg.forEach(item => {
+            if (item._id) {
+                unreadCountMap.set(item._id.toString(), item.count);
+            }
+        });
+
+        const pendingRequestMap = new Map();
+        pendingRequests.forEach(req => {
+            const senderStr = req.senderId.toString();
+            const receiverStr = req.receiverId.toString();
+            const loggedInStr = loggedInUserId.toString();
+            const otherId = senderStr === loggedInStr ? receiverStr : senderStr;
+            pendingRequestMap.set(otherId, req);
+        });
+
+        // Assemble the user payload
+        const usersWithLastMessage = queryUsers.map((user) => {
+            const userIdStr = user._id.toString();
+
+            // Check if I blocked this user
+            const isBlockedByMe = myBlockedUsers.includes(userIdStr);
+
+            // Check if this user blocked me
+            const hasBlockedMe = user.blockedUsers ? user.blockedUsers.some(
+                blockedId => blockedId.toString() === loggedInUserId.toString()
+            ) : false;
+
+            // Check if we are friends
+            const isFriend = myFriends.includes(userIdStr);
+
+            // Privacy checks
+            const privacyLastSeen = user.privacyLastSeen || "everyone";
+            const privacyProfilePic = user.privacyProfilePic || "everyone";
+            const privacyAbout = user.privacyAbout || "everyone";
+
+            let showLastSeen = true;
+            let showProfilePic = true;
+            let showAbout = true;
+
+            if (privacyLastSeen === "none") {
+                showLastSeen = false;
+            } else if (privacyLastSeen === "contacts") {
+                showLastSeen = isFriend;
+            }
+
+            if (privacyProfilePic === "none") {
+                showProfilePic = false;
+            } else if (privacyProfilePic === "contacts") {
+                showProfilePic = isFriend;
+            }
+
+            if (privacyAbout === "none") {
+                showAbout = false;
+            } else if (privacyAbout === "contacts") {
+                showAbout = isFriend;
+            }
+
+            const pendingRequest = pendingRequestMap.get(userIdStr);
+
+            return {
+                ...user.toObject(),
+                profilePic: showProfilePic ? user.profilePic : null,
+                about: showAbout ? user.about : null,
+                lastLogout: showLastSeen ? user.lastLogout : null,
+                lastMessage: lastMessageMap.get(userIdStr) || null,
+                isBlockedByMe,
+                hasBlockedMe,
+                isFriend,
+                hasPendingRequest: !!pendingRequest,
+                pendingRequestSentByMe: pendingRequest?.senderId.toString() === loggedInUserId.toString(),
+                createdAt: user.createdAt,
+                unreadCount: unreadCountMap.get(userIdStr) || 0,
+            };
+        });
 
         res.status(200).json(usersWithLastMessage);
     } catch (error) {
@@ -188,12 +251,28 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        const { text, image, audio, file, fileName, replyTo, poll, scheduledFor, isScheduled } = req.body;
+        const { text, image, audio, file, fileName, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = req.body;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
+        // Fetch sender, receiver, and original message (for reply) in parallel
+        const fetchSender = User.findById(senderId).select('blockedUsers friends');
+        const fetchReceiver = User.findById(receiverId).select('blockedUsers');
+        const fetchOriginalMessage = (replyTo && mongoose.Types.ObjectId.isValid(replyTo))
+            ? Message.findById(replyTo).populate('senderId', 'fullName')
+            : Promise.resolve(null);
+
+        const [sender, receiver, originalMessage] = await Promise.all([
+            fetchSender,
+            fetchReceiver,
+            fetchOriginalMessage
+        ]);
+
+        if (!sender) {
+            return res.status(404).json({ error: "Sender not found." });
+        }
+
         // Check if users are friends
-        const sender = await User.findById(senderId).select('blockedUsers friends');
         const isFriend = sender.friends.some(friendId => friendId.toString() === receiverId.toString());
 
         if (!isFriend) {
@@ -203,7 +282,6 @@ export const sendMessage = async (req, res) => {
         }
 
         // Check if sender is blocked by receiver
-        const receiver = await User.findById(receiverId).select('blockedUsers');
         if (receiver && receiver.blockedUsers.some(blockedId => blockedId.toString() === senderId.toString())) {
             return res.status(403).json({
                 error: "Cannot send message. You have been blocked by this user."
@@ -211,7 +289,7 @@ export const sendMessage = async (req, res) => {
         }
 
         // Check if receiver is blocked by sender
-        if (sender && sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
+        if (sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
             return res.status(403).json({
                 error: "Cannot send message. You have blocked this user."
             });
@@ -257,16 +335,21 @@ export const sendMessage = async (req, res) => {
         }
 
         // Handle reply data if present
-        let replyToMessageData = null;
+        let replyToMessageData = req.body.replyToMessage || null;
+        let validReplyTo = replyTo;
+        
         if (replyTo) {
-            const originalMessage = await Message.findById(replyTo).populate('senderId', 'fullName');
-            if (originalMessage) {
-                replyToMessageData = {
-                    text: originalMessage.text,
-                    image: originalMessage.image,
-                    senderId: originalMessage.senderId._id,
-                    senderName: originalMessage.senderId.fullName
-                };
+            if (mongoose.Types.ObjectId.isValid(replyTo)) {
+                if (originalMessage) {
+                    replyToMessageData = {
+                        text: originalMessage.text,
+                        image: originalMessage.image,
+                        senderId: originalMessage.senderId._id,
+                        senderName: originalMessage.senderId.fullName
+                    };
+                }
+            } else {
+                validReplyTo = null;
             }
         }
 
@@ -284,7 +367,7 @@ export const sendMessage = async (req, res) => {
         }
 
         const newMessage = new Message({
-            senderId,
+            senderId: senderId,
             receiverId,
             text,
             image: imageUrl,
@@ -292,7 +375,7 @@ export const sendMessage = async (req, res) => {
             file: fileUrl,
             fileName: fileName || null,
             status: initialStatus,
-            replyTo: replyTo || null,
+            replyTo: validReplyTo || null,
             replyToMessage: replyToMessageData,
             poll: poll ? {
                 question: poll.question,

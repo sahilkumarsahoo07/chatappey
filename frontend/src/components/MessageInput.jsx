@@ -377,6 +377,9 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const currentAudioBlob = audioBlob;
         const currentMentions = [...selectedMentions];
 
+        // Capture replyingToMessage before clearing
+        const currentReplyingToMessage = replyingToMessage;
+
         // OPTIMISTIC UPDATE: Clear ALL UI IMMEDIATELY (synchronous for instant feedback)
         // Use flushSync for immediate DOM updates if available, otherwise synchronous
         setText("");
@@ -398,6 +401,13 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const messageData = {
             text: currentText,
             mentions: currentMentions,
+            replyTo: currentReplyingToMessage?.realId || currentReplyingToMessage?._id || null,
+            replyToMessage: currentReplyingToMessage ? {
+                text: currentReplyingToMessage.text,
+                image: currentReplyingToMessage.image,
+                senderId: currentReplyingToMessage.senderId,
+                senderName: currentReplyingToMessage.senderId === selectedUser?._id ? selectedUser.fullName : "You"
+            } : null,
             ...extraData
         };
 

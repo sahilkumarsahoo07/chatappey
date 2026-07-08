@@ -45,38 +45,17 @@ const Sidebar = () => {
             }, 500); // Wait 500ms before refreshing
         };
 
-        const handleNewMessage = (newMessage) => {
-            // Debounce refresh to prevent multiple rapid calls
-            debouncedRefresh();
-        };
-
-        const handleNewUserSignup = (newUser) => {
-            console.log("New user signed up:", newUser);
-            debouncedRefresh();
-        };
-
-        const handleUserListUpdate = (data) => {
-            console.log("User list updated, user connected:", data.userId);
-            debouncedRefresh();
-        };
-
         const handlePrivacyUpdate = (data) => {
             console.log("Privacy settings updated for user:", data.userId);
             debouncedRefresh();
         };
 
-        socket.on("newMessage", handleNewMessage);
-        socket.on("newUserSignup", handleNewUserSignup);
-        socket.on("userListUpdate", handleUserListUpdate);
         socket.on("privacy-settings-updated", handlePrivacyUpdate);
 
         return () => {
             if (refreshUsersTimeoutRef.current) {
                 clearTimeout(refreshUsersTimeoutRef.current);
             }
-            socket.off("newMessage", handleNewMessage);
-            socket.off("newUserSignup", handleNewUserSignup);
-            socket.off("userListUpdate", handleUserListUpdate);
             socket.off("privacy-settings-updated", handlePrivacyUpdate);
         };
     }, [refreshUsers]);

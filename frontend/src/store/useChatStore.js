@@ -21,14 +21,16 @@ export const useChatStore = create((set, get) => ({
   isFriendRequestsLoading: false,
   replyingToMessage: null,
   isTyping: false, // New state
+  _isSubscribedToMessages: false,
 
-  getUsers: async () => {
+  getUsers: async (searchQuery = "") => {
     set({ isUsersLoading: true });
     try {
-      const res = await axiosInstance.get("/messages/users");
+      const params = searchQuery ? { search: searchQuery } : {};
+      const res = await axiosInstance.get("/messages/users", { params });
       set({ users: res.data });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Failed to fetch users");
     } finally {
       set({ isUsersLoading: false });
     }
@@ -88,13 +90,13 @@ export const useChatStore = create((set, get) => ({
       receiverId: selectedUser._id,
       createdAt: messageData.scheduledFor ? new Date(messageData.scheduledFor).toISOString() : new Date().toISOString(),
       status: messageData.scheduledFor ? 'scheduled' : 'sent', // Start with 'sent' (single tick)
-      replyTo: replyingToMessage?._id || null,
-      replyToMessage: replyingToMessage ? {
+      replyTo: messageData.replyTo !== undefined ? messageData.replyTo : (replyingToMessage?._id || null),
+      replyToMessage: messageData.replyToMessage !== undefined ? messageData.replyToMessage : (replyingToMessage ? {
         text: replyingToMessage.text,
         image: replyingToMessage.image,
         senderId: replyingToMessage.senderId,
         senderName: replyingToMessage.senderId === authUser._id ? authUser.fullName : selectedUser.fullName
-      } : null
+      } : null)
     };
 
     // Add message to UI INSTANTLY (synchronous state update)
@@ -109,7 +111,8 @@ export const useChatStore = create((set, get) => ({
     socket.emit("sendMessage", {
       receiverId: selectedUser._id,
       ...messageData,
-      replyTo: replyingToMessage?._id || null
+      replyTo: optimisticMessage.replyTo,
+      replyToMessage: optimisticMessage.replyToMessage
     }, (response) => {
       // Process response immediately (no setTimeout delay)
       if (response.error) {
@@ -141,9 +144,9 @@ export const useChatStore = create((set, get) => ({
             audio: optimisticMessage.audio || newMessage.audio,
             file: optimisticMessage.file || newMessage.file,
             createdAt: optimisticMessage.createdAt,
-            // Preserve reply data from server response
-            replyTo: newMessage.replyTo,
-            replyToMessage: newMessage.replyToMessage,
+            // Preserve reply data from server response OR optimistic message
+            replyTo: newMessage.replyTo || optimisticMessage.replyTo,
+            replyToMessage: newMessage.replyToMessage || optimisticMessage.replyToMessage,
             realId: newMessage._id // Store real ID for reference if needed
           };
         }
@@ -185,14 +188,18 @@ export const useChatStore = create((set, get) => ({
   },
 
   subscribeToMessages: () => {
-    const { selectedUser } = get();
-    if (!selectedUser) return;
-
     const socket = useAuthStore.getState().socket;
     if (!socket) {
-      console.error("Socket not available");
+      console.log("[Socket Debug] Socket not available for message subscription");
       return;
     }
+
+    if (get()._isSubscribedToMessages) {
+      console.log("[Socket Debug] Already subscribed to messages, skipping duplicate subscription");
+      return;
+    }
+    set({ _isSubscribedToMessages: true });
+    console.log("[Socket Debug] Subscribing to messages globally");
 
     // Listen for new messages
     socket.on("newMessage", (newMessage) => {
@@ -500,6 +507,8 @@ export const useChatStore = create((set, get) => ({
       get()._cleanupVisibility();
       set({ _cleanupVisibility: null });
     }
+    set({ _isSubscribedToMessages: false });
+    console.log("[Socket Debug] Unsubscribed from messages globally");
   },
 
   deleteForAllMessage: async (messageId) => {
