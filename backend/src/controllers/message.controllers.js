@@ -5,6 +5,7 @@ import FriendRequest from "../models/friendRequest.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import mongoose from "mongoose";
+import { getPreferencesMap, isChatMuted, unarchiveDmChat } from "../utils/chatPreference.utils.js";
 
 export const getUsersForSidebar = async (req, res) => {
     try {
@@ -146,6 +147,8 @@ export const getUsersForSidebar = async (req, res) => {
             pendingRequestMap.set(otherId, req);
         });
 
+        const prefsMap = await getPreferencesMap(loggedInUserId);
+
         // Assemble the user payload
         const usersWithLastMessage = queryUsers.map((user) => {
             const userIdStr = user._id.toString();
@@ -189,6 +192,7 @@ export const getUsersForSidebar = async (req, res) => {
             }
 
             const pendingRequest = pendingRequestMap.get(userIdStr);
+            const pref = prefsMap.get(`dm:${userIdStr}`);
 
             return {
                 ...user.toObject(),
@@ -203,10 +207,18 @@ export const getUsersForSidebar = async (req, res) => {
                 pendingRequestSentByMe: pendingRequest?.senderId.toString() === loggedInUserId.toString(),
                 createdAt: user.createdAt,
                 unreadCount: unreadCountMap.get(userIdStr) || 0,
+                isArchived: pref?.isArchived || false,
+                isMuted: isChatMuted(pref),
+                mutedUntil: pref?.mutedUntil || null,
+                wallpaper: pref?.wallpaper || null,
             };
         });
 
-        res.status(200).json(usersWithLastMessage);
+        const result = search
+            ? usersWithLastMessage
+            : usersWithLastMessage.filter((u) => !u.isArchived);
+
+        res.status(200).json(result);
     } catch (error) {
         console.error("Error in getUsersForSidebar: ", error.message);
         res.status(500).json({ error: "Internal server error" });
@@ -264,7 +276,7 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        const { text, image, audio, file, fileName, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = req.body;
+        const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = req.body;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
@@ -384,6 +396,10 @@ export const sendMessage = async (req, res) => {
             receiverId,
             text,
             image: imageUrl,
+            video: video || undefined,
+            videoThumbnail: videoThumbnail || undefined,
+            videoDuration: videoDuration || undefined,
+            videoPublicId: videoPublicId || undefined,
             audio: audioUrl,
             file: fileUrl,
             fileName: fileName || null,
@@ -398,6 +414,9 @@ export const sendMessage = async (req, res) => {
         });
 
         await newMessage.save();
+
+        // Unarchive for both participants when a new message is sent (WhatsApp-style)
+        await unarchiveDmChat(senderId, receiverId);
 
         // Only emit if NOT scheduled
         if (!shouldBeScheduled) {

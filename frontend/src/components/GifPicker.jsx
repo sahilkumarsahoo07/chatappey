@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { Clapperboard, Search, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -179,4 +179,4 @@ const GifPicker = ({ onGifSelect }) => {
     );
 };
 
-export default GifPicker;
+export default memo(GifPicker);

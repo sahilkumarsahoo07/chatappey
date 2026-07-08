@@ -83,25 +83,19 @@
 
 /* Bottom navbar mobile padding */
 .pb-navbar {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--nav-height, 72px) + env(safe-area-inset-bottom, 0px));
 }
 
-/* Fix for iOS Safari 100vh issue */
-@supports (height: 100dvh) {
-    .h-screen-fix {
-        height: 100dvh;
-    }
+:root {
+    --nav-height: 72px;
 }
 
-@supports not (height: 100dvh) {
-    .h-screen-fix {
-        height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-    }
-}
-
-/* Mobile bottom navbar container */
-.mobile-bottom-nav {
-    padding-bottom: env(safe-area-inset-bottom, 8px);
+/* Hide dock when soft keyboard is open */
+html.keyboard-open nav.md\:hidden.fixed,
+html.keyboard-open .md\:hidden.fixed.bottom-0 {
+    transform: translateY(100%) !important;
+    pointer-events: none !important;
+    visibility: hidden;
 }
 
 /* Touch-friendly button sizes */
@@ -128,6 +122,50 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(139, 92, 246, 0.5);
+}
+
+/* WhatsApp-style Status tray */
+.status-tray-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.status-tray-scroll::-webkit-scrollbar {
+    display: none;
+}
+:root {
+    --status-ring-unseen: #25d366;
+    --status-ring-viewed: #9ca3af;
+    --status-ring-own: #25d366;
+}
+[data-theme="dark"] {
+    --status-ring-viewed: #6b7280;
+}
+
+/* Soft keyboard (Visual Viewport) — set by useVisualViewportKeyboard */
+:root {
+    --keyboard-inset: 0px;
+}
+html.keyboard-open .md\:hidden.fixed.bottom-0,
+html.keyboard-open nav.md\:hidden.fixed {
+    transform: translateY(100%) !important;
+    pointer-events: none !important;
+    visibility: hidden;
+}
+html.keyboard-open body {
+    overscroll-behavior-y: none;
+}
+/* Messages list clears space for composer + keyboard without resizing the shell */
+.messages-container {
+    padding-bottom: calc(1rem + var(--keyboard-inset, 0px)) !important;
+}
+
+@keyframes statusFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes statusSheetUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* Smooth Transitions */
@@ -633,6 +671,28 @@
     padding: 1rem 1.5rem;
     border-bottom: 1px solid hsl(var(--pc) / 0.1);
     box-shadow: var(--shadow-sm);
+}
+
+.chat-topbar {
+    background: hsl(var(--b1) / 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid hsl(var(--bc) / 0.08);
+    box-shadow: 0 1px 0 hsl(var(--bc) / 0.03);
+}
+
+.chat-header-surface {
+    background: transparent;
+}
+
+.chat-search-panel {
+    background: transparent;
+}
+
+@media (max-width: 767px) {
+    .chat-topbar {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
 }
 
 /* ============================================

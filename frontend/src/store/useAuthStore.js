@@ -410,6 +410,11 @@ export const useAuthStore = create((set, get) => ({
                 }
                 useChatStore.getState().refreshUsers();
             });
+            // Soft-refresh status feed after reconnect
+            import("./useStatusStore").then(({ useStatusStore }) => {
+                useStatusStore.getState().subscribeToStatusEvents();
+                useStatusStore.getState().loadFeed(true);
+            });
         });
 
         socket.on("reconnect_error", (error) => {

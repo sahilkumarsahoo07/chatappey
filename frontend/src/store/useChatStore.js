@@ -9,6 +9,8 @@ import {
   isDocumentVisible,
   requestNotificationPermission
 } from "../lib/notifications";
+import { haptic } from "../lib/haptics";
+import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
 
 export const useChatStore = create((set, get) => ({
   messages: [],
@@ -93,6 +95,33 @@ export const useChatStore = create((set, get) => ({
     const socket = useAuthStore.getState().socket;
     const onlineUsers = useAuthStore.getState().onlineUsers || [];
 
+    haptic("send");
+
+    // Offline queue — preserve order and show pending
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const queued = await sendOrQueueMessage(selectedUser._id, {
+        ...messageData,
+        replyTo: messageData.replyTo !== undefined ? messageData.replyTo : (replyingToMessage?._id || null),
+      });
+      if (queued.queued) {
+        const pendingMsg = {
+          _id: `pending-${Date.now()}`,
+          optimisticId: `pending-${Date.now()}`,
+          text: messageData.text,
+          image: messageData.image,
+          video: messageData.video,
+          audio: messageData.audio,
+          file: messageData.file,
+          senderId: authUser._id,
+          receiverId: selectedUser._id,
+          createdAt: new Date().toISOString(),
+          status: "pending",
+        };
+        set({ messages: [...get().messages, pendingMsg] });
+        return;
+      }
+    }
+
     if (!socket) {
       toast.error("Connection error. Please refresh the page.");
       return;
@@ -108,6 +137,9 @@ export const useChatStore = create((set, get) => ({
       optimisticId: `temp-${Date.now()}`, // Stable React key
       text: messageData.text,
       image: messageData.image,
+      video: messageData.video,
+      videoThumbnail: messageData.videoThumbnail,
+      videoDuration: messageData.videoDuration,
       audio: messageData.audio,
       file: messageData.file,
       poll: messageData.poll || null,
@@ -290,9 +322,13 @@ export const useChatStore = create((set, get) => ({
       let shouldMarkRead = false;
 
       if (newMessage.receiverId === authUser._id) {
-        playNotificationSound();
+        const senderUser = users.find(u => u._id === newMessage.senderId);
+        const senderMuted = senderUser?.isMuted;
 
-        const senderForNotify = users.find(u => u._id === newMessage.senderId) || {
+        if (!senderMuted) {
+          playNotificationSound();
+
+          const senderForNotify = senderUser || {
           _id: newMessage.senderId,
           fullName: newMessage.senderName || "New Message",
           profilePic: newMessage.senderProfilePic || "/avatar.png"
@@ -322,6 +358,7 @@ export const useChatStore = create((set, get) => ({
 
         if (isWindowFocused && isSenderActiveCurrentChat) {
           shouldMarkRead = true;
+        }
         }
       }
 
@@ -741,8 +778,27 @@ export const useChatStore = create((set, get) => ({
   // NEW ACTIONS
   sendReaction: async (messageId, emoji) => {
     try {
+      haptic("react");
+      const queued = await reactOrQueue(messageId, emoji);
+      if (queued.queued) {
+        set({
+          messages: get().messages.map((msg) => {
+            if (msg._id !== messageId) return msg;
+            const reactions = [...(msg.reactions || [])];
+            const myId = useAuthStore.getState().authUser?._id;
+            const idx = reactions.findIndex(
+              (r) => (r.userId?._id || r.userId) === myId
+            );
+            if (idx >= 0) {
+              if (reactions[idx].emoji === emoji) reactions.splice(idx, 1);
+              else reactions[idx] = { ...reactions[idx], emoji };
+            } else reactions.push({ userId: myId, emoji });
+            return { ...msg, reactions };
+          }),
+        });
+        return;
+      }
       const res = await axiosInstance.post(`/messages/${messageId}/reaction`, { emoji });
-      // Optimistic local update
       set({
         messages: get().messages.map(msg => msg._id === messageId ? res.data : msg)
       });

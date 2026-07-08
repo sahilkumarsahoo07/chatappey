@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -17,6 +17,12 @@ import MessageActionMenu, {
     buildGroupChatActions,
 } from "./MessageActionMenu";
 import SwipeableMessageBubble from "./SwipeableMessageBubble";
+import VideoMessage from "./chat/VideoMessage";
+import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
+import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
+import { useShallow } from "zustand/react/shallow";
+
+const EMPTY_MEMBERS = [];
 
 const GroupChatContainer = () => {
     const {
@@ -32,10 +38,34 @@ const GroupChatContainer = () => {
         groups,
         votePoll,
         typingUsers
-    } = useGroupStore();
-    const { users, setSelectedUser, setReplyingToMessage } = useChatStore();
-    const { authUser } = useAuthStore();
-    const { setSelectedGroup } = useGroupStore();
+    } = useGroupStore(useShallow((s) => ({
+        selectedGroup: s.selectedGroup,
+        groupMessages: s.groupMessages,
+        isGroupMessagesLoading: s.isGroupMessagesLoading,
+        getGroupMessages: s.getGroupMessages,
+        sendGroupMessage: s.sendGroupMessage,
+        deleteGroupMessageForAll: s.deleteGroupMessageForAll,
+        deleteGroupMessageForMe: s.deleteGroupMessageForMe,
+        pinMessage: s.pinMessage,
+        unpinMessage: s.unpinMessage,
+        groups: s.groups,
+        votePoll: s.votePoll,
+        typingUsers: s.typingUsers,
+    })));
+    const { users, setSelectedUser, setReplyingToMessage } = useChatStore(useShallow((s) => ({
+        users: s.users,
+        setSelectedUser: s.setSelectedUser,
+        setReplyingToMessage: s.setReplyingToMessage,
+    })));
+    const authUser = useAuthStore((s) => s.authUser);
+    const setSelectedGroup = useGroupStore((s) => s.setSelectedGroup);
+    const toggleStar = useChatFeaturesStore((s) => s.toggleStar);
+    const isStarred = useChatFeaturesStore((s) => s.isStarred);
+    const loadStarredIds = useChatFeaturesStore((s) => s.loadStarredIds);
+
+    useEffect(() => {
+        loadStarredIds();
+    }, [loadStarredIds]);
 
     // Swipe back hook for mobile navigation
     useSwipeBack(() => {
@@ -57,6 +87,9 @@ const GroupChatContainer = () => {
     const [infoDialogMessageId, setInfoDialogMessageId] = useState(null);
     const [previewImage, setPreviewImage] = useState(null);
     const [imageZoom, setImageZoom] = useState(1);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchActiveId, setSearchActiveId] = useState(null);
+    const [searchQuery, setSearchQuery] = useState("");
 
     // Fetch messages when group is selected
     useEffect(() => {
@@ -64,6 +97,9 @@ const GroupChatContainer = () => {
             getGroupMessages(selectedGroup._id);
             // When switching groups, we want to force scroll to bottom on next messages load
             isAtBottomRef.current = true;
+            setSearchOpen(false);
+            setSearchQuery("");
+            setSearchActiveId(null);
         }
     }, [selectedGroup?._id, getGroupMessages]);
 
@@ -96,9 +132,11 @@ const GroupChatContainer = () => {
         }
     }, [groupMessages?.length, selectedGroup?._id, typingUsers?.length, authUser?._id]);
 
-    const handleSendMessage = async (messageData) => {
+    const handleSendMessage = useCallback(async (messageData) => {
         await sendGroupMessage(messageData);
-    };
+    }, [sendGroupMessage]);
+
+    const groupMembers = selectedGroup?.members || EMPTY_MEMBERS;
 
     const handleCopyText = (text) => {
         navigator.clipboard.writeText(text)
@@ -194,7 +232,9 @@ const GroupChatContainer = () => {
             message: menuMessage,
             isAdmin,
             isPinned: selectedGroup?.pinnedMessage?._id === menuMessage._id,
+            isStarred: isStarred(menuMessage._id),
             onReply: () => handleSwipeReply(menuMessage),
+            onStar: () => toggleStar(menuMessage._id, "group", selectedGroup._id, isStarred(menuMessage._id)),
             onInfo: () => setInfoDialogMessageId(menuMessage._id),
             onPin: () => handlePinMessage(menuMessage._id),
             onCopy: () => handleCopyText(menuMessage.text),
@@ -249,13 +289,26 @@ const GroupChatContainer = () => {
     if (!selectedGroup) return null;
 
     return (
-        <div className="flex flex-col h-full">
-            <GroupChatHeader />
+        <div className="flex flex-col h-full min-h-0 overflow-hidden">
+            <div className="chat-topbar shrink-0">
+                {searchOpen ? (
+                    <ChatSearchBar
+                        open={searchOpen}
+                        onOpenChange={setSearchOpen}
+                        messages={groupMessages}
+                        containerRef={containerRef}
+                        onActiveMatchChange={setSearchActiveId}
+                        onSearchQueryChange={setSearchQuery}
+                    />
+                ) : (
+                    <GroupChatHeader onSearchOpen={() => setSearchOpen(true)} />
+                )}
+            </div>
 
             {/* Messages Area */}
             <div
                 ref={containerRef}
-                className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
+                className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar messages-container"
                 onScroll={handleScroll}
             >
                 {isGroupMessagesLoading ? (
@@ -311,7 +364,8 @@ const GroupChatContainer = () => {
                                     <div key={message.optimisticId || message._id}>
                                         {DateSeparator}
                                         <div
-                                            className={`flex ${isMyMessage ? "justify-end" : "justify-start"}`}
+                                            data-message-id={message._id}
+                                            className={`flex ${isMyMessage ? "justify-end" : "justify-start"} ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}
                                         >
                                             <div className={`flex gap-2 max-w-[80%] ${isMyMessage ? "flex-row-reverse" : ""}`}>
                                                 {/* Avatar for other users */}
@@ -364,6 +418,14 @@ const GroupChatContainer = () => {
                                                                 onLoad={handleImageLoad}
                                                             />
                                                         )}
+                                                        {message.video && (
+                                                            <VideoMessage
+                                                                video={message.video}
+                                                                thumbnail={message.videoThumbnail}
+                                                                duration={message.videoDuration}
+                                                                isMyMessage={isMyMessage}
+                                                            />
+                                                        )}
                                                         {/* Poll support */}
                                                         {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
                                                             <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
@@ -391,7 +453,9 @@ const GroupChatContainer = () => {
                                                         )}
                                                         {message.text && (
                                                             <p className="whitespace-pre-wrap break-words">
-                                                                {renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
+                                                                {searchQuery
+                                                                    ? highlightText(message.text, searchQuery, searchActiveId === message._id)
+                                                                    : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
                                                             </p>
                                                         )}
                                                     </div>
@@ -665,7 +729,7 @@ const GroupChatContainer = () => {
                 isGroupChat={true}
                 isAdmin={isAdmin}
                 announcementOnly={selectedGroup.announcementOnly}
-                groupMembers={selectedGroup?.members || []}
+                groupMembers={groupMembers}
             />
 
             {/* Image Preview Modal */}

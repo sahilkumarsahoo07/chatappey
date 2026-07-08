@@ -23,11 +23,26 @@ const groupMessageSchema = new mongoose.Schema(
         image: {
             type: String
         },
+        video: {
+            type: String
+        },
+        videoThumbnail: {
+            type: String
+        },
+        videoDuration: {
+            type: Number
+        },
+        videoPublicId: {
+            type: String
+        },
         audio: {
             type: String // Audio URL
         },
         file: {
             type: String // File URL
+        },
+        fileName: {
+            type: String
         },
         readBy: [
             {

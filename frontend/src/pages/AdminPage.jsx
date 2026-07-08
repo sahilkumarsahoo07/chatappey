@@ -89,7 +89,7 @@ const AdminPage = () => {
     );
 
     return (
-        <div className="min-h-screen bg-base-200 text-base-content pt-20 px-4 sm:px-8 pb-10 md:pl-24 transition-colors duration-300">
+        <div className="min-h-screen bg-base-200 text-base-content pt-20 px-4 sm:px-8 pb-navbar md:pb-10 md:pl-24 transition-colors duration-300">
             {/* Unified Admin Action Modal */}
             {modalConfig.isOpen && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">

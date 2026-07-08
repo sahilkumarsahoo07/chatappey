@@ -77,6 +77,7 @@ import FriendRequest from "../models/friendRequest.model.js";
 import Group from "../models/group.model.js";
 import GroupMessage from "../models/groupMessage.model.js";
 import cloudinary from "./cloudinary.js";
+import { unarchiveDmChat } from "../utils/chatPreference.utils.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -396,7 +397,7 @@ io.on("connection", async (socket) => {
   // WebSocket-based message sending for direct messages
   socket.on("sendMessage", async (messageData, callback) => {
     try {
-      const { receiverId, text, image, audio, file, fileName, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = messageData;
+      const { receiverId, text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = messageData;
 
       // Fetch sender, receiver, and reply target (if valid) in parallel to optimize latency
       const fetchSender = User.findById(userId).select('blockedUsers friends');
@@ -508,6 +509,10 @@ io.on("connection", async (socket) => {
         receiverId,
         text,
         image: imageUrl,
+        video: video || undefined,
+        videoThumbnail: videoThumbnail || undefined,
+        videoDuration: videoDuration || undefined,
+        videoPublicId: videoPublicId || undefined,
         audio: audioUrl,
         file: fileUrl,
         fileName: fileName || null,
@@ -522,6 +527,7 @@ io.on("connection", async (socket) => {
       });
 
       await newMessage.save();
+      await unarchiveDmChat(userId, receiverId);
 
       // Only emit if NOT scheduled
       if (!shouldBeScheduled) {

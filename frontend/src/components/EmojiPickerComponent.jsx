@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import EmojiPicker from 'emoji-picker-react';
 import { Smile } from 'lucide-react';
 
@@ -55,4 +55,4 @@ const EmojiPickerComponent = ({ onEmojiSelect }) => {
     );
 };
 
-export default EmojiPickerComponent;
+export default memo(EmojiPickerComponent);

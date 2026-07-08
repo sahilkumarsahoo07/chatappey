@@ -5,26 +5,54 @@ import { useThemeStore } from "../store/useThemeStore";
 import { useGroupStore } from "../store/useGroupStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import CreateGroupModal from "./CreateGroupModal";
-import { Search, MessageCircle, Edit, X, Check, CheckCheck, Users, Plus } from "lucide-react";
+import { Search, MessageCircle, Edit, X, Check, CheckCheck, Users, Plus, CircleDashed } from "lucide-react";
 import defaultImg from '../public/avatar.png'
 import SidebarChatRow from "./SidebarChatRow";
+import StatusRingList from "./status/StatusRingList";
+import { useStatusStore } from "../store/useStatusStore";
+import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
+import { Archive, BellOff } from "lucide-react";
 
 const Sidebar = () => {
     const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers, deleteChatForMe } = useChatStore();
     const { onlineUsers = [], authUser } = useAuthStore();
     const { theme } = useThemeStore();
     const { groups, selectedGroup, setSelectedGroup, getGroups, subscribeToGroupEvents, unsubscribeFromGroupEvents } = useGroupStore();
+    const openCreateStatus = useStatusStore((s) => s.openCreate);
+    const openStatusViewer = useStatusStore((s) => s.openViewer);
+    const statusFeed = useStatusStore((s) => s.feed);
+    const myStatusGroup = useStatusStore((s) => s.myStatus);
+    const { archivedDms, archivedGroups, loadArchived, setArchive, isArchivedLoading } = useChatFeaturesStore();
+    const [showArchived, setShowArchived] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [friendSearchQuery, setFriendSearchQuery] = useState("");
     const [showNewChatModal, setShowNewChatModal] = useState(false);
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [activeTab, setActiveTab] = useState("chats"); // "chats" or "groups"
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const searchInputRef = useRef(null);
     const refreshUsersTimeoutRef = useRef(null); // Debounce refresh
+
+    const openSearch = () => {
+        setIsSearchOpen(true);
+    };
+
+    const closeSearch = () => {
+        setIsSearchOpen(false);
+        setSearchQuery("");
+    };
+
+    useEffect(() => {
+        if (!isSearchOpen) return;
+        const id = requestAnimationFrame(() => searchInputRef.current?.focus());
+        return () => cancelAnimationFrame(id);
+    }, [isSearchOpen]);
 
     useEffect(() => {
         getUsers();
         getGroups();
-    }, [getUsers, getGroups]);
+        loadArchived();
+    }, [getUsers, getGroups, loadArchived]);
 
     // Sync sidebar tab when notification/store opens a chat or group
     useEffect(() => {
@@ -120,6 +148,9 @@ const Sidebar = () => {
         if (lastMsg.image && !lastMsg.text) {
             return { text: "📷 Photo", status: isMine ? lastMsg.status : null, isMine };
         }
+        if (lastMsg.video && !lastMsg.text) {
+            return { text: "🎬 Video", status: isMine ? lastMsg.status : null, isMine };
+        }
 
         // Show "You: " prefix if the message was sent by the current user
         const prefix = isMine ? "You: " : "";
@@ -178,7 +209,7 @@ const Sidebar = () => {
         const friends = sortedUsers.filter((user) => user.isFriend);
 
         if (!q) {
-            return friends.filter((user) => !user.chatDeletedForMe && !!user.lastMessage);
+            return friends.filter((user) => !user.chatDeletedForMe && !!user.lastMessage && !user.isArchived);
         }
 
         return friends.filter(
@@ -218,6 +249,7 @@ const Sidebar = () => {
         setShowNewChatModal(false);
         setFriendSearchQuery("");
         setSearchQuery("");
+        setIsSearchOpen(false);
     };
 
     // Handle selecting a group
@@ -227,9 +259,11 @@ const Sidebar = () => {
     };
 
     // Filter groups by search query
-    const filteredGroups = groups.filter(group =>
-        group.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredGroups = groups.filter(group => {
+        const matches = group.name.toLowerCase().includes(searchQuery.toLowerCase());
+        if (!searchQuery.trim()) return matches && !group.isArchived;
+        return matches;
+    });
 
     // Only show skeleton on initial load when we have no users yet
     if (isUsersLoading && users.length === 0) return <SidebarSkeleton />;
@@ -238,17 +272,72 @@ const Sidebar = () => {
         <>
             <aside className="h-full w-full md:w-20 lg:w-80 border-r border-base-300 flex flex-col bg-base-100">
                 {/* Header */}
-                <div className="p-4 pb-3 md:px-2 lg:px-4">
-                    <div className="flex items-center justify-between mb-3 md:mb-0 lg:mb-3">
-                        <h1 className="text-xl font-bold text-base-content md:hidden lg:block">ChatAppey</h1>
-                        <button
-                            className="p-1.5 rounded-lg hover:bg-base-200 transition-colors md:hidden lg:block"
-                            onClick={() => setShowNewChatModal(true)}
-                            title="Search friends"
-                        >
-                            <Edit className="size-5 text-primary" />
-                        </button>
+                <div className="px-4 pt-[calc(0.85rem+env(safe-area-inset-top,0px))] pb-3 md:px-2 lg:px-4 md:pt-4">
+                    {/* Header row — title + two action icons only */}
+                    <div className="flex items-center justify-between gap-2 mb-3 md:mb-0 lg:mb-3">
+                        <h1 className="text-[1.35rem] font-bold tracking-tight text-base-content md:hidden lg:block">
+                            Chats
+                        </h1>
+                        <div className="flex items-center gap-0.5 flex-shrink-0 md:hidden lg:flex">
+                            <button
+                                type="button"
+                                className={`p-2.5 rounded-xl transition-colors touch-target ${
+                                    isSearchOpen
+                                        ? "bg-primary/12 text-primary"
+                                        : "hover:bg-base-200 text-base-content/70"
+                                }`}
+                                onClick={() => (isSearchOpen ? closeSearch() : openSearch())}
+                                title={isSearchOpen ? "Close search" : "Search friends"}
+                                aria-label={isSearchOpen ? "Close search" : "Search friends"}
+                                aria-expanded={isSearchOpen}
+                            >
+                                {isSearchOpen ? (
+                                    <X className="size-5" />
+                                ) : (
+                                    <Search className="size-5" />
+                                )}
+                            </button>
+                            <button
+                                type="button"
+                                className="p-2.5 rounded-xl hover:bg-base-200 transition-colors touch-target"
+                                onClick={() => setShowNewChatModal(true)}
+                                title="New chat"
+                                aria-label="New chat"
+                            >
+                                <Edit className="size-5 text-primary" />
+                            </button>
+                        </div>
                     </div>
+
+                    {/* Search input — only when search icon is tapped */}
+                    {isSearchOpen && (
+                        <div className="md:hidden lg:block mb-3 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-base-content/40 pointer-events-none z-[1]" aria-hidden />
+                            <input
+                                ref={searchInputRef}
+                                type="search"
+                                placeholder="Search friends"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Escape") closeSearch();
+                                }}
+                                className="w-full h-11 pl-10 pr-10 rounded-xl bg-base-200 text-[15px] text-base-content placeholder:text-base-content/40 outline-none border border-primary/35 focus:border-primary focus:ring-2 focus:ring-primary/15"
+                                aria-label="Search friends"
+                                autoComplete="off"
+                            />
+                            {searchQuery ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setSearchQuery("")}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-base-300 text-base-content/45"
+                                    aria-label="Clear search"
+                                >
+                                    <X className="size-3.5" />
+                                </button>
+                            ) : null}
+                        </div>
+                    )}
 
                     {/* Tablet (md): icon-only rail — search opens friends modal */}
                     <div className="hidden md:flex lg:hidden flex-col items-center gap-2 mb-2">
@@ -289,20 +378,21 @@ const Sidebar = () => {
                                 <Plus className="size-5" />
                             </button>
                         )}
-                    </div>
-
-                    {/* Search Bar — phone + large desktop (not narrow tablet rail) */}
-                    <div className="md:hidden lg:block">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-base-content/40" />
-                            <input
-                                type="text"
-                                placeholder="Search friends"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-base-200 rounded-lg border-none focus:outline-none focus:ring-0 text-sm placeholder:text-base-content/40"
-                            />
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (myStatusGroup?.statuses?.length || statusFeed?.length) {
+                                    openStatusViewer(statusFeed.length ? statusFeed : [myStatusGroup].filter(Boolean), 0, 0);
+                                } else {
+                                    openCreateStatus();
+                                }
+                            }}
+                            className="p-2.5 rounded-xl bg-base-200 text-base-content/70 hover:bg-emerald-500/15 hover:text-emerald-600 transition-colors"
+                            title="Status"
+                            aria-label="Status"
+                        >
+                            <CircleDashed className="size-5" />
+                        </button>
                     </div>
 
                     {/* Tabs */}
@@ -361,9 +451,86 @@ const Sidebar = () => {
                     </button>
                 )}
 
-                {/* User List (Chats Tab) */}
+                {/* User List (Chats Tab) — Status scrolls with the list (not pinned) */}
                 {activeTab === "chats" && (
                     <div className="overflow-y-auto w-full flex-1 custom-scrollbar">
+                        {(archivedDms.length > 0 || archivedGroups.length > 0) && !isFriendSearchActive && (
+                            <button
+                                type="button"
+                                onClick={() => setShowArchived((v) => !v)}
+                                className="w-full px-4 py-2.5 flex items-center gap-2 text-sm font-medium text-base-content/70 hover:bg-base-200/60 border-b border-base-200/50"
+                            >
+                                <Archive className="w-4 h-4" />
+                                Archived
+                                <span className="ml-auto text-xs opacity-60">
+                                    {archivedDms.length + archivedGroups.length}
+                                </span>
+                            </button>
+                        )}
+
+                        {showArchived && !isFriendSearchActive && (
+                            <div className="border-b border-base-200/50 bg-base-200/30">
+                                {isArchivedLoading ? (
+                                    <p className="text-center text-xs py-4 opacity-50">Loading…</p>
+                                ) : (
+                                    <>
+                                        {archivedDms.map((user) => (
+                                            <button
+                                                key={`arch-dm-${user._id}`}
+                                                type="button"
+                                                onClick={() => handleStartChat(user)}
+                                                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 text-left"
+                                            >
+                                                <img src={user.profilePic || defaultImg} alt="" className="size-10 rounded-full object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium truncate">{user.fullName}</p>
+                                                    <p className="text-xs opacity-60">Direct chat</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setArchive("dm", user._id, false);
+                                                    }}
+                                                    className="text-xs text-primary font-medium px-2 py-1"
+                                                >
+                                                    Unarchive
+                                                </button>
+                                            </button>
+                                        ))}
+                                        {archivedGroups.map((group) => (
+                                            <button
+                                                key={`arch-grp-${group._id}`}
+                                                type="button"
+                                                onClick={() => handleSelectGroup(group)}
+                                                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-base-200/50 text-left"
+                                            >
+                                                <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
+                                                    <Users className="w-5 h-5 text-primary" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium truncate">{group.name}</p>
+                                                    <p className="text-xs opacity-60">Group</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setArchive("group", group._id, false);
+                                                    }}
+                                                    className="text-xs text-primary font-medium px-2 py-1"
+                                                >
+                                                    Unarchive
+                                                </button>
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <StatusRingList />
+
                         {filteredUsers.map((user) => {
                             const hasActiveChat = !!user.lastMessage && !user.chatDeletedForMe;
                             const lastMessageData = getLastMessage(user);
@@ -422,6 +589,9 @@ const Sidebar = () => {
                                                         } ${theme === 'light' ? 'text-gray-900' : 'text-base-content'}`}>
                                                         {user.fullName}
                                                     </span>
+                                                    {user.isMuted && (
+                                                        <BellOff className="w-3.5 h-3.5 text-base-content/40 shrink-0" />
+                                                    )}
                                                     {isNewUser(user) && (
                                                         <span className="flex-shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-gradient-to-r from-primary to-secondary text-white uppercase tracking-wide">
                                                             NEW

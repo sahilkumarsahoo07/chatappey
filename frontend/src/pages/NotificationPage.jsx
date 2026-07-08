@@ -236,7 +236,7 @@ const NotificationPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 pl-[0px] md:pl-20 overflow-auto">
+        <div className="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 pl-[0px] md:pl-20 overflow-auto pb-navbar md:pb-0">
             <div className="w-full px-2 md:max-w-3xl md:mx-auto pt-5 pb-6 sm:pb-8">
                 <div className="space-y-4 sm:space-y-6">
                     {/* Modern Header with gradient */}

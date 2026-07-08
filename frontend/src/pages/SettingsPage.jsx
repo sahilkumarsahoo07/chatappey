@@ -12,6 +12,9 @@ import EmojiPicker from 'emoji-picker-react';
 import { requestNotificationPermission, showBrowserNotification } from "../lib/notifications";
 import toast from "react-hot-toast";
 import { CHAT_WALLPAPERS, FONT_SIZES, BUBBLE_STYLES } from "../constants/appearance";
+import { useNetworkStore } from "../store/useNetworkStore";
+import { VIDEO_QUALITIES } from "../lib/mediaDelivery";
+import { NetworkTier } from "../lib/network";
 
 const PREVIEW_MESSAGES = [
     { id: 1, content: "Hey! How's it going?", isSent: false },
@@ -36,6 +39,9 @@ const THEME_GROUPS = {
 const SettingsPage = () => {
     const { theme, setTheme } = useThemeStore();
     const { authUser, isUpdatingProfile, updateProfile, updateName, updateAbout, logout, logoutGlobal, getOneBlockedUser, unblockUser, changePassword, updatePrivacySettings, updateAppearanceSettings } = useAuthStore();
+    const qualityMode = useNetworkStore((s) => s.qualityMode);
+    const networkTier = useNetworkStore((s) => s.network?.tier);
+    const setQualityMode = useNetworkStore((s) => s.setQualityMode);
 
     const [activeTab, setActiveTab] = useState('profile');
     const [searchTheme, setSearchTheme] = useState('');
@@ -410,6 +416,42 @@ const SettingsPage = () => {
                 </div>
             </div>
 
+            <div className="space-y-4 pt-4">
+                <div className="flex flex-col gap-0.5 px-1">
+                    <h3 className="text-base font-black tracking-tight">Video quality</h3>
+                    <p className="text-[10px] text-base-content/50 font-medium">
+                        Auto adapts to your network ({networkTier || NetworkTier.UNKNOWN})
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setQualityMode("auto")}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border-2 ${
+                          qualityMode === "auto"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-base-300"
+                        }`}
+                    >
+                        Auto
+                    </button>
+                    {VIDEO_QUALITIES.map((q) => (
+                        <button
+                            key={q}
+                            type="button"
+                            onClick={() => setQualityMode(q)}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold border-2 ${
+                              qualityMode === q
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-base-300"
+                            }`}
+                        >
+                            {q}p
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             <div className="pt-8 border-t border-base-300">
                 <div className="flex items-center justify-between mb-6 px-1">
                     <div className="flex items-center gap-2">
@@ -746,7 +788,7 @@ const SettingsPage = () => {
     );
 
     return (
-        <div className="min-h-screen pl-0 md:pl-20 pb-20 md:pb-10 bg-base-200/40 selection:bg-primary selection:text-primary-content">
+        <div className="min-h-screen pl-0 md:pl-20 pb-navbar md:pb-10 bg-base-200/40 selection:bg-primary selection:text-primary-content">
             <div className="container mx-auto px-4 py-8 max-w-6xl">
                 <div className="flex flex-col md:flex-row gap-8 items-start">
                     {/* Desktop Sidebar */}

@@ -18,6 +18,18 @@ const messageSchema = new mongoose.Schema(
         image: {
             type: String, // Image URL
         },
+        video: {
+            type: String,
+        },
+        videoThumbnail: {
+            type: String,
+        },
+        videoDuration: {
+            type: Number,
+        },
+        videoPublicId: {
+            type: String,
+        },
         audio: {
             type: String, // Audio URL
         },

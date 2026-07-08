@@ -1,15 +1,18 @@
-import { useRef, useState, useEffect, useMemo, memo } from "react";
+import { useRef, useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause } from "lucide-react";
+import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import { chatFeaturesApi, MAX_VIDEO_MB, VIDEO_ACCEPT } from "../lib/chatFeaturesApi";
 import EmojiPickerComponent from "./EmojiPickerComponent";
 import GifPicker from "./GifPicker";
 import PollCreator from "./PollCreator";
 import ScheduleMessageModal from "./ScheduleMessageModal";
 import "./MessageInput.css";
 import { useShallow } from "zustand/react/shallow";
+
+const EMPTY_MEMBERS = [];
 
 // Voice Preview Player Component
 const VoicePreviewPlayer = ({ audioUrl }) => {
@@ -99,7 +102,7 @@ const VoicePreviewPlayer = ({ audioUrl }) => {
     );
 };
 
-const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announcementOnly = false, groupMembers = [] }) => {
+const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announcementOnly = false, groupMembers = EMPTY_MEMBERS }) => {
     const [text, setText] = useState("");
     const [imagePreview, setImagePreview] = useState(null);
     const [gifPreview, setGifPreview] = useState(null);
@@ -107,6 +110,9 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const [audioBlob, setAudioBlob] = useState(null);
     const [audioUrl, setAudioUrl] = useState(null);
     const [filePreview, setFilePreview] = useState(null); // { name, type, size, base64 }
+    const [videoPreview, setVideoPreview] = useState(null); // { file, url, duration }
+    const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+    const [isVideoUploading, setIsVideoUploading] = useState(false);
 
     // Mentions State
     const [showMentions, setShowMentions] = useState(false);
@@ -132,6 +138,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
     // Refs
     const fileInputRef = useRef(null);
+    const videoInputRef = useRef(null);
     const docInputRef = useRef(null);
     const textareaRef = useRef(null);
     const mentionsRef = useRef(null);
@@ -143,15 +150,28 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         clearReplyingToMessage: state.clearReplyingToMessage,
         selectedUser: state.selectedUser,
     })));
-    const { selectedGroup } = useGroupStore();
-    const { socket } = useAuthStore();
+    const selectedGroup = useGroupStore((s) => s.selectedGroup);
+    const socket = useAuthStore((s) => s.socket);
 
     const isRestricted = isGroupChat && announcementOnly && !isAdmin;
     const filteredMembers = useMemo(() => {
-        return groupMembers.filter(member =>
-            member.user?.fullName?.toLowerCase().includes(mentionSearch.toLowerCase())
+        if (!showMentions || !isGroupChat) return EMPTY_MEMBERS;
+        const q = mentionSearch.toLowerCase();
+        return groupMembers.filter((member) =>
+            member.user?.fullName?.toLowerCase().includes(q)
         );
-    }, [groupMembers, mentionSearch]);
+    }, [groupMembers, mentionSearch, showMentions, isGroupChat]);
+
+    const handleEmojiSelect = useCallback((emoji) => {
+        setText((prev) => prev + emoji);
+    }, []);
+
+    const sendHandlerRef = useRef(async () => {});
+
+    const handleFormSubmit = useCallback((e) => {
+        e?.preventDefault?.();
+        sendHandlerRef.current?.(e);
+    }, []);
 
     // Effects
     useEffect(() => {
@@ -197,11 +217,40 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             setImagePreview(reader.result);
             setGifPreview(null);
             setFilePreview(null);
+            setVideoPreview(null);
             setAudioBlob(null);
             setMediaType('image');
             setShowAttachmentMenu(false);
         };
         reader.readAsDataURL(file);
+    };
+
+    const handleVideoChange = (e) => {
+        if (isRestricted) return;
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const maxBytes = MAX_VIDEO_MB * 1024 * 1024;
+        if (file.size > maxBytes) {
+            toast.error(`Video must be under ${MAX_VIDEO_MB}MB`);
+            return;
+        }
+
+        const url = URL.createObjectURL(file);
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () => {
+            const duration = video.duration || 0;
+            URL.revokeObjectURL(video.src);
+            setVideoPreview({ file, url, duration });
+            setImagePreview(null);
+            setGifPreview(null);
+            setFilePreview(null);
+            setAudioBlob(null);
+            setMediaType("video");
+            setShowAttachmentMenu(false);
+        };
+        video.src = url;
     };
 
     const handleFileChange = (e) => {
@@ -226,7 +275,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         reader.readAsDataURL(file);
     };
 
-    const handleGifSelect = (gifUrl) => {
+    const handleGifSelect = useCallback((gifUrl) => {
         if (isRestricted) return;
         setGifPreview(gifUrl);
         setImagePreview(null);
@@ -234,7 +283,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         setAudioBlob(null);
         setMediaType('gif');
         toast.success("GIF selected!");
-    };
+    }, [isRestricted]);
 
     // --- Audio Recording ---
 
@@ -316,9 +365,13 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         setGifPreview(null);
         setMediaType(null);
         setFilePreview(null);
+        setVideoPreview(null);
+        setVideoUploadProgress(0);
+        setIsVideoUploading(false);
         setAudioBlob(null);
         setAudioUrl(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
+        if (videoInputRef.current) videoInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
     };
 
@@ -349,7 +402,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
         // Validation
         const hasText = text.trim().length > 0 || (extraData.text && extraData.text.trim().length > 0);
-        const hasMedia = !!(imagePreview || gifPreview || filePreview || audioBlob);
+        const hasMedia = !!(imagePreview || gifPreview || filePreview || audioBlob || videoPreview);
         const hasPoll = !!extraData.poll;
 
         if (!hasText && !hasMedia && !hasPoll) return;
@@ -374,6 +427,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const currentText = extraData.text || text.trim();
         const currentImage = imagePreview || gifPreview;
         const currentFile = filePreview;
+        const currentVideo = videoPreview;
         const currentAudioBlob = audioBlob;
         const currentMentions = [...selectedMentions];
 
@@ -390,6 +444,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         
         // Clear file inputs synchronously
         if (fileInputRef.current) fileInputRef.current.value = "";
+        if (videoInputRef.current) videoInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
@@ -419,6 +474,36 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             messageData.file = currentFile.base64;
             messageData.fileName = currentFile.name;
             if (!messageData.text) messageData.text = `📎 ${currentFile.name}`;
+        }
+
+        if (currentVideo) {
+            setIsVideoUploading(true);
+            chatFeaturesApi
+                .uploadVideo(currentVideo.file, currentVideo.duration, setVideoUploadProgress)
+                .then((res) => {
+                    const payload = {
+                        ...messageData,
+                        video: res.data.video,
+                        videoThumbnail: res.data.videoThumbnail,
+                        videoDuration: res.data.videoDuration,
+                        videoPublicId: res.data.videoPublicId,
+                    };
+                    if (!payload.text) payload.text = "🎬 Video";
+                    const send = onSend || sendMessage;
+                    return send(payload);
+                })
+                .then(() => {
+                    if (messageData.scheduledFor) toast.success("Message scheduled");
+                })
+                .catch((err) => {
+                    console.error("Video upload failed", err);
+                    toast.error(err.response?.data?.error || "Failed to upload video");
+                })
+                .finally(() => {
+                    setIsVideoUploading(false);
+                    isSendingRef.current = false;
+                });
+            return;
         }
 
         // Process audio asynchronously without blocking UI
@@ -475,6 +560,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         // Unlock immediately for non-audio messages (no setTimeout delay)
         isSendingRef.current = false;
     };
+    sendHandlerRef.current = handleSendMessage;
 
     // --- Event Handlers (Paste, KeyDown, TextChange) ---
     // (Simiplified logic from previous implementation)
@@ -584,14 +670,14 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             }
         }
 
-        // Optimized textarea auto-resize using requestAnimationFrame
+        // Optimized textarea auto-resize — only write when height actually changes
         if (textareaRef.current) {
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.style.height = 'auto';
-                    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-                }
-            });
+            const el = textareaRef.current;
+            el.style.height = "auto";
+            const next = `${Math.min(el.scrollHeight, 120)}px`;
+            if (el.style.height !== next) {
+                el.style.height = next;
+            }
         }
     };
 
@@ -642,8 +728,30 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         </div>
                     )}
 
+                    {videoPreview && (
+                        <div className="mb-3 p-3 bg-base-200 rounded-xl flex items-center gap-3 max-w-sm relative">
+                            <video src={videoPreview.url} className="w-20 h-20 rounded-lg object-cover bg-black" muted />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{videoPreview.file.name}</p>
+                                {isVideoUploading ? (
+                                    <div className="mt-1">
+                                        <div className="h-1.5 bg-base-300 rounded-full overflow-hidden">
+                                            <div className="h-full bg-primary transition-all" style={{ width: `${videoUploadProgress}%` }} />
+                                        </div>
+                                        <p className="text-xs opacity-60 mt-1 flex items-center gap-1">
+                                            <Loader2 className="w-3 h-3 animate-spin" /> Uploading {videoUploadProgress}%
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs opacity-60">Ready to send</p>
+                                )}
+                            </div>
+                            <button onClick={removeMedia} className="btn btn-circle btn-xs btn-ghost"><X className="w-4 h-4" /></button>
+                        </div>
+                    )}
+
                     {/* Main Input Row */}
-                    <form onSubmit={(e) => handleSendMessage(e)} className="flex items-end gap-2">
+                    <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
 
                         {/* Attachment Button */}
                         <div className="relative" ref={attachmentMenuRef}>
@@ -659,7 +767,10 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                             {showAttachmentMenu && (
                                 <div className="absolute bottom-14 left-0 bg-base-100 p-2 rounded-2xl shadow-xl border border-base-300 flex flex-col gap-1 min-w-[150px] animate-scale-in z-50">
                                     <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-green-100 text-green-600 rounded-lg"><Image className="w-4 h-4" /></span> Photos & Videos
+                                        <span className="p-1.5 bg-green-100 text-green-600 rounded-lg"><Image className="w-4 h-4" /></span> Photos
+                                    </button>
+                                    <button type="button" onClick={() => videoInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                        <span className="p-1.5 bg-violet-100 text-violet-600 rounded-lg"><Film className="w-4 h-4" /></span> Video
                                     </button>
                                     <button type="button" onClick={() => docInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
                                         <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><FileText className="w-4 h-4" /></span> Document
@@ -676,6 +787,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
                         {/* Hidden Inputs */}
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageChange} />
+                        <input type="file" accept={VIDEO_ACCEPT} className="hidden" ref={videoInputRef} onChange={handleVideoChange} />
                         <input type="file" className="hidden" ref={docInputRef} onChange={handleFileChange} />
 
                         {/* Text Area */}
@@ -692,13 +804,13 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 disabled={isRecording}
                             />
                             <div className="flex items-center gap-1">
-                                <EmojiPickerComponent onEmojiSelect={(emoji) => setText(prev => prev + emoji)} />
+                                <EmojiPickerComponent onEmojiSelect={handleEmojiSelect} />
                                 <GifPicker onGifSelect={handleGifSelect} />
                             </div>
                         </div>
 
                         {/* Mic / Send Button */}
-                        {text.trim() || imagePreview || gifPreview || filePreview || audioBlob ? (
+                        {text.trim() || imagePreview || gifPreview || filePreview || audioBlob || videoPreview ? (
                             <button
                                 type="submit"
                                 className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center bg-primary text-primary-content shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
@@ -772,4 +884,12 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     );
 };
 
-export default memo(MessageInput);
+export default memo(MessageInput, (prev, next) => {
+    return (
+        prev.onSend === next.onSend &&
+        prev.isGroupChat === next.isGroupChat &&
+        prev.isAdmin === next.isAdmin &&
+        prev.announcementOnly === next.announcementOnly &&
+        prev.groupMembers === next.groupMembers
+    );
+});

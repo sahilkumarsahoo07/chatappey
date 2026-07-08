@@ -1,11 +1,12 @@
 import cron from "node-cron";
 import Message from "../models/message.model.js";
 import { getReceiverSocketId, io } from "./socket.js";
+import { cleanupExpiredStatuses } from "../controllers/status.controllers.js";
+import { clearExpiredMutes } from "../utils/chatPreference.utils.js";
 
 const setupCronJobs = () => {
     // Check for scheduled messages every minute
     cron.schedule("* * * * *", async () => {
-        // console.log("Cron Job Tick: Checking for scheduled messages..."); 
         try {
             const now = new Date();
             const scheduledMessages = await Message.find({
@@ -18,23 +19,18 @@ const setupCronJobs = () => {
 
                 for (const message of scheduledMessages) {
                     message.status = "sent";
-                    message.scheduledFor = undefined; // Clear schedule date
+                    message.scheduledFor = undefined;
                     await message.save();
 
-                    // Get socket IDs
                     const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
                     const senderSocketId = getReceiverSocketId(message.senderId.toString());
 
-                    // Emit to receiver if online
                     if (receiverSocketId) {
                         io.to(receiverSocketId).emit("newMessage", message);
-
-                        // Update status to delivered since receiver is online
                         message.status = "delivered";
                         await message.save();
                     }
 
-                    // ALWAYS emit full message update to sender to clear scheduledFor from UI
                     if (senderSocketId) {
                         io.to(senderSocketId).emit("messageUpdated", message);
                     }
@@ -42,6 +38,29 @@ const setupCronJobs = () => {
             }
         } catch (error) {
             console.error("Error processing scheduled messages:", error);
+        }
+    });
+
+    // Purge expired WhatsApp-style statuses every 15 minutes
+    cron.schedule("*/15 * * * *", async () => {
+        try {
+            const removed = await cleanupExpiredStatuses();
+            if (removed > 0) {
+                console.log(`Cleaned up ${removed} expired statuses`);
+            }
+        } catch (error) {
+            console.error("Error cleaning expired statuses:", error);
+        }
+    });
+    // Clear expired chat mutes every 15 minutes
+    cron.schedule("*/15 * * * *", async () => {
+        try {
+            const cleared = await clearExpiredMutes();
+            if (cleared > 0) {
+                console.log(`Cleared ${cleared} expired chat mutes`);
+            }
+        } catch (error) {
+            console.error("Error clearing expired mutes:", error);
         }
     });
 };

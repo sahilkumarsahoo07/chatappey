@@ -3,6 +3,7 @@ import GroupMessage from "../models/groupMessage.model.js";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { io, getReceiverSocketId } from "../lib/socket.js";
+import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
 
 // Helper to send system messages to groups
 const sendSystemMessage = async (groupId, text) => {
@@ -151,7 +152,19 @@ export const getMyGroups = async (req, res) => {
             })
         );
 
-        res.status(200).json(groupsWithUnread);
+        const prefsMap = await getPreferencesMap(userId);
+        const withPrefs = groupsWithUnread.map((group) => {
+            const pref = prefsMap.get(`group:${group._id}`);
+            return {
+                ...group,
+                isArchived: pref?.isArchived || false,
+                isMuted: isChatMuted(pref),
+                mutedUntil: pref?.mutedUntil || null,
+                wallpaper: pref?.wallpaper || null,
+            };
+        });
+
+        res.status(200).json(withPrefs.filter((g) => !g.isArchived));
     } catch (error) {
         console.error("Error in getMyGroups:", error.message);
         res.status(500).json({ error: "Internal server error" });
@@ -530,7 +543,7 @@ export const getGroupMessages = async (req, res) => {
 export const sendGroupMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { text, image, isForwarded, mentions, poll } = req.body;
+        const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, isForwarded, mentions, poll } = req.body;
         const senderId = req.user._id;
 
         const group = await Group.findById(groupId);
@@ -551,10 +564,24 @@ export const sendGroupMessage = async (req, res) => {
             return res.status(403).json({ error: "Only admins can send messages in this group" });
         }
 
-        let imageUrl;
+        let imageUrl, audioUrl, fileUrl;
         if (image) {
             const uploadResponse = await cloudinary.uploader.upload(image);
             imageUrl = uploadResponse.secure_url;
+        }
+        if (audio) {
+            const uploadResponse = await cloudinary.uploader.upload(audio, { resource_type: "auto" });
+            audioUrl = uploadResponse?.secure_url;
+        }
+        if (file) {
+            const uploadOptions = { resource_type: "raw" };
+            if (fileName) {
+                const sanitizedName = fileName.split('/').pop().split('\\').pop();
+                const nameWithoutExt = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
+                uploadOptions.public_id = nameWithoutExt;
+            }
+            const uploadResponse = await cloudinary.uploader.upload(file, uploadOptions);
+            fileUrl = uploadResponse.secure_url;
         }
 
         const sender = await User.findById(senderId).select("fullName");
@@ -571,6 +598,13 @@ export const sendGroupMessage = async (req, res) => {
             senderId,
             text,
             image: imageUrl,
+            video: video || undefined,
+            videoThumbnail: videoThumbnail || undefined,
+            videoDuration: videoDuration || undefined,
+            videoPublicId: videoPublicId || undefined,
+            audio: audioUrl,
+            file: fileUrl,
+            fileName: fileName || undefined,
             readBy: [senderId],
             isForwarded: isForwarded || false,
             mentions: validMentions,
@@ -579,9 +613,12 @@ export const sendGroupMessage = async (req, res) => {
 
         await newMessage.save();
 
+        const memberIds = group.members.map((m) => m.user?._id || m.user || m);
+        await unarchiveGroupChatForMembers(groupId, memberIds);
+
         // Update group's lastMessage
         group.lastMessage = {
-            text: text || (imageUrl ? "📷 Photo" : poll ? "📊 Poll" : ""),
+            text: text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : poll ? "📊 Poll" : ""),
             senderId,
             senderName: sender.fullName,
             createdAt: newMessage.createdAt

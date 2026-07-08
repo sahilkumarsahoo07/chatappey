@@ -7,6 +7,9 @@ import notificationRoutes from './routes/notification.route.js'
 import callRoutes from './routes/call.routes.js'
 import groupRoutes from './routes/group.route.js'
 import adminRoutes from './routes/admin.route.js'
+import statusRoutes from './routes/status.route.js'
+import chatFeaturesRoutes from './routes/chatFeatures.route.js'
+import insightsRoutes from './routes/insights.route.js'
 
 import { connectDB } from './lib/db.js'
 import cookieParser from "cookie-parser";
@@ -22,8 +25,8 @@ setupCronJobs();
 
 
 const PORT = process.env.PORT;
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(cookieParser());
 const allowedOrigins = [
   "http://localhost:5173",
@@ -68,6 +71,9 @@ app.use("/api/notifications", notificationRoutes)
 app.use("/api/call", callRoutes)
 app.use("/api/groups", groupRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/status", statusRoutes);
+app.use("/api/chat", chatFeaturesRoutes);
+app.use("/api/insights", insightsRoutes);
 
 server.listen(PORT, () => {
   console.log(`Server is running on this PORT http://localhost:${PORT}`)

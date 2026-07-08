@@ -9,6 +9,7 @@ import {
   Pencil,
   Pin,
   Reply,
+  Star,
   Trash2,
 } from "lucide-react";
 
@@ -224,8 +225,10 @@ export const MessageMenuTrigger = ({ isMine, onOpen, className = "" }) => (
 export const buildPrivateChatActions = ({
   message,
   authUserId,
+  isStarred,
   onReply,
   onPin,
+  onStar,
   onCopy,
   onForward,
   onEdit,
@@ -238,6 +241,12 @@ export const buildPrivateChatActions = ({
       label: "Reply",
       icon: <Reply className="w-4 h-4" />,
       onClick: onReply,
+    },
+    {
+      id: "star",
+      label: isStarred ? "Unstar" : "Star message",
+      icon: <Star className={`w-4 h-4 ${isStarred ? "fill-warning text-warning" : ""}`} />,
+      onClick: onStar,
     },
     {
       id: "pin",
@@ -301,8 +310,10 @@ export const buildGroupChatActions = ({
   message,
   isAdmin,
   isPinned,
+  isStarred,
   onReply,
   onInfo,
+  onStar,
   onPin,
   onCopy,
   onForward,
@@ -316,6 +327,14 @@ export const buildGroupChatActions = ({
         label: "Reply",
         icon: <Reply className="w-4 h-4" />,
         onClick: onReply,
+      });
+    }
+    if (onStar) {
+      actions.push({
+        id: "star",
+        label: isStarred ? "Unstar" : "Star message",
+        icon: <Star className={`w-4 h-4 ${isStarred ? "fill-warning text-warning" : ""}`} />,
+        onClick: onStar,
       });
     }
     actions.push({

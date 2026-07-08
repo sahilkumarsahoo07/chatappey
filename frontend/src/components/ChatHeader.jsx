@@ -1,15 +1,18 @@
-import { Copy, Info, Mail, Phone, Star, Video, X, Ban, Link, Bell, Shield, ChevronRight } from "lucide-react";
+import { Copy, Info, Mail, Phone, Star, Video, X, Ban, Link, Bell, Shield, ChevronRight, Archive, Images, Search, ArrowLeft } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import { useThemeStore } from "../store/useThemeStore";
+import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { useWebRTC } from "../hooks/useWebRTC";
 import defaultImg from '../public/avatar.png'
 import { Avatar, Button, Divider, Drawer, IconButton, ListItem, ListItemIcon, ListItemText, Typography, List, Dialog, DialogTitle, DialogContent, Grid } from "@mui/material";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import axios from "axios";
+import SharedMediaPanel from "./chat/SharedMediaPanel";
+import WallpaperPicker from "./chat/WallpaperPicker";
+import MuteOptionsSheet from "./chat/MuteOptionsSheet";
 
-const ChatHeader = () => {
+const ChatHeader = ({ onWallpaperChange, onSearchOpen }) => {
     const { selectedUser, setSelectedUser, messages } = useChatStore();
     const { authUser, onlineUsers, getOneBlockedUser, blockUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
     const { initiateCall } = useWebRTC();
@@ -17,8 +20,23 @@ const ChatHeader = () => {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [blockedUsers, setBlockedUsers] = useState([]);
     const [isBlocked, setIsBlocked] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
+    const [isMuted, setIsMuted] = useState(selectedUser?.isMuted || false);
     const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+    const [wallpaperOpen, setWallpaperOpen] = useState(false);
+    const [muteSheetOpen, setMuteSheetOpen] = useState(false);
+    const [wallpaper, setWallpaper] = useState(null);
+    const { setArchive, setMute, clearMute, updateWallpaper, getPreference } = useChatFeaturesStore();
+
+    useEffect(() => {
+        setIsMuted(!!selectedUser?.isMuted);
+    }, [selectedUser?.isMuted, selectedUser?._id]);
+
+    useEffect(() => {
+        if (!selectedUser?._id) return;
+        getPreference("dm", selectedUser._id).then((pref) => {
+            if (pref?.wallpaper) setWallpaper(pref.wallpaper);
+        });
+    }, [selectedUser?._id, getPreference]);
 
     // Filter shared media
     const allMedia = messages ? messages.filter(msg => msg.image).reverse() : [];
@@ -125,79 +143,92 @@ const ChatHeader = () => {
         }
     };
 
+    const isOnline = !selectedUser.hasBlockedMe && !isBlocked && onlineUsers.includes(selectedUser._id);
+
     return (
         <>
-            <div className="chat-header-modern">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={toggleDrawer(true)}>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedUser(null);
-                            }}
-                            className="md:hidden p-2 rounded-lg touch-target hover:bg-primary-content/10 transition-colors text-primary-content"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M19 12H5M12 19l-7-7 7-7" />
-                            </svg>
-                        </button>
+            <header className="chat-header-surface">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-h-[56px] px-2 sm:px-3">
+                    <button
+                        type="button"
+                        onClick={() => setSelectedUser(null)}
+                        className="md:hidden shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base-content/80 hover:bg-base-200 active:scale-95 transition-all"
+                        aria-label="Back"
+                    >
+                        <ArrowLeft size={20} strokeWidth={2} />
+                    </button>
 
-                        <div className="relative">
-                            <div className="size-11 md:size-12 rounded-full relative ring-2 ring-primary-content/30 overflow-hidden">
-                                <img src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)} alt={selectedUser.fullName} className="w-full h-full object-cover" />
-                            </div>
+                    <button
+                        type="button"
+                        onClick={toggleDrawer(true)}
+                        className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-xl px-1 py-1 hover:bg-base-200/60 active:scale-[0.995] transition-all"
+                    >
+                        <div className="relative shrink-0">
+                            <img
+                                src={(selectedUser.hasBlockedMe || isBlocked) ? defaultImg : (selectedUser.profilePic || defaultImg)}
+                                alt=""
+                                className="size-10 rounded-full object-cover ring-1 ring-base-300/60"
+                            />
+                            {isOnline && (
+                                <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-success ring-2 ring-base-100" />
+                            )}
                         </div>
 
                         <div className="flex-1 min-w-0">
-                            <h3 className={`font-bold truncate text-base md:text-lg ${theme === 'light' ? 'text-gray-900' : 'text-primary-content'}`}>{selectedUser.fullName}</h3>
-                            <p className={`text-xs md:text-sm truncate flex items-center gap-1.5 ${theme === 'light' ? 'text-gray-700' : 'text-primary-content opacity-90'}`}>
+                            <h3 className="font-semibold text-[15px] sm:text-base text-base-content truncate leading-tight">
+                                {selectedUser.fullName}
+                            </h3>
+                            <p className="text-[11px] sm:text-xs text-base-content/55 truncate mt-0.5 leading-tight">
                                 {(selectedUser.hasBlockedMe || isBlocked) ? (
                                     "Unavailable"
-                                ) : onlineUsers.includes(selectedUser._id) ? (
-                                    <>
-                                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-                                        Active now
-                                    </>
+                                ) : isOnline ? (
+                                    <span className="text-success font-medium">Online</span>
                                 ) : (
                                     formatLastSeen()
                                 )}
                             </p>
                         </div>
-                    </div>
+                    </button>
 
-                    <div className="flex items-center gap-1 md:gap-2">
+                    <div className="flex items-center shrink-0 gap-0.5">
+                        {onSearchOpen && (
+                            <button
+                                type="button"
+                                onClick={onSearchOpen}
+                                className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/70 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                                title="Search in chat"
+                                aria-label="Search in chat"
+                            >
+                                <Search size={18} strokeWidth={2} />
+                            </button>
+                        )}
                         <button
+                            type="button"
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'audio')}
-                            className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                ? 'text-gray-700 hover:bg-gray-200'
-                                : 'text-primary-content hover:bg-primary-content/10'
-                                }`}
-                            title="Voice Call"
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/70 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                            title="Voice call"
                         >
-                            <Phone size={18} className="md:w-5 md:h-5" />
+                            <Phone size={18} strokeWidth={2} />
                         </button>
                         <button
+                            type="button"
                             onClick={() => initiateCall(selectedUser._id, selectedUser, 'video')}
-                            className={`p-2 md:p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                ? 'text-gray-700 hover:bg-gray-200'
-                                : 'text-primary-content hover:bg-primary-content/10'
-                                }`}
-                            title="Video Call"
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/70 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                            title="Video call"
                         >
-                            <Video size={18} className="md:w-5 md:h-5" />
+                            <Video size={18} strokeWidth={2} />
                         </button>
                         <button
+                            type="button"
                             onClick={() => setSelectedUser(null)}
-                            className={`hidden md:block p-2.5 rounded-xl hover:bg-opacity-10 transition-colors ${theme === 'light'
-                                ? 'text-gray-700 hover:bg-gray-200'
-                                : 'text-primary-content hover:bg-primary-content/10'
-                                }`}
+                            className="hidden md:flex w-9 h-9 rounded-full items-center justify-center text-base-content/50 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                            title="Close chat"
                         >
-                            <X size={20} />
+                            <X size={18} strokeWidth={2} />
                         </button>
                     </div>
                 </div>
-            </div>
+            </header>
 
             <Drawer
                 anchor="right"
@@ -357,23 +388,56 @@ const ChatHeader = () => {
 
                         <div className="px-6 py-4 bg-base-100 border-b border-base-200">
                             <h6 className="text-sm font-bold mb-3">Chat Settings</h6>
-                            <div className="flex items-center justify-between py-2">
+                            <button
+                                type="button"
+                                className="w-full flex items-center justify-between py-2 hover:bg-base-200/50 rounded-lg px-1"
+                                onClick={() => setMuteSheetOpen(true)}
+                            >
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 rounded-lg bg-base-200">
                                         <Bell size={18} className="opacity-70" />
                                     </div>
-                                    <span className="text-sm font-medium">Mute Notifications</span>
+                                    <span className="text-sm font-medium">{isMuted ? "Muted" : "Mute Notifications"}</span>
                                 </div>
-                                <input
-                                    type="checkbox"
-                                    className="toggle toggle-primary toggle-sm"
-                                    checked={isMuted}
-                                    onChange={() => {
-                                        setIsMuted(!isMuted);
-                                        toast.success(!isMuted ? "Notifications muted" : "Notifications unmuted");
-                                    }}
-                                />
-                            </div>
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full flex items-center justify-between py-2 hover:bg-base-200/50 rounded-lg px-1"
+                                onClick={() => setMediaGalleryOpen(true)}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-base-200">
+                                        <Images size={18} className="opacity-70" />
+                                    </div>
+                                    <span className="text-sm font-medium">Shared Media</span>
+                                </div>
+                                <ChevronRight size={16} className="opacity-50" />
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full flex items-center justify-between py-2 hover:bg-base-200/50 rounded-lg px-1"
+                                onClick={() => setWallpaperOpen(true)}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-base-200">
+                                        <Star size={18} className="opacity-70" />
+                                    </div>
+                                    <span className="text-sm font-medium">Wallpaper</span>
+                                </div>
+                                <ChevronRight size={16} className="opacity-50" />
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full flex items-center justify-between py-2 hover:bg-base-200/50 rounded-lg px-1"
+                                onClick={() => setArchive("dm", selectedUser._id, true)}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-lg bg-base-200">
+                                        <Archive size={18} className="opacity-70" />
+                                    </div>
+                                    <span className="text-sm font-medium">Archive chat</span>
+                                </div>
+                            </button>
                             <div className="flex items-center justify-between py-2 cursor-pointer hover:bg-base-100" onClick={() => toast("Encryption info verified 🔒")}>
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 rounded-lg bg-base-200">
@@ -527,6 +591,38 @@ const ChatHeader = () => {
                     </div>
                 </div>
             </Dialog>
+
+            <SharedMediaPanel
+                open={mediaGalleryOpen}
+                onClose={() => setMediaGalleryOpen(false)}
+                chatType="dm"
+                targetId={selectedUser._id}
+            />
+            <WallpaperPicker
+                open={wallpaperOpen}
+                onClose={() => setWallpaperOpen(false)}
+                wallpaper={wallpaper}
+                onApply={async (wp) => {
+                    await updateWallpaper("dm", selectedUser._id, wp);
+                    setWallpaper(wp);
+                    onWallpaperChange?.(wp);
+                }}
+            />
+            <MuteOptionsSheet
+                open={muteSheetOpen}
+                onClose={() => setMuteSheetOpen(false)}
+                isMuted={isMuted}
+                onMute={async (duration) => {
+                    await setMute("dm", selectedUser._id, duration);
+                    setIsMuted(true);
+                    setMuteSheetOpen(false);
+                }}
+                onUnmute={async () => {
+                    await clearMute("dm", selectedUser._id);
+                    setIsMuted(false);
+                    setMuteSheetOpen(false);
+                }}
+            />
         </>
     );
 };

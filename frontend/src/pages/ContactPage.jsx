@@ -153,7 +153,7 @@ const ContactPage = () => {
 
     return (
         <>
-            <div className="min-h-[100dvh] pl-0 md:pl-20 pb-14 md:pb-0 bg-base-100">
+            <div className="min-h-[100dvh] pl-0 md:pl-20 pb-navbar md:pb-0 bg-base-100">
                 {/* Diagonal wash */}
                 <div className="pointer-events-none fixed inset-0 md:left-20 -z-10 overflow-hidden">
                     <div className="absolute inset-0 bg-base-200/30" />

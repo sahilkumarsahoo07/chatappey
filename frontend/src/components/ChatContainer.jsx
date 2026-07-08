@@ -1,5 +1,5 @@
 import { useChatStore } from "../store/useChatStore";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import ChatHeader from "./ChatHeader";
@@ -21,6 +21,12 @@ import MessageActionMenu, {
   buildPrivateChatActions,
 } from "./MessageActionMenu";
 import SwipeableMessageBubble from "./SwipeableMessageBubble";
+import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
+import VideoMessage from "./chat/VideoMessage";
+import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
+import { resolveWallpaperStyle, getDefaultWallpaper } from "../lib/chatWallpaper";
+import DoubleTapLike from "./DoubleTapLike";
+import { haptic } from "../lib/haptics";
 
 // Custom Audio Player Component
 const AudioPlayer = ({ audioUrl, isMyMessage }) => {
@@ -127,7 +133,15 @@ const ChatContainer = () => {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [imageZoom, setImageZoom] = useState(1);
-  const blockedUsersCache = useRef(null); // Cache for blocked users
+  const [searchActiveId, setSearchActiveId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [wallpaper, setWallpaper] = useState(getDefaultWallpaper());
+  const blockedUsersCache = useRef(null);
+  const toggleStar = useChatFeaturesStore((s) => s.toggleStar);
+  const isStarred = useChatFeaturesStore((s) => s.isStarred);
+  const loadStarredIds = useChatFeaturesStore((s) => s.loadStarredIds);
+  const getPreference = useChatFeaturesStore((s) => s.getPreference);
 
   const {
     messages,
@@ -183,10 +197,41 @@ const ChatContainer = () => {
   useSwipeBack(() => setSelectedUser(null));
 
   useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchActiveId(null);
+  }, [selectedUser?._id]);
+
+  useEffect(() => {
     getMessages(selectedUser._id);
     // When switching chats, we want to force scroll to bottom on next messages load
     isAtBottomRef.current = true;
   }, [selectedUser._id, getMessages]);
+
+  useEffect(() => {
+    loadStarredIds();
+  }, [loadStarredIds]);
+
+  useEffect(() => {
+    if (!selectedUser?._id) return;
+    getPreference("dm", selectedUser._id).then((pref) => {
+      if (pref?.wallpaper) setWallpaper(pref.wallpaper);
+      else setWallpaper(getDefaultWallpaper());
+    });
+  }, [selectedUser?._id, getPreference]);
+
+  useEffect(() => {
+    const scrollId = sessionStorage.getItem("scrollToMessageId");
+    if (!scrollId || isMessagesLoading) return;
+    const t = setTimeout(() => {
+      const el = containerRef.current?.querySelector(`[data-message-id="${scrollId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.classList.add("highlight-message");
+      setTimeout(() => el?.classList.remove("highlight-message"), 2500);
+      sessionStorage.removeItem("scrollToMessageId");
+    }, 300);
+    return () => clearTimeout(t);
+  }, [isMessagesLoading, messages.length, selectedUser?._id]);
 
   const handleScroll = () => {
     if (containerRef.current) {
@@ -196,11 +241,11 @@ const ChatContainer = () => {
     }
   };
 
-  const handleImageLoad = () => {
+  const handleImageLoad = useCallback(() => {
     if (containerRef.current && isAtBottomRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  };
+  }, []);
 
   // Scroll to bottom IMMEDIATELY when messages change or typing status changes
   useLayoutEffect(() => {
@@ -315,7 +360,9 @@ const ChatContainer = () => {
     ? buildPrivateChatActions({
         message: menuMessage,
         authUserId: authUser._id,
+        isStarred: isStarred(menuMessage._id),
         onReply: () => setReplyingToMessage(menuMessage),
+        onStar: () => toggleStar(menuMessage._id, "dm", selectedUser._id, isStarred(menuMessage._id)),
         onPin: () => togglePinMessage(menuMessage._id),
         onCopy: () => handleCopyText(menuMessage.text),
         onForward: () => handleForwardClick(menuMessage._id),
@@ -389,7 +436,7 @@ const ChatContainer = () => {
             <div className="text-center text-xs opacity-50 my-1">🕒 Scheduled for {new Date(message.scheduledFor || 0).toLocaleString()}</div>
           )}
 
-          <div id={`msg-${message._id}`} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`} ref={messageEndRef} >
+          <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`} ref={messageEndRef} >
             <div className="chat-image avatar ml-2 md:ml-3">
               <div className="size-8 md:size-10 rounded-full border">
                 <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" />
@@ -404,7 +451,17 @@ const ChatContainer = () => {
               isMine={message.senderId === authUser._id}
               disabled={message.text === "This message was deleted" || message.status === "scheduled"}
               onReply={() => setReplyingToMessage(message)}
-              onLongPress={(el) => openMessageMenu(message._id, el)}
+              onLongPress={(el) => {
+                haptic("longPress");
+                openMessageMenu(message._id, el);
+              }}
+            >
+            <DoubleTapLike
+              disabled={
+                message.senderId === authUser._id ||
+                message.text === "This message was deleted"
+              }
+              onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
             <div className={`chat-bubble flex flex-col relative group !max-w-none w-fit ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
               {message.replyToMessage && message.text !== "This message was deleted" && (
@@ -436,6 +493,15 @@ const ChatContainer = () => {
                   className={`max-w-[200px] md:max-w-[280px] rounded-xl mb-2 ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
                   onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
                   onLoad={handleImageLoad}
+                />
+              )}
+
+              {message.video && (
+                <VideoMessage
+                  video={message.video}
+                  thumbnail={message.videoThumbnail}
+                  duration={message.videoDuration}
+                  isMyMessage={message.senderId === authUser._id}
                 />
               )}
 
@@ -494,7 +560,11 @@ const ChatContainer = () => {
                         isMyMessage={message.senderId === authUser._id}
                       />
                     ) : (
-                      <p className="text-sm md:text-base whitespace-pre-wrap">{message.text}</p>
+                      <p className="text-sm md:text-base whitespace-pre-wrap">
+                        {searchQuery && message.text
+                          ? highlightText(message.text, searchQuery, searchActiveId === message._id)
+                          : message.text}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -540,16 +610,35 @@ const ChatContainer = () => {
                 />
               )}
             </div>
+            </DoubleTapLike>
             </SwipeableMessageBubble>
           </div>
         </div>
       );
     });
-  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage]);
+  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage, searchQuery, searchActiveId]);
+
+  const wallpaperStyle = resolveWallpaperStyle(wallpaper);
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-base-100">
-      <ChatHeader />
+      <div className="chat-topbar shrink-0">
+        {searchOpen ? (
+          <ChatSearchBar
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            messages={sortedMessages}
+            containerRef={containerRef}
+            onActiveMatchChange={setSearchActiveId}
+            onSearchQueryChange={setSearchQuery}
+          />
+        ) : (
+          <ChatHeader
+            onWallpaperChange={setWallpaper}
+            onSearchOpen={() => setSearchOpen(true)}
+          />
+        )}
+      </div>
 
       {pinnedMessage && (
         <div className="bg-primary/5 p-2 flex items-center justify-between border-b border-base-200 cursor-pointer backdrop-blur-sm z-10" onClick={() => {
@@ -567,7 +656,12 @@ const ChatContainer = () => {
         </div>
       )}
 
-      <div ref={containerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container pb-20">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container pb-4"
+        style={wallpaperStyle.background ? { background: wallpaperStyle.background, backgroundSize: wallpaperStyle.backgroundSize, filter: wallpaperStyle.filter } : undefined}
+      >
         {messages.length === 0 && !isMessagesLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4"><span className="text-4xl">👋</span></div>

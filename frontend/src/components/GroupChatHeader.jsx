@@ -1,4 +1,4 @@
-import { ArrowLeft, MoreVertical, Users, Phone, Video, Pin, X as CloseIcon } from "lucide-react";
+import { ArrowLeft, MoreVertical, Users, Phone, Video, Pin, X as CloseIcon, Search } from "lucide-react";
 import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -6,7 +6,7 @@ import defaultAvatar from "../public/avatar.png";
 import { useState } from "react";
 import GroupInfoPanel from "./GroupInfoPanel";
 
-const GroupChatHeader = () => {
+const GroupChatHeader = ({ onSearchOpen }) => {
     const { selectedGroup, clearSelectedGroup, unpinMessage } = useGroupStore();
     const { setSelectedUser } = useChatStore();
     const { authUser } = useAuthStore();
@@ -32,66 +32,81 @@ const GroupChatHeader = () => {
 
     return (
         <>
-            <div className="p-3 border-b border-base-300 bg-base-100/80 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        {/* Back button - mobile */}
-                        <button
-                            onClick={handleBack}
-                            className="btn btn-ghost btn-sm btn-circle lg:hidden"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                        </button>
+            <header className="chat-header-surface">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-h-[56px] px-2 sm:px-3">
+                    <button
+                        type="button"
+                        onClick={handleBack}
+                        className="lg:hidden shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base-content/80 hover:bg-base-200 active:scale-95 transition-all"
+                        aria-label="Back"
+                    >
+                        <ArrowLeft size={20} strokeWidth={2} />
+                    </button>
 
-                        {/* Group avatar */}
-                        <div
-                            onClick={() => setShowInfo(true)}
-                            className="cursor-pointer"
-                        >
-                            <div className="w-10 h-10 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
-                                {selectedGroup.image ? (
-                                    <img
-                                        src={selectedGroup.image}
-                                        alt={selectedGroup.name}
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <Users className="w-5 h-5 text-primary" />
-                                )}
-                            </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowInfo(true)}
+                        className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-xl px-1 py-1 hover:bg-base-200/60 active:scale-[0.995] transition-all"
+                    >
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-primary/15 flex items-center justify-center shrink-0 ring-1 ring-base-300/60">
+                            {selectedGroup.image ? (
+                                <img
+                                    src={selectedGroup.image}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <Users className="w-5 h-5 text-primary" />
+                            )}
                         </div>
 
-                        {/* Group info */}
-                        <div
-                            onClick={() => setShowInfo(true)}
-                            className="cursor-pointer"
-                        >
-                            <h3 className="font-semibold text-base-content">
+                        <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-[15px] sm:text-base text-base-content truncate leading-tight">
                                 {selectedGroup.name}
                             </h3>
-                            <p className="text-xs text-base-content/60">
+                            <p className="text-[11px] sm:text-xs text-base-content/55 truncate mt-0.5 leading-tight">
                                 {memberNames}{moreCount}
                             </p>
                         </div>
-                    </div>
+                    </button>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1">
-                        <button className="btn btn-ghost btn-sm btn-circle opacity-50 cursor-not-allowed">
-                            <Phone className="w-5 h-5" />
-                        </button>
-                        <button className="btn btn-ghost btn-sm btn-circle opacity-50 cursor-not-allowed">
-                            <Video className="w-5 h-5" />
+                    <div className="flex items-center shrink-0 gap-0.5">
+                        {onSearchOpen && (
+                            <button
+                                type="button"
+                                onClick={onSearchOpen}
+                                className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/70 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                                title="Search in chat"
+                            >
+                                <Search size={18} strokeWidth={2} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/35 cursor-not-allowed"
+                            disabled
+                            title="Coming soon"
+                        >
+                            <Phone size={18} strokeWidth={2} />
                         </button>
                         <button
-                            onClick={() => setShowInfo(true)}
-                            className="btn btn-ghost btn-sm btn-circle"
+                            type="button"
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/35 cursor-not-allowed"
+                            disabled
+                            title="Coming soon"
                         >
-                            <MoreVertical className="w-5 h-5" />
+                            <Video size={18} strokeWidth={2} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowInfo(true)}
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-base-content/70 hover:bg-base-200 hover:text-base-content active:scale-95 transition-all"
+                        >
+                            <MoreVertical size={18} strokeWidth={2} />
                         </button>
                     </div>
                 </div>
-            </div>
+            </header>
 
             {/* Pinned Message Banner */}
             {selectedGroup.pinnedMessage && (

@@ -527,34 +527,37 @@ export const useGroupStore = create((set, get) => ({
             const isGroupActive = selectedGroup?._id === groupId;
 
             if (isFromOther && !isSystem) {
+                const group = groups.find(g => g._id === groupId) || selectedGroup;
+                if (!group?.isMuted) {
                 playNotificationSound();
 
                 if (!isWindowFocused) {
-                    const group = groups.find(g => g._id === groupId) || selectedGroup || { name: "New Group Message" };
-                    showBrowserNotification(group.name || "New Group Message", {
+                    const g = group || { name: "New Group Message" };
+                    showBrowserNotification(g.name || "New Group Message", {
                         body: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}`,
-                        icon: message.senderId?.profilePic || group.image || "/avatar.png",
+                        icon: message.senderId?.profilePic || g.image || "/avatar.png",
                         tag: `group-${groupId}`,
                         requireInteraction: false,
                         silent: false,
                         url: `/?group=${groupId}`,
                         groupId,
                         group: {
-                            _id: group._id || groupId,
-                            name: group.name,
-                            image: group.image,
-                            members: group.members,
+                            _id: g._id || groupId,
+                            name: g.name,
+                            image: g.image,
+                            members: g.members,
                         },
                     });
                 } else if (!isGroupActive) {
-                    const group = groups.find(g => g._id === groupId) || selectedGroup || { name: "New Group Message" };
+                    const g = group || { name: "New Group Message" };
                     showInAppNotification(
                         { text: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}` },
-                        { fullName: group.name, profilePic: group.image || "/avatar.png" },
+                        { fullName: g.name, profilePic: g.image || "/avatar.png" },
                         () => {
-                            get().setSelectedGroup(group);
+                            get().setSelectedGroup(g);
                         }
                     );
+                }
                 }
             }
 

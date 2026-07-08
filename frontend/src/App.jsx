@@ -1,12 +1,18 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import './App.css'
 import LeftNavbar from './components/LeftNavbar';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import SignUpPage from './pages/SignUpPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import LandingPage from './pages/LandingPage';
 import SettingsPage from './pages/SettingsPage';
+import StarredMessagesPage from './pages/StarredMessagesPage';
+import InsightsPage from './pages/InsightsPage';
+import { useNetworkStore } from './store/useNetworkStore';
+import { useEdgeSwipeBack } from './hooks/useEdgeSwipeBack';
+import EdgeSwipeOverlay from './components/EdgeSwipeOverlay';
+import { haptic } from './lib/haptics';
 import ProfilePage from './pages/ProfilePage';
 import ContactPage from './pages/ContactPage';
 import NotificationPage from './pages/NotificationPage';
@@ -28,13 +34,45 @@ import {
 } from './lib/openFromNotification';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
+import { CreateStatusModal } from './components/status';
+import { useStatusStore } from './store/useStatusStore';
+import { useVisualViewportKeyboard } from './hooks/useVisualViewportKeyboard';
+
+const StatusViewer = lazy(() => import('./components/status/StatusViewer'));
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
   const socket = useAuthStore((state) => state.socket);
   const { theme } = useThemeStore();
   const { subscribeToMessages, unsubscribeFromMessages } = useChatStore();
+  const subscribeToStatusEvents = useStatusStore((s) => s.subscribeToStatusEvents);
+  const unsubscribeFromStatusEvents = useStatusStore((s) => s.unsubscribeFromStatusEvents);
   const navigate = useNavigate();
+  const location = useLocation();
+  const initNetwork = useNetworkStore((s) => s.init);
+
+  // Global keyboard inset for composer docking + bottom-nav hide
+  useVisualViewportKeyboard();
+
+  // Network monitoring + offline queue flush
+  useEffect(() => {
+    if (authUser) initNetwork();
+  }, [authUser, initNetwork]);
+
+  // iOS-style edge swipe back (skip on home chat list with no deeper route stack needs)
+  const canEdgeBack =
+    !!authUser &&
+    location.pathname !== "/" &&
+    !location.pathname.startsWith("/login") &&
+    !location.pathname.startsWith("/signup");
+
+  const { offset, progress, dragging } = useEdgeSwipeBack(
+    () => {
+      haptic("selection");
+      navigate(-1);
+    },
+    { enabled: canEdgeBack }
+  );
 
   // Subscribe to messages globally when authUser and socket are available
   useEffect(() => {
@@ -43,6 +81,14 @@ function App() {
       return () => unsubscribeFromMessages();
     }
   }, [authUser, socket, subscribeToMessages, unsubscribeFromMessages]);
+
+  // Live status updates (create / delete / view) without page refresh
+  useEffect(() => {
+    if (authUser && socket) {
+      subscribeToStatusEvents();
+      return () => unsubscribeFromStatusEvents();
+    }
+  }, [authUser, socket, subscribeToStatusEvents, unsubscribeFromStatusEvents]);
 
   useEffect(() => {
     // Check for token in URL (from Google OAuth)
@@ -109,12 +155,15 @@ function App() {
   return (
     <div data-theme={theme}>
       {authUser && <LeftNavbar />}
+      <EdgeSwipeOverlay offset={offset} dragging={dragging} progress={progress} />
       <Routes>
         <Route path='/' element={authUser ? <HomePage /> : <LandingPage />} />
         <Route path='/signup' element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />
         <Route path='/login' element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
         <Route path='/loginhelp' element={!authUser ? <LoginHelp /> : <Navigate to="/" />} />
         <Route path='/settings' element={authUser ? <SettingsPage /> : <Navigate to="/login" />} />
+        <Route path='/starred' element={authUser ? <StarredMessagesPage /> : <Navigate to="/login" />} />
+        <Route path='/insights' element={authUser ? <InsightsPage /> : <Navigate to="/login" />} />
         <Route path='/contacts' element={authUser ? <ContactPage /> : <Navigate to="/login" />} />
         <Route path='/notifications' element={authUser ? <NotificationPage /> : <Navigate to="/login" />} />
         <Route path='/calls' element={authUser ? <CallHistoryPage /> : <Navigate to="/login" />} />
@@ -133,6 +182,16 @@ function App() {
       {/* Call Components */}
       <IncomingCallNotification />
       <CallWindow />
+
+      {/* WhatsApp-style Status */}
+      {authUser && (
+        <>
+          <CreateStatusModal />
+          <Suspense fallback={null}>
+            <StatusViewer />
+          </Suspense>
+        </>
+      )}
     </div>
   )
 }
