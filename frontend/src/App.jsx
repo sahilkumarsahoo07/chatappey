@@ -7,6 +7,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import SignUpPage from './pages/SignUpPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
+import LandingPage from './pages/LandingPage';
 import SettingsPage from './pages/SettingsPage';
 import ProfilePage from './pages/ProfilePage';
 import ContactPage from './pages/ContactPage';
@@ -75,7 +76,7 @@ function App() {
     <div data-theme={theme}>
       {authUser && <LeftNavbar />}
       <Routes>
-        <Route path='/' element={authUser ? <HomePage /> : <Navigate to="/login" />} />
+        <Route path='/' element={authUser ? <HomePage /> : <LandingPage />} />
         <Route path='/signup' element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />
         <Route path='/login' element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
         <Route path='/loginhelp' element={!authUser ? <LoginHelp /> : <Navigate to="/" />} />

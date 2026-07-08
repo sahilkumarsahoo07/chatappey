@@ -88,7 +88,7 @@ const PrivacyPage = () => {
 
                         <div className="text-center space-y-4">
                             <p className="text-base-content/60">Concerns about your privacy?</p>
-                            <Link to="/contacts" className="btn btn-primary px-8 rounded-full">Contact Privacy Officer</Link>
+                            <a href="mailto:chatappey@gmail.com" className="btn btn-primary px-8 rounded-full">Contact Privacy Officer</a>
                         </div>
                     </div>
                 </div>

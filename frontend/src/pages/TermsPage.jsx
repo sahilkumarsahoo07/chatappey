@@ -88,7 +88,7 @@ const TermsPage = () => {
 
                         <div className="text-center space-y-4">
                             <p className="text-base-content/60">Have questions about our Terms?</p>
-                            <Link to="/contacts" className="btn btn-primary px-8 rounded-full">Contact Support</Link>
+                            <a href="mailto:chatappey@gmail.com" className="btn btn-primary px-8 rounded-full">Contact Support</a>
                         </div>
                     </div>
                 </div>
