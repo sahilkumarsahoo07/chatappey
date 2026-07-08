@@ -19,14 +19,22 @@ export const getUsersForSidebar = async (req, res) => {
         let queryUsers;
         if (search) {
             const query = search.trim();
+            if (query.length < 2) {
+                return res.status(200).json([]);
+            }
+            // Escape regex special chars so "a.b" doesn't match everything
+            const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             // Discover/Search mode: search all users except current user by name or email
             queryUsers = await User.find({
                 _id: { $ne: loggedInUserId },
                 $or: [
-                    { fullName: { $regex: query, $options: "i" } },
-                    { email: { $regex: query, $options: "i" } }
+                    { fullName: { $regex: escaped, $options: "i" } },
+                    { email: { $regex: escaped, $options: "i" } }
                 ]
-            }).select("-password");
+            })
+                .select("-password")
+                .limit(40)
+                .sort({ fullName: 1 });
         } else {
             // Sidebar mode: only fetch friends to avoid loading the entire database
             queryUsers = await User.find({

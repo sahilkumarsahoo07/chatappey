@@ -13,8 +13,10 @@ import {
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
+  discoverUsers: [],
   selectedUser: null,
   isUsersLoading: false,
+  isDiscoverLoading: false,
   isMessagesLoading: false,
   friendRequests: [],
   sentRequests: [],
@@ -23,11 +25,11 @@ export const useChatStore = create((set, get) => ({
   isTyping: false, // New state
   _isSubscribedToMessages: false,
 
-  getUsers: async (searchQuery = "") => {
+  // Sidebar friends / chats list only — never pass a search query here
+  getUsers: async () => {
     set({ isUsersLoading: true });
     try {
-      const params = searchQuery ? { search: searchQuery } : {};
-      const res = await axiosInstance.get("/messages/users", { params });
+      const res = await axiosInstance.get("/messages/users");
       set({ users: res.data });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to fetch users");
@@ -35,6 +37,29 @@ export const useChatStore = create((set, get) => ({
       set({ isUsersLoading: false });
     }
   },
+
+  // Global Discover People search — keeps sidebar `users` intact
+  searchDiscoverUsers: async (searchQuery = "") => {
+    const q = (searchQuery || "").trim();
+    if (q.length < 2) {
+      set({ discoverUsers: [], isDiscoverLoading: false });
+      return;
+    }
+    set({ isDiscoverLoading: true });
+    try {
+      const res = await axiosInstance.get("/messages/users", {
+        params: { search: q },
+      });
+      set({ discoverUsers: Array.isArray(res.data) ? res.data : [] });
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Search failed");
+      set({ discoverUsers: [] });
+    } finally {
+      set({ isDiscoverLoading: false });
+    }
+  },
+
+  clearDiscoverUsers: () => set({ discoverUsers: [], isDiscoverLoading: false }),
 
   // Refresh users silently without loading state (for real-time updates)
   refreshUsers: async () => {
@@ -593,6 +618,14 @@ export const useChatStore = create((set, get) => ({
       const endpoint = message ? `/friends/request-message/${userId}` : `/friends/request/${userId}`;
       const res = await axiosInstance.post(endpoint, { message });
       toast.success("Friend request sent");
+      // Update discover results instantly so button shows Pending
+      set({
+        discoverUsers: get().discoverUsers.map((u) =>
+          u._id === userId
+            ? { ...u, hasPendingRequest: true, pendingRequestSentByMe: true }
+            : u
+        ),
+      });
       get().refreshUsers();
       return res.data;
     } catch (error) {
