@@ -120,7 +120,7 @@ export const showInAppNotification = (message, sender, onClick) => {
     </div>
   `;
   notification.style.cssText = `
-    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    position: fixed; top: 20px; right: 20px; z-index: 99999;
     animation: slideInRight 0.3s ease-out; max-width: 350px;
   `;
   notification.onclick = () => {

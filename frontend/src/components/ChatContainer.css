@@ -293,6 +293,9 @@
 
     .messages-container {
         padding: 12px !important;
+        padding-bottom: calc(
+            var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px) + 0.75rem
+        ) !important;
     }
 }
 

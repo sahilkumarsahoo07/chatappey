@@ -1,15 +1,40 @@
 /* Modern Message Input Styling */
 
 .message-input-container {
-    /* Simplified background to avoid expensive blur during typing */
     background: oklch(var(--b1));
     border-top: 1px solid oklch(var(--bc) / 0.1);
     position: relative;
     flex-shrink: 0;
-    /* Dock above soft keyboard via Visual Viewport inset (overlays-content) */
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px));
-    will-change: padding-bottom;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 40;
+}
+
+/* Mobile: pin composer above the soft keyboard */
+@media (max-width: 767px) {
+    .message-input-container {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 70;
+        transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+        will-change: transform;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -4px 24px oklch(var(--bc) / 0.08);
+    }
+}
+
+/* Reserve space in flex layout while composer is position:fixed on mobile */
+.chat-composer-spacer {
+    display: none;
+    flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+    .chat-composer-spacer {
+        display: block;
+        height: calc(var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 .message-input-container::before {

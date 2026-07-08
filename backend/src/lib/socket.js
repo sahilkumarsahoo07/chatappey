@@ -106,7 +106,12 @@ const io = new Server(server, {
 });
 
 export function getReceiverSocketId(userId) {
-  return userSocketMap[userId];
+  if (userId == null) return undefined;
+  const key =
+    typeof userId === "object" && userId._id != null
+      ? String(userId._id)
+      : String(userId);
+  return userSocketMap[key];
 }
 
 // Used to store online users
@@ -173,7 +178,7 @@ io.on("connection", async (socket) => {
     }
 
     // 2. Now it is safe to add to the socket map
-    userSocketMap[userId] = socket.id;
+    userSocketMap[String(userId)] = socket.id;
 
     // 3. Join user's groups (can remain async/background as it doesn't affect online status)
     (async () => {
@@ -702,8 +707,8 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("disconnect", async () => {
-    if (userId && userSocketMap[userId] === socket.id) {
-      delete userSocketMap[userId];
+    if (userId && userSocketMap[String(userId)] === socket.id) {
+      delete userSocketMap[String(userId)];
 
       // Check if user was incognito
       const isIncognito = incognitoUsers.has(userId.toString());

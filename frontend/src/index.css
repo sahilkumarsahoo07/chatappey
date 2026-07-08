@@ -144,6 +144,7 @@ html.keyboard-open .md\:hidden.fixed.bottom-0 {
 /* Soft keyboard (Visual Viewport) — set by useVisualViewportKeyboard */
 :root {
     --keyboard-inset: 0px;
+    --composer-height: 76px;
 }
 html.keyboard-open .md\:hidden.fixed.bottom-0,
 html.keyboard-open nav.md\:hidden.fixed {
@@ -154,9 +155,13 @@ html.keyboard-open nav.md\:hidden.fixed {
 html.keyboard-open body {
     overscroll-behavior-y: none;
 }
-/* Messages list clears space for composer + keyboard without resizing the shell */
-.messages-container {
-    padding-bottom: calc(1rem + var(--keyboard-inset, 0px)) !important;
+/* Messages scroll above composer + keyboard on mobile */
+@media (max-width: 767px) {
+    .messages-container {
+        padding-bottom: calc(
+            var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px) + 0.75rem
+        ) !important;
+    }
 }
 
 @keyframes statusFadeIn {

@@ -379,7 +379,7 @@ export const sendMessage = async (req, res) => {
         }
 
         // Check if receiver is online
-        const receiverSocketId = getReceiverSocketId(receiverId);
+        const receiverSocketId = getReceiverSocketId(receiverId.toString());
 
         // Determine status
         let initialStatus = receiverSocketId ? "delivered" : "sent";
@@ -420,12 +420,18 @@ export const sendMessage = async (req, res) => {
 
         // Only emit if NOT scheduled
         if (!shouldBeScheduled) {
-            if (receiverSocketId) {
-                // Send new message to receiver
-                io.to(receiverSocketId).emit("newMessage", newMessage);
+            const msgPayload = {
+                ...(typeof newMessage.toObject === "function"
+                    ? newMessage.toObject()
+                    : newMessage),
+                senderName: sender.fullName,
+                senderProfilePic: sender.profilePic || "",
+            };
 
-                // Notify sender that message was delivered
-                const senderSocketId = getReceiverSocketId(senderId);
+            if (receiverSocketId) {
+                io.to(receiverSocketId).emit("newMessage", msgPayload);
+
+                const senderSocketId = getReceiverSocketId(senderId.toString());
                 if (senderSocketId) {
                     io.to(senderSocketId).emit("messageDelivered", {
                         messageId: newMessage._id,
@@ -540,7 +546,7 @@ export const forwardMessage = async (req, res) => {
         await forwardedMessage.save();
 
         // Notify the receiver via socket
-        const receiverSocketId = getReceiverSocketId(receiverId);
+        const receiverSocketId = getReceiverSocketId(receiverId.toString());
         if (receiverSocketId) {
             io.to(receiverSocketId).emit("newMessage", forwardedMessage);
         }

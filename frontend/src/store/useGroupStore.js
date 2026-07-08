@@ -487,7 +487,12 @@ export const useGroupStore = create((set, get) => ({
             const { selectedGroup, groupMessages, groups } = get();
 
             // Check if this is a message from another user
-            const isFromOther = message.senderId && message.senderId._id !== authUser._id;
+            const senderIdStr =
+              typeof message.senderId === "object"
+                ? message.senderId?._id
+                : message.senderId;
+            const isFromOther =
+              senderIdStr && String(senderIdStr) !== String(authUser._id);
             const isSystem = message.messageType === "system";
 
             // If this is in the currently selected group, add the message

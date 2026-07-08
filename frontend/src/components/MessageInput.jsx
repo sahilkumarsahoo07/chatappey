@@ -682,7 +682,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     };
 
     return (
-        <div className="p-4 w-full message-input-container">
+        <div className="w-full message-input-container">
             {isRestricted ? (
                 <div className="flex items-center justify-center gap-2 p-4 bg-base-200/50 rounded-2xl border border-dashed border-base-300 text-base-content/50">
                     <Megaphone className="w-4 h-4" />
@@ -798,6 +798,11 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 placeholder={isRecording ? "Recording..." : "Type a message..."}
                                 value={text}
                                 onChange={handleTextChange}
+                                onFocus={() => {
+                                    requestAnimationFrame(() => {
+                                        window.dispatchEvent(new Event("resize"));
+                                    });
+                                }}
                                 onKeyDown={handleKeyDown}
                                 onPaste={handlePaste}
                                 rows={1}

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
+const KEYBOARD_THRESHOLD = 48;
+
 /**
  * Tracks the soft keyboard via the Visual Viewport API (WhatsApp-like).
  * Sets --keyboard-inset on <html> and toggles .keyboard-open on <html>/<body>.
- * With viewport interactive-widget=overlays-content, the layout does not jump —
- * consumers pad/translate the composer instead.
  */
 export function useVisualViewportKeyboard() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -14,6 +14,7 @@ export function useVisualViewportKeyboard() {
 
     const vv = window.visualViewport;
     let raf = 0;
+    let focusTimer = null;
 
     const measure = () => {
       cancelAnimationFrame(raf);
@@ -22,12 +23,22 @@ export function useVisualViewportKeyboard() {
         let inset = 0;
 
         if (vv) {
-          // Distance from bottom of layout viewport to bottom of visual viewport
           inset = Math.max(0, layoutH - vv.height - vv.offsetTop);
         }
 
-        // Ignore tiny browser chrome jitter
-        if (inset < 80) inset = 0;
+        const focusedInComposer = document.activeElement?.closest?.(
+          ".message-input-container"
+        );
+
+        // Android fallback when overlay mode reports a small inset while typing
+        if (focusedInComposer && vv && inset < KEYBOARD_THRESHOLD) {
+          const heightGap = layoutH - vv.height;
+          if (heightGap > KEYBOARD_THRESHOLD) {
+            inset = Math.max(inset, heightGap - vv.offsetTop);
+          }
+        }
+
+        if (inset < KEYBOARD_THRESHOLD) inset = 0;
 
         setKeyboardHeight((prev) => (prev === inset ? prev : inset));
 
@@ -38,6 +49,28 @@ export function useVisualViewportKeyboard() {
       });
     };
 
+    const scheduleMeasure = (delays = [0, 80, 180, 320]) => {
+      measure();
+      delays.forEach((ms) => {
+        setTimeout(measure, ms);
+      });
+    };
+
+    const onFocusIn = (e) => {
+      if (!e.target.closest?.(".message-input-container")) return;
+      scheduleMeasure();
+      clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        e.target.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+        measure();
+      }, 280);
+    };
+
+    const onFocusOut = () => {
+      clearTimeout(focusTimer);
+      setTimeout(measure, 120);
+    };
+
     measure();
 
     if (vv) {
@@ -45,19 +78,19 @@ export function useVisualViewportKeyboard() {
       vv.addEventListener("scroll", measure);
     }
     window.addEventListener("resize", measure);
-    // iOS often fires focus without an immediate vv resize
-    window.addEventListener("focusin", measure);
-    window.addEventListener("focusout", measure);
+    window.addEventListener("focusin", onFocusIn);
+    window.addEventListener("focusout", onFocusOut);
 
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(focusTimer);
       if (vv) {
         vv.removeEventListener("resize", measure);
         vv.removeEventListener("scroll", measure);
       }
       window.removeEventListener("resize", measure);
-      window.removeEventListener("focusin", measure);
-      window.removeEventListener("focusout", measure);
+      window.removeEventListener("focusin", onFocusIn);
+      window.removeEventListener("focusout", onFocusOut);
       document.documentElement.style.setProperty("--keyboard-inset", "0px");
       document.documentElement.classList.remove("keyboard-open");
       document.body.classList.remove("keyboard-open");

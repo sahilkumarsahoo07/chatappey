@@ -724,6 +724,7 @@ const GroupChatContainer = () => {
             )}
 
             {/* Message Input */}
+            <div className="chat-composer-spacer md:hidden" aria-hidden />
             <MessageInput
                 onSend={handleSendMessage}
                 isGroupChat={true}

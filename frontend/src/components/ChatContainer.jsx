@@ -692,6 +692,7 @@ const ChatContainer = () => {
         <div ref={messageEndRef} />
       </div>
 
+      <div className="chat-composer-spacer md:hidden" aria-hidden />
       <MessageInput />
 
       <MessageActionMenu

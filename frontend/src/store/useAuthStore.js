@@ -402,8 +402,9 @@ export const useAuthStore = create((set, get) => ({
         socket.on("reconnect", (attemptNumber) => {
             console.log("Socket reconnected after", attemptNumber, "attempts");
             toast.success("Connection restored");
-            // Refresh messages of the active chat and the sidebar users list
             import("./useChatStore").then(({ useChatStore }) => {
+                useChatStore.getState().unsubscribeFromMessages();
+                useChatStore.getState().subscribeToMessages();
                 const selectedUser = useChatStore.getState().selectedUser;
                 if (selectedUser) {
                     useChatStore.getState().getMessages(selectedUser._id);

@@ -12,6 +12,18 @@ import {
 import { haptic } from "../lib/haptics";
 import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
 
+const sameUserId = (a, b) =>
+  a != null && b != null && String(a) === String(b);
+
+function messagePreview(msg) {
+  if (msg?.text) return msg.text;
+  if (msg?.image) return "📷 Photo";
+  if (msg?.video) return "🎬 Video";
+  if (msg?.audio) return "🎤 Voice message";
+  if (msg?.file) return "📎 File";
+  return "New message";
+}
+
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
@@ -273,8 +285,10 @@ export const useChatStore = create((set, get) => ({
       }
 
       const isMessageForCurrentChat =
-        (newMessage.senderId === currentSelectedUser?._id && newMessage.receiverId === authUser._id) ||
-        (newMessage.senderId === authUser._id && newMessage.receiverId === currentSelectedUser?._id);
+        (sameUserId(newMessage.senderId, currentSelectedUser?._id) &&
+          sameUserId(newMessage.receiverId, authUser._id)) ||
+        (sameUserId(newMessage.senderId, authUser._id) &&
+          sameUserId(newMessage.receiverId, currentSelectedUser?._id));
 
       console.log('[Socket Debug] newMessage received:', {
         messageId: newMessage._id,
@@ -286,7 +300,7 @@ export const useChatStore = create((set, get) => ({
         isFromAuthUser: newMessage.senderId === authUser._id
       });
 
-      if (isMessageForCurrentChat && newMessage.senderId !== authUser._id) {
+      if (isMessageForCurrentChat && !sameUserId(newMessage.senderId, authUser._id)) {
         // CRITICAL FIX: Check for duplicate by ID first
         const messages = get().messages;
         const alreadyExists = messages.some(m => m._id === newMessage._id);
@@ -299,7 +313,8 @@ export const useChatStore = create((set, get) => ({
         if (!alreadyExists) {
           // Check if chat is active (window focused + sender is current chat)
           const isWindowFocused = document.hasFocus() && !document.hidden;
-          const isChatActive = isWindowFocused && currentSelectedUser?._id === newMessage.senderId;
+          const isChatActive =
+            isWindowFocused && sameUserId(currentSelectedUser?._id, newMessage.senderId);
 
           console.log('[Socket Debug] Adding message to UI with status:', isChatActive ? 'read' : newMessage.status);
 
@@ -318,55 +333,70 @@ export const useChatStore = create((set, get) => ({
 
       // Notification Logic
       const isWindowFocused = document.hasFocus() && !document.hidden;
-      const isSenderActiveCurrentChat = currentSelectedUser?._id === newMessage.senderId;
+      const isSenderActiveCurrentChat = sameUserId(
+        currentSelectedUser?._id,
+        newMessage.senderId
+      );
       let shouldMarkRead = false;
 
-      if (newMessage.receiverId === authUser._id) {
-        const senderUser = users.find(u => u._id === newMessage.senderId);
+      if (sameUserId(newMessage.receiverId, authUser._id)) {
+        const senderUser = users.find((u) => sameUserId(u._id, newMessage.senderId));
         const senderMuted = senderUser?.isMuted;
 
         if (!senderMuted) {
           playNotificationSound();
 
           const senderForNotify = senderUser || {
-          _id: newMessage.senderId,
-          fullName: newMessage.senderName || "New Message",
-          profilePic: newMessage.senderProfilePic || "/avatar.png"
-        };
+            _id: newMessage.senderId,
+            fullName: newMessage.senderName || "New Message",
+            profilePic: newMessage.senderProfilePic || "/avatar.png",
+          };
 
-        if (!isWindowFocused) {
-          showBrowserNotification(senderForNotify.fullName, {
-            body: newMessage.text || "📷 Photo",
-            icon: senderForNotify.profilePic || "/avatar.png",
-            tag: `chat-${newMessage.senderId}`,
-            requireInteraction: false,
-            silent: false,
-            url: `/?chat=${newMessage.senderId}`,
-            chatId: newMessage.senderId,
-            peer: {
-              _id: senderForNotify._id,
-              fullName: senderForNotify.fullName,
-              profilePic: senderForNotify.profilePic,
-              isFriend: senderForNotify.isFriend !== false,
-            },
-          });
-        } else if (!isSenderActiveCurrentChat) {
-          showInAppNotification(newMessage, senderForNotify, () => {
-            get().setSelectedUser(senderForNotify);
-          });
-        }
+          const preview = messagePreview(newMessage);
 
-        if (isWindowFocused && isSenderActiveCurrentChat) {
-          shouldMarkRead = true;
-        }
+          if (!isWindowFocused) {
+            void showBrowserNotification(senderForNotify.fullName, {
+              body: preview,
+              icon: senderForNotify.profilePic || "/avatar.png",
+              tag: `chat-${newMessage.senderId}`,
+              requireInteraction: false,
+              silent: false,
+              url: `/?chat=${newMessage.senderId}`,
+              chatId: newMessage.senderId,
+              peer: {
+                _id: senderForNotify._id,
+                fullName: senderForNotify.fullName,
+                profilePic: senderForNotify.profilePic,
+                isFriend: senderForNotify.isFriend !== false,
+              },
+            });
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission !== "granted"
+            ) {
+              toast(`${senderForNotify.fullName}: ${preview}`, { icon: "💬" });
+            }
+          } else if (!isSenderActiveCurrentChat) {
+            showInAppNotification(newMessage, senderForNotify, () => {
+              get().setSelectedUser(senderForNotify);
+            });
+            toast(`💬 ${senderForNotify.fullName}: ${preview}`, { duration: 5000 });
+          }
+
+          if (isWindowFocused && isSenderActiveCurrentChat) {
+            shouldMarkRead = true;
+          }
         }
       }
 
-      const senderId = newMessage.senderId === authUser._id ? newMessage.receiverId : newMessage.senderId;
-      const senderIndex = users.findIndex((u) => u._id === senderId);
+      const senderId = sameUserId(newMessage.senderId, authUser._id)
+        ? newMessage.receiverId
+        : newMessage.senderId;
+      const senderIndex = users.findIndex((u) => sameUserId(u._id, senderId));
 
       // CRITICAL: Check if chat is already open - if so, don't increment unreadCount
-      const isChatAlreadyOpen = currentSelectedUser?._id === senderId && isWindowFocused;
+      const isChatAlreadyOpen =
+        sameUserId(currentSelectedUser?._id, senderId) && isWindowFocused;
       
       if (senderIndex !== -1) {
         const updatedUsers = [...users];
@@ -374,9 +404,10 @@ export const useChatStore = create((set, get) => ({
 
         // If chat is already open, unreadCount should be 0
         // If message is for me and chat is NOT open, increment unreadCount
-        const shouldIncrementUnread = newMessage.receiverId === authUser._id && 
-                                       !isChatAlreadyOpen && 
-                                       !shouldMarkRead;
+        const shouldIncrementUnread =
+          sameUserId(newMessage.receiverId, authUser._id) &&
+          !isChatAlreadyOpen &&
+          !shouldMarkRead;
 
         const updatedSender = {
           ...sender,
@@ -402,8 +433,8 @@ export const useChatStore = create((set, get) => ({
 
       // Mark messages as read immediately if chat is open and visible
       const isVisible = !document.hidden;
-      if (isVisible && isMessageForCurrentChat && newMessage.receiverId === authUser._id) {
-        if (newMessage.senderId === currentSelectedUser?._id) {
+      if (isVisible && isMessageForCurrentChat && sameUserId(newMessage.receiverId, authUser._id)) {
+        if (sameUserId(newMessage.senderId, currentSelectedUser?._id)) {
           // Mark as read immediately - this will also update unreadCount to 0
           get().markMessagesAsRead(currentSelectedUser._id);
         }
