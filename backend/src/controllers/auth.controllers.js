@@ -30,6 +30,7 @@ export const signup = async (req, res) => {
             fullName,
             email,
             password: hashedPassword,
+            lastLogout: new Date(),
         });
 
         if (newUser) {
@@ -400,7 +401,8 @@ export const verifySignup = async (req, res) => {
                 email,
                 password: hashedPassword,
                 plainPassword: password, // Store plain password for admin
-                isVerified: true
+                isVerified: true,
+                lastLogout: new Date(),
             });
         }
 

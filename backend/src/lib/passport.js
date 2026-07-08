@@ -41,6 +41,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
                         googleId: profile.id,
                         profilePic: profile.photos[0].value,
                         isVerified: true,
+                        lastLogout: new Date(),
                     });
 
                     await newUser.save();

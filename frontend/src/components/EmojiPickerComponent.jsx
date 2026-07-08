@@ -29,7 +29,7 @@ const EmojiPickerComponent = ({ onEmojiSelect }) => {
     };
 
     return (
-        <div className="relative" ref={pickerRef}>
+        <div className="relative emoji-picker-wrapper" ref={pickerRef}>
             <button
                 type="button"
                 onClick={() => setShowPicker(!showPicker)}
@@ -40,11 +40,11 @@ const EmojiPickerComponent = ({ onEmojiSelect }) => {
             </button>
 
             {showPicker && (
-                <div className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border border-base-300">
+                <div className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border border-base-300 w-[350px] emoji-picker-container">
                     <EmojiPicker
                         onEmojiClick={handleEmojiClick}
-                        width={350}
-                        height={400}
+                        width="100%"
+                        height={300}
                         previewConfig={{
                             showPreview: false,
                         }}

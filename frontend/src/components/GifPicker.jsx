@@ -98,7 +98,7 @@ const GifPicker = ({ onGifSelect }) => {
     };
 
     return (
-        <div className="relative" ref={pickerRef}>
+        <div className="relative gif-picker-wrapper" ref={pickerRef}>
             <button
                 type="button"
                 onClick={() => setShowPicker(!showPicker)}
@@ -109,16 +109,16 @@ const GifPicker = ({ onGifSelect }) => {
             </button>
 
             {showPicker && (
-                <div className="absolute bottom-full right-0 mb-2 z-50 w-[400px] max-h-[500px] bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden gif-picker-container">
+                <div className="absolute bottom-full right-0 mb-2 z-50 w-[320px] sm:w-[400px] max-h-[350px] sm:max-h-[500px] bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden gif-picker-container">
                     {/* Header */}
-                    <div className="p-4 border-b border-base-300 bg-base-200">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-base">Choose a GIF</h3>
+                    <div className="p-3 sm:p-4 border-b border-base-300 bg-base-200">
+                        <div className="flex items-center justify-between mb-2 sm:mb-3">
+                            <h3 className="font-semibold text-sm sm:text-base">Choose a GIF</h3>
                             <button
                                 onClick={() => setShowPicker(false)}
-                                className="btn btn-ghost btn-sm btn-circle"
+                                className="btn btn-ghost btn-xs sm:btn-sm btn-circle"
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </button>
                         </div>
 
@@ -129,21 +129,21 @@ const GifPicker = ({ onGifSelect }) => {
                                 placeholder="Search GIFs..."
                                 value={searchQuery}
                                 onChange={handleSearchChange}
-                                className="input input-bordered input-sm w-full pl-9 pr-4 focus:outline-none"
+                                className="input input-bordered input-xs sm:input-sm w-full pl-8 pr-4 focus:outline-none text-xs sm:text-sm"
                             />
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/50 pointer-events-none" />
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-base-content/50 pointer-events-none" />
                         </div>
                     </div>
 
                     {/* GIF Grid */}
-                    <div className="overflow-y-auto max-h-[380px] gif-grid-container">
-                        <div className="p-2">
+                    <div className="overflow-y-auto max-h-[220px] sm:max-h-[380px] gif-grid-container">
+                        <div className="p-1 sm:p-2">
                             {loading ? (
-                                <div className="flex items-center justify-center py-12">
-                                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                                <div className="flex items-center justify-center py-8 sm:py-12">
+                                    <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-primary" />
                                 </div>
                             ) : gifs.length > 0 ? (
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-3 gap-1 sm:grid-cols-2 sm:gap-2">
                                     {gifs.map((gif) => (
                                         <div
                                             key={gif.id}
@@ -155,22 +155,23 @@ const GifPicker = ({ onGifSelect }) => {
                                                 alt={gif.title || 'GIF'}
                                                 className="w-full h-full object-cover"
                                                 loading="lazy"
+                                                style={{ minHeight: '100%' }}
                                             />
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-center py-12 text-base-content/50">
-                                    <p>No GIFs found</p>
-                                    <p className="text-sm mt-1">Try a different search</p>
+                                <div className="text-center py-8 sm:py-12 text-base-content/50">
+                                    <p className="text-xs sm:text-base">No GIFs found</p>
+                                    <p className="text-[10px] sm:text-sm mt-0.5 sm:mt-1">Try a different search</p>
                                 </div>
                             )}
                         </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="p-2 border-t border-base-300 bg-base-200 text-center">
-                        <p className="text-xs text-base-content/50">Powered by GIPHY</p>
+                    <div className="p-1.5 sm:p-2 border-t border-base-300 bg-base-200 text-center">
+                        <p className="text-[10px] sm:text-xs text-base-content/50">Powered by GIPHY</p>
                     </div>
                 </div>
             )}

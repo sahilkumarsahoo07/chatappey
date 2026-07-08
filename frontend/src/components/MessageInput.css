@@ -259,12 +259,27 @@
     letter-spacing: 0.5px;
 }
 
-/* Responsive Design */
 @media (max-width: 640px) {
+    .emoji-picker-wrapper,
+    .gif-picker-wrapper {
+        position: static !important;
+    }
+
+    .emoji-picker-container,
     .gif-picker-container {
-        width: 100vw;
-        max-width: 350px;
-        right: -16px;
+        left: 16px !important;
+        right: 16px !important;
+        width: auto !important;
+        max-width: 450px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+
+    .emoji-picker-container {
+        --epr-emoji-size: 24px !important;
+        --epr-category-navigation-button-size: 22px !important;
+        --epr-search-input-height: 32px !important;
+        --epr-emoji-gap: 8px !important;
     }
 
     .message-textarea {
