@@ -733,7 +733,7 @@ const SettingsPage = () => {
                     <div className="flex items-center gap-2">
                         <button onClick={() => showBrowserNotification("Test Notification", { body: "This is a test notification from ChatAppey", url: "/" })} className="btn btn-ghost btn-xs font-black text-red-500 hover:bg-red-500/10 px-3 rounded-lg tracking-tighter">Run Test</button>
                         <button onClick={async () => {
-                            const granted = await requestNotificationPermission();
+                            const granted = await requestNotificationPermission({ showTest: true });
                             if (granted) toast.success("Welcome aboard! Alerts enabled."); else toast.error("Bummer! Permission denied.");
                         }} className="btn btn-primary btn-sm rounded-xl shadow-md shadow-primary/20 font-black px-4">Enable Alerts</button>
                     </div>

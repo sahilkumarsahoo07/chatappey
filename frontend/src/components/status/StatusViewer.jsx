@@ -61,7 +61,7 @@ function StatusViewer() {
 
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);

@@ -7,7 +7,7 @@ import {
   showInAppNotification,
   playNotificationSound,
   isDocumentVisible,
-  requestNotificationPermission
+  shouldShowSystemNotification,
 } from "../lib/notifications";
 import { haptic } from "../lib/haptics";
 import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
@@ -471,11 +471,9 @@ export const useChatStore = create((set, get) => ({
       }
 
       // Notification Logic
-      const isWindowFocused = document.hasFocus() && !document.hidden;
-      const isSenderActiveCurrentChat = sameUserId(
-        currentSelectedUser?._id,
-        newMessage.senderId
-      );
+      const isSenderActiveCurrentChat =
+        sameUserId(currentSelectedUser?._id, newMessage.senderId) &&
+        !shouldShowSystemNotification();
       let shouldMarkRead = false;
 
       if (sameUserId(newMessage.receiverId, authUser._id)) {
@@ -493,10 +491,10 @@ export const useChatStore = create((set, get) => ({
 
           const preview = messagePreview(newMessage);
 
-          if (!isWindowFocused) {
+          if (shouldShowSystemNotification()) {
             void showBrowserNotification(senderForNotify.fullName, {
               body: preview,
-              icon: senderForNotify.profilePic || "/avatar.png",
+              icon: "/avatar.png",
               tag: `chat-${newMessage.senderId}`,
               requireInteraction: false,
               silent: false,
@@ -509,20 +507,16 @@ export const useChatStore = create((set, get) => ({
                 isFriend: senderForNotify.isFriend !== false,
               },
             });
-            if (
-              typeof Notification !== "undefined" &&
-              Notification.permission !== "granted"
-            ) {
-              toast(`${senderForNotify.fullName}: ${preview}`, { icon: "💬" });
-            }
-          } else if (!isSenderActiveCurrentChat) {
+          }
+
+          if (!isSenderActiveCurrentChat) {
             showInAppNotification(newMessage, senderForNotify, () => {
               get().setSelectedUser(senderForNotify);
             });
             toast(`💬 ${senderForNotify.fullName}: ${preview}`, { duration: 5000 });
           }
 
-          if (isWindowFocused && isSenderActiveCurrentChat) {
+          if (isSenderActiveCurrentChat) {
             shouldMarkRead = true;
           }
         }
@@ -533,9 +527,8 @@ export const useChatStore = create((set, get) => ({
         : newMessage.senderId;
       const senderIndex = users.findIndex((u) => sameUserId(u._id, senderId));
 
-      // CRITICAL: Check if chat is already open - if so, don't increment unreadCount
       const isChatAlreadyOpen =
-        sameUserId(currentSelectedUser?._id, senderId) && isWindowFocused;
+        sameUserId(currentSelectedUser?._id, senderId) && !shouldShowSystemNotification();
       
       if (senderIndex !== -1) {
         const updatedUsers = [...users];

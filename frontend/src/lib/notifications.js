@@ -1,38 +1,52 @@
 // Notification utility — Windows + mobile, no page reload on click
 
-export const requestNotificationPermission = async () => {
-  if (!("Notification" in window)) return false;
-  if (Notification.permission === "granted") return true;
+const DEFAULT_ICON = "/avatar.png";
 
-  if (Notification.permission !== "denied") {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
-        await showBrowserNotification("ChatAppey Notifications Enabled!", {
-          body: "You will now receive message and call notifications",
-          icon: "/avatar.png",
-          url: "/",
-          requireInteraction: false,
-        });
-      }
-      return permission === "granted";
-    } catch (error) {
-      console.error("Error requesting notification permission:", error);
-      return false;
-    }
+const sameOriginIcon = (icon) => {
+  try {
+    const url = new URL(icon || DEFAULT_ICON, window.location.href);
+    if (url.origin === window.location.origin) return url.href;
+  } catch (_) {
+    /* ignore */
   }
-  return false;
+  return new URL(DEFAULT_ICON, window.location.href).href;
+};
+
+export const getNotificationPermission = () => {
+  if (!("Notification" in window)) return "unsupported";
+  return Notification.permission;
 };
 
 /**
- * Show system notification. Pass url + optional peer/group for seamless open.
- * data.peer / data.group avoid refetch when clicking the toast.
+ * Request notification permission — MUST be called from a user click/tap (button).
  */
-export const showBrowserNotification = async (title, options = {}) => {
-  if (!("Notification" in window) || Notification.permission !== "granted") {
-    return null;
-  }
+export const requestNotificationPermission = async ({ showTest = false } = {}) => {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
 
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted" && showTest) {
+      await showBrowserNotification("ChatAppey Notifications Enabled!", {
+        body: "You will now receive message and call notifications",
+        icon: DEFAULT_ICON,
+        url: "/",
+        requireInteraction: false,
+      });
+    }
+    return permission === "granted";
+  } catch (error) {
+    console.error("Error requesting notification permission:", error);
+    return false;
+  }
+};
+
+export const refreshNotificationPermissionUI = () => {
+  window.dispatchEvent(new Event("notification-permission-change"));
+};
+
+const buildNotificationOptions = (options = {}) => {
   const url = options.url || options.data?.url || "/";
   let chatId = options.chatId || options.data?.chatId || null;
   let groupId = options.groupId || options.data?.groupId || null;
@@ -46,11 +60,12 @@ export const showBrowserNotification = async (title, options = {}) => {
     }
   }
 
-  const notificationOptions = {
-    icon: options.icon || "/avatar.png",
-    badge: "/avatar.png",
+  return {
+    icon: sameOriginIcon(options.icon),
+    badge: sameOriginIcon(DEFAULT_ICON),
     body: options.body || "",
     tag: options.tag || "chat-message",
+    renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
     data: {
@@ -61,18 +76,6 @@ export const showBrowserNotification = async (title, options = {}) => {
       group: options.group || options.data?.group || null,
     },
   };
-
-  if ("serviceWorker" in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification(title, notificationOptions);
-      return null;
-    } catch (err) {
-      console.error("SW notification failed, fallback:", err);
-    }
-  }
-
-  return showStandardNotification(title, notificationOptions);
 };
 
 const showStandardNotification = (title, options) => {
@@ -88,7 +91,6 @@ const showStandardNotification = (title, options) => {
         /* ignore */
       }
 
-      // Instant store switch — never location.assign
       import("./openFromNotification.js").then(({ openConversationFromNotification }) => {
         openConversationFromNotification({
           url: options.data?.url,
@@ -102,9 +104,44 @@ const showStandardNotification = (title, options) => {
 
     return notification;
   } catch (error) {
-    console.error("Error creating notification:", error);
+    console.error("[notify] Standard notification failed:", error);
     return null;
   }
+};
+
+/**
+ * Show system notification. Uses direct Notification API first (reliable on Windows),
+ * then service worker when the tab is hidden.
+ */
+export const showBrowserNotification = async (title, options = {}) => {
+  if (!("Notification" in window)) {
+    console.warn("[notify] Notification API not supported");
+    return null;
+  }
+  if (Notification.permission !== "granted") {
+    console.warn("[notify] Permission:", Notification.permission);
+    return null;
+  }
+
+  const notificationOptions = buildNotificationOptions(options);
+
+  // Direct API — most reliable when user is on the site (Windows Chrome/Edge)
+  if (!document.hidden) {
+    const direct = showStandardNotification(title, notificationOptions);
+    if (direct) return direct;
+  }
+
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, notificationOptions);
+      return null;
+    } catch (err) {
+      console.error("[notify] SW failed, using standard API:", err);
+    }
+  }
+
+  return showStandardNotification(title, notificationOptions);
 };
 
 export const showInAppNotification = (message, sender, onClick) => {
@@ -112,7 +149,7 @@ export const showInAppNotification = (message, sender, onClick) => {
   notification.className = "in-app-notification";
   notification.innerHTML = `
     <div class="flex items-center gap-3 p-4 bg-base-100 rounded-lg shadow-xl border border-base-300 cursor-pointer hover:shadow-2xl transition-all">
-      <img src="${sender.profilePic || "/avatar.png"}" alt="${sender.fullName}" class="w-12 h-12 rounded-full object-cover border-2 border-primary" />
+      <img src="${sender.profilePic || DEFAULT_ICON}" alt="${sender.fullName}" class="w-12 h-12 rounded-full object-cover border-2 border-primary" />
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-base-content truncate">${sender.fullName}</p>
         <p class="text-sm text-base-content/70 truncate">${message.text || "📷 Photo"}</p>
@@ -147,6 +184,10 @@ export const playNotificationSound = () => {
 
 export const isDocumentVisible = () => document.visibilityState === "visible";
 
+/** Backgrounded or another window focused — use OS notification */
+export const shouldShowSystemNotification = () =>
+  document.hidden || !document.hasFocus();
+
 const style = document.createElement("style");
 style.textContent = `
   @keyframes slideInRight {
@@ -159,4 +200,7 @@ style.textContent = `
   }
   .in-app-notification { font-family: inherit; }
 `;
-document.head.appendChild(style);
+if (!document.getElementById("in-app-notification-styles")) {
+  style.id = "in-app-notification-styles";
+  document.head.appendChild(style);
+}

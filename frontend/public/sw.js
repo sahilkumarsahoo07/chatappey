@@ -77,9 +77,14 @@ self.addEventListener("notificationclick", (event) => {
         return;
       }
 
-      // App not open — open once (unavoidable cold start)
+      // App not open — open home (notification click counts as user gesture)
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        const openUrl = chatId
+          ? new URL(`/?chat=${chatId}`, self.location.origin).href
+          : groupId
+            ? new URL(`/?group=${groupId}`, self.location.origin).href
+            : urlToOpen;
+        return clients.openWindow(openUrl);
       }
     })
   );

@@ -384,8 +384,14 @@ export const useAuthStore = create((set, get) => ({
     },
 
     connectSocket: () => {
-        const { authUser } = get();
-        if (!authUser || get().socket?.connected) return;
+        const { authUser, socket: existing } = get();
+        if (!authUser) return;
+        if (existing?.connected) return;
+
+        if (existing) {
+            existing.removeAllListeners();
+            existing.disconnect();
+        }
 
         const socket = io(BASE_URL, {
             query: {
@@ -395,14 +401,15 @@ export const useAuthStore = create((set, get) => ({
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             reconnectionAttempts: Infinity,
+            transports: ["websocket", "polling"],
         });
         socket.connect();
 
         set({ socket: socket });
 
-        // Handle reconnection
         socket.on("connect", () => {
             console.log("Socket connected successfully");
+            get().syncLiveConversations?.();
         });
 
         socket.on("disconnect", () => {
@@ -415,22 +422,12 @@ export const useAuthStore = create((set, get) => ({
             import("./useChatStore").then(({ useChatStore }) => {
                 useChatStore.getState().unsubscribeFromMessages();
                 useChatStore.getState().subscribeToMessages();
-                const selectedUser = useChatStore.getState().selectedUser;
-                if (selectedUser) {
-                    const msgs = useChatStore.getState().messages;
-                    const newest = msgs[msgs.length - 1]?.createdAt;
-                    if (newest) {
-                        useChatStore.getState().getMessages(selectedUser._id, {
-                            after: newest,
-                            background: true,
-                        });
-                    } else {
-                        useChatStore.getState().getMessages(selectedUser._id);
-                    }
-                }
-                useChatStore.getState().refreshUsers();
             });
-            // Soft-refresh status feed after reconnect
+            import("./useGroupStore").then(({ useGroupStore }) => {
+                useGroupStore.getState().unsubscribeFromGroupEvents();
+                useGroupStore.getState().subscribeToGroupEvents();
+            });
+            get().syncLiveConversations?.();
             import("./useStatusStore").then(({ useStatusStore }) => {
                 useStatusStore.getState().subscribeToStatusEvents();
                 useStatusStore.getState().loadFeed(true);
@@ -660,8 +657,51 @@ export const useAuthStore = create((set, get) => ({
         });
 
     },
+
+    syncLiveConversations: async () => {
+        try {
+            const [{ useChatStore }, { useGroupStore }] = await Promise.all([
+                import("./useChatStore"),
+                import("./useGroupStore"),
+            ]);
+            const chat = useChatStore.getState();
+            const group = useGroupStore.getState();
+
+            await Promise.all([chat.refreshUsers(), group.getGroups()]);
+
+            const selectedUser = chat.selectedUser;
+            if (selectedUser) {
+                const msgs = chat.messages;
+                const newest = msgs[msgs.length - 1]?.createdAt;
+                if (newest) {
+                    await chat.getMessages(selectedUser._id, { after: newest, background: true });
+                } else {
+                    await chat.getMessages(selectedUser._id, { background: true });
+                }
+            }
+
+            const selectedGroup = group.selectedGroup;
+            if (selectedGroup) {
+                const msgs = group.groupMessages;
+                const newest = msgs[msgs.length - 1]?.createdAt;
+                if (newest) {
+                    await group.getGroupMessages(selectedGroup._id, { after: newest, background: true });
+                } else {
+                    await group.getGroupMessages(selectedGroup._id, { background: true });
+                }
+            }
+        } catch (err) {
+            console.warn("syncLiveConversations failed:", err);
+        }
+    },
+
     disconnectSocket: () => {
-        if (get().socket?.connected) get().socket.disconnect();
+        const socket = get().socket;
+        if (socket) {
+            socket.removeAllListeners();
+            socket.disconnect();
+            set({ socket: null });
+        }
     },
 
     // Admin Actions

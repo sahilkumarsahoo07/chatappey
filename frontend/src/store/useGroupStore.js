@@ -2,7 +2,7 @@ import { create } from "zustand";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
-import { showBrowserNotification, playNotificationSound, showInAppNotification } from "../lib/notifications";
+import { showBrowserNotification, playNotificationSound, showInAppNotification, shouldShowSystemNotification } from "../lib/notifications";
 import {
   hydrateThread,
   writeThread,
@@ -53,6 +53,7 @@ export const useGroupStore = create((set, get) => ({
     isGroupsLoading: false,
     isGroupMessagesLoading: false,
     typingUsers: [], // Array of {userId, userName} objects for group typing
+    _isSubscribedToGroupEvents: false,
 
     // Get all groups for current user
     getGroups: async () => {
@@ -483,6 +484,8 @@ export const useGroupStore = create((set, get) => ({
     subscribeToGroupEvents: () => {
         const socket = useAuthStore.getState().socket;
         if (!socket) return;
+        if (get()._isSubscribedToGroupEvents) return;
+        set({ _isSubscribedToGroupEvents: true });
 
         // New group created (for other members when they're added)
         socket.on("group:created", (newGroup) => {
@@ -607,13 +610,8 @@ export const useGroupStore = create((set, get) => ({
 
             // If this is in the currently selected group, add the message
             if (selectedGroup?._id === groupId) {
-                // CRITICAL FIX: Always check for duplicate by ID first
                 const alreadyExists = groupMessages.some(m => m._id === message._id);
-                if (alreadyExists) {
-                    // Message already in list, don't add duplicate
-                    return;
-                }
-
+                if (!alreadyExists) {
                 // If it's my message, try to match it with an optimistic one to prevent flickering/duplicates
                 if (!isFromOther && !isSystem) {
                     const optimisticMsg = groupMessages.find(m =>
@@ -636,22 +634,25 @@ export const useGroupStore = create((set, get) => ({
                     set({ groupMessages: next });
                     persistGroupThread(groupId, next, get().groupMessagesMeta);
                 }
+                }
             }
 
             // Notification Logic for Group Messages
-            const isWindowFocused = document.hasFocus() && !document.hidden;
-            const isGroupActive = selectedGroup?._id === groupId;
+            const isGroupActive =
+              selectedGroup?._id === groupId && !shouldShowSystemNotification();
 
             if (isFromOther && !isSystem) {
                 const group = groups.find(g => g._id === groupId) || selectedGroup;
                 if (!group?.isMuted) {
                 playNotificationSound();
 
-                if (!isWindowFocused) {
+                const body = `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}`;
+
+                if (shouldShowSystemNotification()) {
                     const g = group || { name: "New Group Message" };
                     showBrowserNotification(g.name || "New Group Message", {
-                        body: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}`,
-                        icon: message.senderId?.profilePic || g.image || "/avatar.png",
+                        body,
+                        icon: "/avatar.png",
                         tag: `group-${groupId}`,
                         requireInteraction: false,
                         silent: false,
@@ -664,15 +665,18 @@ export const useGroupStore = create((set, get) => ({
                             members: g.members,
                         },
                     });
-                } else if (!isGroupActive) {
+                }
+
+                if (!isGroupActive) {
                     const g = group || { name: "New Group Message" };
                     showInAppNotification(
-                        { text: `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}` },
+                        { text: body },
                         { fullName: g.name, profilePic: g.image || "/avatar.png" },
                         () => {
                             get().setSelectedGroup(g);
                         }
                     );
+                    toast(`💬 ${g.name}: ${body}`, { duration: 5000 });
                 }
                 }
             }
@@ -772,6 +776,7 @@ export const useGroupStore = create((set, get) => ({
             socket.off("group:typing");
             socket.off("group:stopTyping");
         }
+        set({ _isSubscribedToGroupEvents: false });
     },
 
     // Set selected group

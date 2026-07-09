@@ -17,7 +17,7 @@ const Sidebar = () => {
     const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading, refreshUsers, deleteChatForMe } = useChatStore();
     const { onlineUsers = [], authUser } = useAuthStore();
     const { theme } = useThemeStore();
-    const { groups, selectedGroup, setSelectedGroup, getGroups, subscribeToGroupEvents, unsubscribeFromGroupEvents } = useGroupStore();
+    const { groups, selectedGroup, setSelectedGroup, getGroups } = useGroupStore();
     const openCreateStatus = useStatusStore((s) => s.openCreate);
     const openStatusViewer = useStatusStore((s) => s.openViewer);
     const statusFeed = useStatusStore((s) => s.feed);
@@ -59,12 +59,6 @@ const Sidebar = () => {
         if (selectedUser) setActiveTab("chats");
         else if (selectedGroup) setActiveTab("groups");
     }, [selectedUser?._id, selectedGroup?._id]);
-
-    // Subscribe to group events
-    useEffect(() => {
-        subscribeToGroupEvents();
-        return () => unsubscribeFromGroupEvents();
-    }, [subscribeToGroupEvents, unsubscribeFromGroupEvents]);
 
     // Listen for new messages from ANY user to update the chat list
     useEffect(() => {

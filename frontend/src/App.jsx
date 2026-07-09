@@ -23,17 +23,18 @@ import PrivacyPage from './pages/PrivacyPage';
 import AdminPage from './pages/AdminPage';
 import { useAuthStore } from './store/useAuthStore';
 import { useChatStore } from './store/useChatStore';
+import { useGroupStore } from './store/useGroupStore';
 
 import { Toaster } from 'react-hot-toast';
 import { useThemeStore } from './store/useThemeStore';
 import Otp from './components/Otp';
-import { requestNotificationPermission } from './lib/notifications';
 import {
   applyConversationSwitch,
   flushPendingNotificationOpen,
 } from './lib/openFromNotification';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
+import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 import { CreateStatusModal } from './components/status';
 import { useStatusStore } from './store/useStatusStore';
 import { useVisualViewportKeyboard } from './hooks/useVisualViewportKeyboard';
@@ -46,6 +47,7 @@ function App() {
   const socket = useAuthStore((state) => state.socket);
   const { theme } = useThemeStore();
   const { subscribeToMessages, unsubscribeFromMessages } = useChatStore();
+  const { subscribeToGroupEvents, unsubscribeFromGroupEvents } = useGroupStore();
   const subscribeToStatusEvents = useStatusStore((s) => s.subscribeToStatusEvents);
   const unsubscribeFromStatusEvents = useStatusStore((s) => s.unsubscribeFromStatusEvents);
   const navigate = useNavigate();
@@ -84,6 +86,30 @@ function App() {
     }
   }, [authUser, socket, subscribeToMessages, unsubscribeFromMessages]);
 
+  // Group socket events — must stay active when Sidebar unmounts (mobile in-chat)
+  useEffect(() => {
+    if (authUser && socket) {
+      subscribeToGroupEvents();
+      return () => unsubscribeFromGroupEvents();
+    }
+  }, [authUser, socket, subscribeToGroupEvents, unsubscribeFromGroupEvents]);
+
+  // Sync missed messages when tab regains focus
+  useEffect(() => {
+    if (!authUser || !socket) return;
+    const sync = () => {
+      if (document.visibilityState === "visible") {
+        useAuthStore.getState().syncLiveConversations?.();
+      }
+    };
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, [authUser, socket]);
+
   // Live status updates (create / delete / view) without page refresh
   useEffect(() => {
     if (authUser && socket) {
@@ -104,13 +130,6 @@ function App() {
       checkAuth();
     }
   }, [checkAuth]);
-
-  // Request notification permission when user is authenticated
-  useEffect(() => {
-    if (authUser) {
-      requestNotificationPermission();
-    }
-  }, [authUser]);
 
   // Soft navigate home + open chat (no full page refresh)
   useEffect(() => {
@@ -184,6 +203,7 @@ function App() {
       {/* Call Components */}
       <IncomingCallNotification />
       <CallWindow />
+      {authUser && <NotificationPermissionBanner />}
 
       {/* WhatsApp-style Status */}
       {authUser && (
