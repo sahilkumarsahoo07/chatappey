@@ -133,8 +133,12 @@ export const logout = async (req, res) => {
             io.emit("user-logged-out", { userId, lastLogout: logoutTime });
         }
 
-        // res.json({ message: userId });
-        res.cookie("jwt", "", { maxAge: 0 });
+        res.cookie("jwt", "", { 
+            maxAge: 0,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+        });
         res.status(200).json({ message: "Logged out successfully" });
     } catch (error) {
         console.log("Error in logout controller", error.message);
@@ -156,7 +160,12 @@ export const logoutGlobal = async (req, res) => {
         io.emit("user-logged-out", { userId, lastLogout: logoutTime });
         io.emit("global-logout", { userId });
 
-        res.cookie("jwt", "", { maxAge: 0 });
+        res.cookie("jwt", "", { 
+            maxAge: 0,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+        });
         res.status(200).json({ message: "Logged out from all devices successfully" });
     } catch (error) {
         console.log("Error in logoutGlobal controller", error.message);
