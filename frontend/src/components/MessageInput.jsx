@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2 } from "lucide-react";
+import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2, Camera } from "lucide-react";
 import toast from "react-hot-toast";
 import { chatFeaturesApi, MAX_VIDEO_MB, VIDEO_ACCEPT } from "../lib/chatFeaturesApi";
 import EmojiPickerComponent from "./EmojiPickerComponent";
@@ -752,49 +752,23 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
                     {/* Main Input Row */}
                     <form onSubmit={handleFormSubmit} className="flex items-end gap-2 min-w-0 w-full max-w-full">
-
-                        {/* Attachment Button */}
-                        <div className="relative" ref={attachmentMenuRef}>
-                            <button
-                                type="button"
-                                onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                                className={`p-3 rounded-full transition-all ${showAttachmentMenu ? 'bg-primary text-white rotate-45' : 'bg-base-200 text-base-content/60 hover:bg-base-300'}`}
-                            >
-                                <Paperclip className="w-5 h-5" />
-                            </button>
-
-                            {/* Attachment Menu */}
-                            {showAttachmentMenu && (
-                                <div className="absolute bottom-14 left-0 bg-base-100 p-2 rounded-2xl shadow-xl border border-base-300 flex flex-col gap-1 min-w-[150px] animate-scale-in z-50">
-                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-green-100 text-green-600 rounded-lg"><Image className="w-4 h-4" /></span> Photos
-                                    </button>
-                                    <button type="button" onClick={() => videoInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-violet-100 text-violet-600 rounded-lg"><Film className="w-4 h-4" /></span> Video
-                                    </button>
-                                    <button type="button" onClick={() => docInputRef.current?.click()} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><FileText className="w-4 h-4" /></span> Document
-                                    </button>
-                                    <button type="button" onClick={() => { setShowPollCreator(true); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-yellow-100 text-yellow-600 rounded-lg"><BarChart2 className="w-4 h-4" /></span> Poll
-                                    </button>
-                                    <button type="button" onClick={() => { setShowScheduleModal(true); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
-                                        <span className="p-1.5 bg-purple-100 text-purple-600 rounded-lg"><Calendar className="w-4 h-4" /></span> Schedule
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
                         {/* Hidden Inputs */}
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageChange} />
                         <input type="file" accept={VIDEO_ACCEPT} className="hidden" ref={videoInputRef} onChange={handleVideoChange} />
                         <input type="file" className="hidden" ref={docInputRef} onChange={handleFileChange} />
 
-                        {/* Text Area */}
-                        <div className="flex-1 min-w-0 flex items-center gap-2 bg-base-200/80 hover:bg-base-200 rounded-3xl px-4 py-2 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+                        {/* WhatsApp-Style Input Capsule */}
+                        <div className="flex-grow flex-shrink min-w-0 flex items-end bg-base-200/90 hover:bg-base-200 rounded-[24px] px-2 py-1 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+                            {/* Emoji / Gif Pickers Group (Left) */}
+                            <div className="flex items-center shrink-0 self-center">
+                                <EmojiPickerComponent onEmojiSelect={handleEmojiSelect} />
+                                <GifPicker onGifSelect={handleGifSelect} />
+                            </div>
+
+                            {/* Text Area (Middle) */}
                             <textarea
                                 ref={textareaRef}
-                                className="message-textarea flex-1 bg-transparent py-2 outline-none resize-none min-h-[24px] max-h-[120px] text-base placeholder:text-base-content/40 custom-scrollbar"
+                                className="message-textarea flex-1 bg-transparent py-1.5 px-2 outline-none resize-none min-h-[20px] max-h-[120px] text-base placeholder:text-base-content/40 custom-scrollbar"
                                 placeholder={isRecording ? "Recording..." : "Type a message..."}
                                 value={text}
                                 onChange={handleTextChange}
@@ -803,17 +777,59 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 rows={1}
                                 disabled={isRecording}
                             />
-                            <div className="flex items-center gap-1">
-                                <EmojiPickerComponent onEmojiSelect={handleEmojiSelect} />
-                                <GifPicker onGifSelect={handleGifSelect} />
+
+                            {/* Attachment Actions (Right) */}
+                            <div className="flex items-center shrink-0 self-center gap-0.5">
+                                {/* Attachment (Paperclip) */}
+                                <div className="relative" ref={attachmentMenuRef}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                                        className={`p-2 rounded-full transition-all text-base-content/60 hover:bg-base-300 hover:text-base-content ${showAttachmentMenu ? 'rotate-45 text-primary bg-primary/10' : ''}`}
+                                        title="Attach file"
+                                    >
+                                        <Paperclip className="w-5 h-5" />
+                                    </button>
+
+                                    {/* Attachment Menu */}
+                                    {showAttachmentMenu && (
+                                        <div className="absolute bottom-12 right-0 bg-base-100 p-2 rounded-2xl shadow-xl border border-base-300 flex flex-col gap-1 min-w-[150px] animate-scale-in z-50">
+                                            <button type="button" onClick={() => { fileInputRef.current?.click(); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                                <span className="p-1.5 bg-green-100 text-green-600 rounded-lg"><Image className="w-4 h-4" /></span> Photos
+                                            </button>
+                                            <button type="button" onClick={() => { videoInputRef.current?.click(); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                                <span className="p-1.5 bg-violet-100 text-violet-600 rounded-lg"><Film className="w-4 h-4" /></span> Video
+                                            </button>
+                                            <button type="button" onClick={() => { docInputRef.current?.click(); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                                <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><FileText className="w-4 h-4" /></span> Document
+                                            </button>
+                                            <button type="button" onClick={() => { setShowPollCreator(true); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                                <span className="p-1.5 bg-yellow-100 text-yellow-600 rounded-lg"><BarChart2 className="w-4 h-4" /></span> Poll
+                                            </button>
+                                            <button type="button" onClick={() => { setShowScheduleModal(true); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
+                                                <span className="p-1.5 bg-purple-100 text-purple-600 rounded-lg"><Calendar className="w-4 h-4" /></span> Schedule
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Camera Instant Button */}
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-2 rounded-full text-base-content/60 hover:bg-base-300 hover:text-base-content"
+                                    title="Take photo"
+                                >
+                                    <Camera className="w-5 h-5" />
+                                </button>
                             </div>
                         </div>
 
-                        {/* Mic / Send Button */}
+                        {/* Mic / Send Button (Outside capsule) */}
                         {text.trim() || imagePreview || gifPreview || filePreview || audioBlob || videoPreview ? (
                             <button
                                 type="submit"
-                                className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center bg-primary text-primary-content shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
+                                className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-primary text-primary-content shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
                             >
                                 <Send className="w-5 h-5" />
                             </button>
@@ -821,9 +837,9 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                             <button
                                 type="button"
                                 onClick={isRecording ? stopRecording : startRecording}
-                                className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecording ? 'bg-error text-white animate-pulse' : 'bg-base-200 text-base-content hover:bg-base-300'}`}
+                                className={`flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecording ? 'bg-error text-white animate-pulse' : 'bg-primary text-primary-content hover:scale-105 active:scale-95'}`}
                             >
-                                {isRecording ? <StopCircle className="w-6 h-6" /> : <Mic className="w-5 h-5" />}
+                                {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                             </button>
                         )}
                     </form>

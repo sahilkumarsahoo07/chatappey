@@ -323,12 +323,7 @@
 
     .messages-container {
         padding: 12px !important;
-        padding-bottom: calc(
-            var(--composer-height, 76px) +
-            var(--keyboard-inset, 0px) +
-            1rem +
-            env(safe-area-inset-bottom, 0px)
-        ) !important;
+        padding-bottom: 24px !important;
         overflow-x: hidden !important;
     }
 

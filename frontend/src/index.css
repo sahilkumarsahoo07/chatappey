@@ -168,7 +168,11 @@ html.keyboard-open body {
     overscroll-behavior-y: none;
 }
 /* Chat column: vertical scroll only */
-.chat-shell,
+.chat-shell {
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+    max-width: 100%;
+}
 .messages-container {
     overflow-x: hidden !important;
     overscroll-behavior-x: none;
@@ -198,13 +202,23 @@ html.keyboard-open body {
     }
 }
 @media (max-width: 767px) {
+    .chat-shell {
+        height: var(--visual-viewport-height, 100dvh) !important;
+        max-height: var(--visual-viewport-height, 100dvh) !important;
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100% !important;
+        max-width: 100vw !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        z-index: 50;
+    }
     .messages-container {
-        padding-bottom: calc(
-            var(--composer-height, 76px) +
-            var(--keyboard-inset, 0px) +
-            1rem +
-            env(safe-area-inset-bottom, 0px)
-        ) !important;
+        padding-bottom: 24px !important;
         -webkit-overflow-scrolling: touch;
     }
     html.keyboard-open .messages-container {

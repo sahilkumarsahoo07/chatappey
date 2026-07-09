@@ -40,11 +40,12 @@ const EmojiPickerComponent = ({ onEmojiSelect }) => {
             </button>
 
             {showPicker && (
-                <div className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border border-base-300 w-[350px] emoji-picker-container">
+                <div className="absolute bottom-full left-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border border-base-300 w-[320px] emoji-picker-container">
                     <EmojiPicker
                         onEmojiClick={handleEmojiClick}
                         width="100%"
-                        height={300}
+                        height={320}
+                        searchDisabled={true}
                         previewConfig={{
                             showPreview: false,
                         }}

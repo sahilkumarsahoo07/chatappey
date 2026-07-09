@@ -13,20 +13,19 @@
     touch-action: manipulation;
 }
 
-/* Mobile: fixed composer above keyboard (WhatsApp-style) */
+/* Mobile: composer flows naturally at bottom of visual viewport resized shell */
 @media (max-width: 767px) {
     .message-input-container {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        position: relative;
+        left: auto;
+        right: auto;
+        bottom: auto;
         width: 100%;
-        max-width: 100vw;
-        z-index: 70;
-        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-        transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
-        box-shadow: 0 -2px 16px oklch(var(--bc) / 0.06);
-        will-change: transform;
+        max-width: 100%;
+        z-index: 40;
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+        transform: none !important;
+        box-shadow: 0 -2px 10px oklch(var(--bc) / 0.05);
         overflow-x: hidden;
         box-sizing: border-box;
     }
