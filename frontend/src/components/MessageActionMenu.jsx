@@ -205,17 +205,15 @@ export const MessageMenuTrigger = ({ isMine, onOpen, className = "" }) => (
       e.stopPropagation();
       onOpen(e.currentTarget);
     }}
-    className={`msg-menu-trigger absolute top-1/2 -translate-y-1/2 z-10
+    className={`msg-menu-trigger ${isMine ? "msg-menu-trigger--mine" : "msg-menu-trigger--theirs"}
       w-7 h-7 rounded-full
       items-center justify-center
       bg-base-200/90 backdrop-blur-sm
       border border-base-300/60 shadow-sm
       text-base-content/50 hover:text-base-content hover:bg-base-200
-      /* Mobile = WhatsApp gestures (swipe/long-press). Desktop = ⋮ on hover */
       hidden md:flex
       md:opacity-0 md:group-hover:opacity-100
-      transition-all duration-150 active:scale-95
-      ${isMine ? "left-[-32px]" : "right-[-32px]"}
+      transition-opacity duration-150 active:scale-95
       ${className}`}
   >
     <MoreVertical className="w-4 h-4" />

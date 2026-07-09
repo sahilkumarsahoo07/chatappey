@@ -3,11 +3,53 @@ import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
 import { showBrowserNotification, playNotificationSound, showInAppNotification } from "../lib/notifications";
+import {
+  hydrateThread,
+  writeThread,
+  writeMemoryThread,
+  readMemoryThread,
+  mergeMessages,
+  removeThread,
+} from "../lib/messageCache";
+
+const PAGE_SIZE = 60;
+
+const persistGroupThread = (groupId, messages, meta = {}) => {
+  if (!groupId || !messages?.length) return;
+  const payload = {
+    messages,
+    hasMoreOlder: meta.hasMoreOlder ?? false,
+    oldestCachedAt: messages[0]?.createdAt,
+    newestAt: messages[messages.length - 1]?.createdAt,
+    syncedAt: Date.now(),
+  };
+  writeMemoryThread("group", groupId, payload);
+  writeThread("group", groupId, payload).catch(() => {});
+};
+
+const parseMessagesResponse = (data) => {
+  if (Array.isArray(data)) {
+    return {
+      messages: data,
+      hasMore: false,
+      oldestCursor: data[0]?.createdAt || null,
+      newestCursor: data[data.length - 1]?.createdAt || null,
+    };
+  }
+  return {
+    messages: data?.messages || [],
+    hasMore: Boolean(data?.hasMore),
+    oldestCursor: data?.oldestCursor || null,
+    newestCursor: data?.newestCursor || null,
+  };
+};
 
 export const useGroupStore = create((set, get) => ({
     groups: [],
     selectedGroup: null,
     groupMessages: [],
+    groupMessagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
+    isLoadingOlderGroup: false,
     isGroupsLoading: false,
     isGroupMessagesLoading: false,
     typingUsers: [], // Array of {userId, userName} objects for group typing
@@ -183,19 +225,87 @@ export const useGroupStore = create((set, get) => ({
     },
 
     // Get group messages
-    getGroupMessages: async (groupId) => {
-        set({ isGroupMessagesLoading: true });
-        try {
-            const res = await axiosInstance.get(`/groups/${groupId}/messages`);
-            set({ groupMessages: res.data });
+    getGroupMessages: async (groupId, options = {}) => {
+        if (!groupId) return;
 
-            // Mark messages as read
-            get().markGroupMessagesAsRead(groupId);
-        } catch (error) {
-            toast.error(error.response?.data?.error || "Failed to load messages");
-        } finally {
-            set({ isGroupMessagesLoading: false });
+        const { before, after, background = false } = options;
+        const isInitial = !before && !after;
+        const isOlder = Boolean(before);
+        const isDelta = Boolean(after);
+
+        if (isInitial && !background) {
+            const hydrated = await hydrateThread("group", groupId);
+            if (hydrated?.messages?.length) {
+                set({
+                    groupMessages: hydrated.messages,
+                    groupMessagesMeta: {
+                        hasMoreOlder: hydrated.hasMoreOlder ?? true,
+                        isSyncing: true,
+                        oldestCursor: hydrated.oldestCachedAt,
+                        newestCursor: hydrated.newestAt,
+                    },
+                    isGroupMessagesLoading: false,
+                });
+            } else if (!get().groupMessages.length) {
+                set({ isGroupMessagesLoading: true });
+            }
         }
+
+        if (isOlder) set({ isLoadingOlderGroup: true });
+
+        try {
+            const params = { limit: PAGE_SIZE };
+            if (before) params.before = before;
+            if (after) params.after = after;
+
+            const res = await axiosInstance.get(`/groups/${groupId}/messages`, { params });
+            const { messages: incoming, hasMore, oldestCursor, newestCursor } =
+                parseMessagesResponse(res.data);
+
+            let nextMessages;
+            if (isOlder || isDelta) {
+                nextMessages = mergeMessages(get().groupMessages, incoming);
+            } else {
+                nextMessages = incoming;
+            }
+
+            const meta = {
+                hasMoreOlder: hasMore,
+                isSyncing: false,
+                oldestCursor,
+                newestCursor,
+            };
+
+            set({
+                groupMessages: nextMessages,
+                groupMessagesMeta: meta,
+                isGroupMessagesLoading: false,
+                isLoadingOlderGroup: false,
+            });
+
+            persistGroupThread(groupId, nextMessages, { hasMoreOlder: hasMore });
+
+            if (isInitial && !background) {
+                get().markGroupMessagesAsRead(groupId);
+            }
+        } catch (error) {
+            set({
+                isGroupMessagesLoading: false,
+                isLoadingOlderGroup: false,
+                groupMessagesMeta: { ...get().groupMessagesMeta, isSyncing: false },
+            });
+            if (!background && get().groupMessages.length === 0) {
+                toast.error(error.response?.data?.error || "Failed to load messages");
+            }
+        }
+    },
+
+    loadOlderGroupMessages: async () => {
+        const { selectedGroup, groupMessages, groupMessagesMeta, isLoadingOlderGroup } = get();
+        if (!selectedGroup || isLoadingOlderGroup || !groupMessagesMeta?.hasMoreOlder) return;
+        const oldest = groupMessages[0]?.createdAt || groupMessagesMeta.oldestCursor;
+        if (!oldest) return;
+        await get().getGroupMessages(selectedGroup._id, { before: oldest, background: true });
     },
 
     // Send message to group (optionally to a different group for forwarding)
@@ -513,17 +623,18 @@ export const useGroupStore = create((set, get) => ({
                     );
 
                     if (optimisticMsg) {
-                        // Replace optimistic with real message
-                        set({
-                            groupMessages: groupMessages.map(m => m._id === optimisticMsg._id ? message : m)
-                        });
+                        const next = groupMessages.map(m => m._id === optimisticMsg._id ? message : m);
+                        set({ groupMessages: next });
+                        persistGroupThread(groupId, next, get().groupMessagesMeta);
                     } else {
-                        // No optimistic message found, add it
-                        set({ groupMessages: [...groupMessages, message] });
+                        const next = [...groupMessages, message];
+                        set({ groupMessages: next });
+                        persistGroupThread(groupId, next, get().groupMessagesMeta);
                     }
                 } else {
-                    // System or other's message - add it
-                    set({ groupMessages: [...groupMessages, message] });
+                    const next = [...groupMessages, message];
+                    set({ groupMessages: next });
+                    persistGroupThread(groupId, next, get().groupMessagesMeta);
                 }
             }
 
@@ -665,8 +776,34 @@ export const useGroupStore = create((set, get) => ({
 
     // Set selected group
     setSelectedGroup: (group) => {
-        if (group && (!get().selectedGroup || get().selectedGroup._id !== group._id)) {
-            set({ selectedGroup: group, groupMessages: [], typingUsers: [] });
+        const current = get().selectedGroup;
+        const { groupMessages, groupMessagesMeta } = get();
+
+        if (current?._id && groupMessages.length) {
+            writeMemoryThread("group", current._id, {
+                messages: groupMessages,
+                hasMoreOlder: groupMessagesMeta?.hasMoreOlder,
+                oldestCachedAt: groupMessages[0]?.createdAt,
+                newestAt: groupMessages[groupMessages.length - 1]?.createdAt,
+            });
+        }
+
+        if (group && (!current || current._id !== group._id)) {
+            const mem = readMemoryThread("group", group._id);
+            set({
+                selectedGroup: group,
+                typingUsers: [],
+                groupMessages: mem?.messages || [],
+                groupMessagesMeta: mem
+                    ? {
+                          hasMoreOlder: mem.hasMoreOlder ?? true,
+                          isSyncing: false,
+                          oldestCursor: mem.oldestCachedAt,
+                          newestCursor: mem.newestAt,
+                      }
+                    : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
+                isGroupMessagesLoading: !mem?.messages?.length,
+            });
         } else {
             set({ selectedGroup: group });
         }

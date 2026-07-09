@@ -37,6 +37,7 @@ import CallWindow from './components/CallWindow';
 import { CreateStatusModal } from './components/status';
 import { useStatusStore } from './store/useStatusStore';
 import { useVisualViewportKeyboard } from './hooks/useVisualViewportKeyboard';
+import { useComposerLayout } from './hooks/useComposerLayout';
 
 const StatusViewer = lazy(() => import('./components/status/StatusViewer'));
 
@@ -53,6 +54,7 @@ function App() {
 
   // Global keyboard inset for composer docking + bottom-nav hide
   useVisualViewportKeyboard();
+  useComposerLayout();
 
   // Network monitoring + offline queue flush
   useEffect(() => {

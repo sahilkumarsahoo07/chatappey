@@ -1,10 +1,11 @@
 import { Bell, BellOff } from "lucide-react";
+import { createPortal } from "react-dom";
 
 export default function MuteOptionsSheet({ open, onClose, isMuted, onMute, onUnmute }) {
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[180] flex items-end justify-center" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40" />
       <div
         className="relative w-full max-w-lg bg-base-100 rounded-t-3xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
@@ -38,6 +39,7 @@ export default function MuteOptionsSheet({ open, onClose, isMuted, onMute, onUnm
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

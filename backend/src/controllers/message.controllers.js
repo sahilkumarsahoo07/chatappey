@@ -225,49 +225,85 @@ export const getUsersForSidebar = async (req, res) => {
     }
 };
 
+const buildDmMessageFilter = (myId, userToChatId) => ({
+    $and: [
+        {
+            $or: [
+                { senderId: myId, receiverId: userToChatId },
+                { senderId: userToChatId, receiverId: myId },
+            ],
+        },
+        {
+            $or: [
+                { status: { $ne: "scheduled" } },
+                { senderId: myId, status: "scheduled" },
+            ],
+        },
+        {
+            $or: [
+                { scheduledFor: { $exists: false } },
+                { scheduledFor: { $lte: new Date() } },
+                { senderId: myId },
+            ],
+        },
+        { deletedFor: { $nin: [myId] } },
+    ],
+});
+
 export const getMessages = async (req, res) => {
     try {
         const { id: userToChatId } = req.params;
         const myId = req.user._id;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 60, 1), 100);
+        const before = req.query.before ? new Date(req.query.before) : null;
+        const after = req.query.after ? new Date(req.query.after) : null;
 
-        const messages = await Message.find({
-            $and: [
-                {
-                    $or: [
-                        { senderId: myId, receiverId: userToChatId },
-                        { senderId: userToChatId, receiverId: myId },
-                    ]
-                },
-                {
-                    $or: [
-                        { status: { $ne: 'scheduled' } },
-                        { senderId: myId, status: 'scheduled' }
-                    ]
-                },
-                // Additional check: even if status is not 'scheduled',
-                // don't show messages with future scheduledFor times to receiver
-                {
-                    $or: [
-                        { scheduledFor: { $exists: false } }, // Not a scheduled message
-                        { scheduledFor: { $lte: new Date() } }, // Scheduled time has passed
-                        { senderId: myId } // I'm the sender, so I can see my own scheduled messages
-                    ]
-                },
-                // Hide chats deleted for me
-                { deletedFor: { $nin: [myId] } }
-            ]
-        });
+        const baseFilter = buildDmMessageFilter(myId, userToChatId);
+        const dateFilter = {};
 
-        // Log any scheduled messages found
-        const scheduledMessages = messages.filter(m => m.status === 'scheduled');
+        if (after && !isNaN(after.getTime())) {
+            dateFilter.createdAt = { $gt: after };
+        } else if (before && !isNaN(before.getTime())) {
+            dateFilter.createdAt = { $lt: before };
+        }
+
+        const query =
+            Object.keys(dateFilter).length > 0
+                ? { $and: [baseFilter, dateFilter] }
+                : baseFilter;
+
+        let messages;
+        let hasMore = false;
+
+        if (after && !isNaN(after.getTime())) {
+            messages = await Message.find(query).sort({ createdAt: 1 }).limit(limit);
+            hasMore = messages.length === limit;
+        } else if (before && !isNaN(before.getTime())) {
+            const batch = await Message.find(query).sort({ createdAt: -1 }).limit(limit);
+            hasMore = batch.length === limit;
+            messages = batch.reverse();
+        } else {
+            const batch = await Message.find(query).sort({ createdAt: -1 }).limit(limit);
+            hasMore = batch.length === limit;
+            messages = batch.reverse();
+        }
+
+        const scheduledMessages = messages.filter((m) => m.status === "scheduled");
         if (scheduledMessages.length > 0) {
             console.log("WARNING: Found scheduled messages in results:");
-            scheduledMessages.forEach(m => {
-                console.log(`  - ID: ${m._id}, status: ${m.status}, scheduledFor: ${m.scheduledFor}, senderId: ${m.senderId}`);
+            scheduledMessages.forEach((m) => {
+                console.log(
+                    `  - ID: ${m._id}, status: ${m.status}, scheduledFor: ${m.scheduledFor}, senderId: ${m.senderId}`
+                );
             });
         }
 
-        res.status(200).json(messages);
+        res.status(200).json({
+            messages,
+            hasMore,
+            oldestCursor: messages[0]?.createdAt || null,
+            newestCursor: messages[messages.length - 1]?.createdAt || null,
+        });
     } catch (error) {
         console.log("Error in getMessages controller: ", error.message);
         res.status(500).json({ error: "Internal server error" });

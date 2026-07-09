@@ -10,6 +10,8 @@ const wallpaperSchema = new mongoose.Schema(
     value: { type: String, default: "default" },
     blur: { type: Number, default: 0, min: 0, max: 20 },
     brightness: { type: Number, default: 100, min: 40, max: 140 },
+    doodle: { type: Boolean, default: false },
+    doodleTheme: { type: String, enum: ["light", "dark"], default: "light" },
   },
   { _id: false }
 );

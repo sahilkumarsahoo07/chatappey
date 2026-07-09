@@ -1,6 +1,18 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
+html,
+body {
+    overflow-x: hidden;
+    max-width: 100%;
+    overscroll-behavior-x: none;
+}
+
+#root {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
 @plugin "daisyui" {
     themes:
         light --default,
@@ -155,12 +167,51 @@ html.keyboard-open nav.md\:hidden.fixed {
 html.keyboard-open body {
     overscroll-behavior-y: none;
 }
-/* Messages scroll above composer + keyboard on mobile */
+/* Chat column: vertical scroll only */
+.chat-shell,
+.messages-container {
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+    max-width: 100%;
+}
+
+/* Message ⋮ menu — vertically centered beside bubble (desktop hover) */
+.msg-menu-trigger {
+    touch-action: manipulation;
+    position: absolute;
+    top: 50%;
+    margin-top: -0.875rem;
+    z-index: 20;
+}
+
+.msg-menu-trigger--theirs {
+    left: calc(100% + 0.375rem);
+}
+
+.msg-menu-trigger--mine {
+    right: calc(100% + 0.375rem);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .group:hover .msg-menu-trigger {
+        opacity: 1;
+    }
+}
 @media (max-width: 767px) {
     .messages-container {
         padding-bottom: calc(
-            var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px) + 0.75rem
+            var(--composer-height, 76px) +
+            var(--keyboard-inset, 0px) +
+            1rem +
+            env(safe-area-inset-bottom, 0px)
         ) !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    html.keyboard-open .messages-container {
+        animation: none;
+    }
+    html.keyboard-open .messages-container::before {
+        display: none;
     }
 }
 

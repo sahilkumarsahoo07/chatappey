@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
 import { chatFeaturesApi } from "../../lib/chatFeaturesApi";
 import VideoMessage from "./VideoMessage";
@@ -61,8 +62,8 @@ const SharedMediaPanel = memo(function SharedMediaPanel({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[180] flex items-end sm:items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full sm:max-w-lg max-h-[85vh] bg-base-100 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-base-200">
@@ -222,7 +223,8 @@ const SharedMediaPanel = memo(function SharedMediaPanel({
           />
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 });
 

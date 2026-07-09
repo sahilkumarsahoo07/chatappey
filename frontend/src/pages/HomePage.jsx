@@ -28,7 +28,7 @@ const HomePage = () => {
     return (
         // 100svh keeps shell stable when soft keyboard opens (dvh would shrink/jump)
         <div
-            className={`h-[100svh] max-h-[100svh] bg-base-200 pl-0 md:pl-20 md:pb-0 overflow-hidden ${
+            className={`h-[100svh] max-h-[100svh] bg-base-200 pl-0 md:pl-20 md:pb-0 overflow-hidden overflow-x-hidden ${
                 showBottomNavPad ? "pb-navbar" : "pb-0"
             }`}
         >

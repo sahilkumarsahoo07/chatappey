@@ -148,6 +148,11 @@ export const useAuthStore = create((set, get) => ({
             // Remove token from localStorage
             localStorage.removeItem("token");
 
+            import("../lib/messageCache").then(({ clearAllThreads, clearMemoryThreads }) => {
+                clearAllThreads();
+                clearMemoryThreads();
+            });
+
             toast.success("Logged out successfully");
             get().disconnectSocket();
         } catch (error) {
@@ -162,6 +167,11 @@ export const useAuthStore = create((set, get) => ({
 
             // Remove token from localStorage
             localStorage.removeItem("token");
+
+            import("../lib/messageCache").then(({ clearAllThreads, clearMemoryThreads }) => {
+                clearAllThreads();
+                clearMemoryThreads();
+            });
 
             toast.success("Logged out from all devices");
             get().disconnectSocket();
@@ -407,7 +417,16 @@ export const useAuthStore = create((set, get) => ({
                 useChatStore.getState().subscribeToMessages();
                 const selectedUser = useChatStore.getState().selectedUser;
                 if (selectedUser) {
-                    useChatStore.getState().getMessages(selectedUser._id);
+                    const msgs = useChatStore.getState().messages;
+                    const newest = msgs[msgs.length - 1]?.createdAt;
+                    if (newest) {
+                        useChatStore.getState().getMessages(selectedUser._id, {
+                            after: newest,
+                            background: true,
+                        });
+                    } else {
+                        useChatStore.getState().getMessages(selectedUser._id);
+                    }
                 }
                 useChatStore.getState().refreshUsers();
             });

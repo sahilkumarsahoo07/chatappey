@@ -23,6 +23,7 @@ import MessageActionMenu, {
 import SwipeableMessageBubble from "./SwipeableMessageBubble";
 import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
 import VideoMessage from "./chat/VideoMessage";
+import VirtualMessageList from "./chat/VirtualMessageList";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { resolveWallpaperStyle, getDefaultWallpaper } from "../lib/chatWallpaper";
 import DoubleTapLike from "./DoubleTapLike";
@@ -147,6 +148,9 @@ const ChatContainer = () => {
     messages,
     getMessages,
     isMessagesLoading,
+    isLoadingOlder,
+    messagesMeta,
+    loadOlderMessages,
     selectedUser,
     setSelectedUser,
     subscribeToMessages,
@@ -165,6 +169,9 @@ const ChatContainer = () => {
     messages: state.messages,
     getMessages: state.getMessages,
     isMessagesLoading: state.isMessagesLoading,
+    isLoadingOlder: state.isLoadingOlder,
+    messagesMeta: state.messagesMeta,
+    loadOlderMessages: state.loadOlderMessages,
     selectedUser: state.selectedUser,
     setSelectedUser: state.setSelectedUser,
     subscribeToMessages: state.subscribeToMessages,
@@ -247,7 +254,7 @@ const ChatContainer = () => {
     }
   }, []);
 
-  // Scroll to bottom IMMEDIATELY when messages change or typing status changes
+  // Pin to bottom instantly when opening chat or receiving at-bottom updates
   useLayoutEffect(() => {
     if (!containerRef.current) return;
 
@@ -256,14 +263,14 @@ const ChatContainer = () => {
     const isMyMessage = lastMessage?.senderId === authUser?._id;
 
     if (isNewChat) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
       isAtBottomRef.current = true;
       prevSelectedUserIdRef.current = selectedUser?._id;
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     } else if (isMyMessage || isAtBottomRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
       isAtBottomRef.current = true;
     }
-  }, [sortedMessages.length, selectedUser?._id, isTyping, authUser?._id]);
+  }, [sortedMessages.length, selectedUser?._id, sortedMessages[sortedMessages.length - 1]?._id, authUser?._id]);
 
 
   // Optimized: Check blocked status with caching
@@ -387,45 +394,18 @@ const ChatContainer = () => {
       })
     : [];
 
-  if (!selectedUser.isFriend) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <UserPlus className="w-12 h-12 mx-auto text-primary mb-4" />
-          <h3 className="text-xl font-bold mb-2">Not Friends Yet</h3>
-          <p className="text-base-content/70 mb-4">You need to be friends with {selectedUser.fullName} to send messages.</p>
-          {selectedUser.hasPendingRequest && selectedUser.pendingRequestSentByMe ? (
-            <div className="text-sm text-base-content/60">Friend request sent.</div>
-          ) : selectedUser.hasPendingRequest ? (
-            <button onClick={() => window.location.href = '/notifications'} className="btn btn-primary gap-2"><Check className="w-4 h-4" /> Accept Friend Request</button>
-          ) : (
-            <button onClick={handleSendFriendRequest} className="btn btn-primary gap-2"><UserPlus className="w-4 h-4" /> Send Friend Request</button>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const scrollToBottomKey = useMemo(() => {
+    const last = sortedMessages[sortedMessages.length - 1];
+    return `${selectedUser?._id}-${sortedMessages.length}-${last?._id || ""}`;
+  }, [selectedUser?._id, sortedMessages.length, sortedMessages[sortedMessages.length - 1]?._id]);
 
-  if (isBlocked) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <Ban className="w-12 h-12 mx-auto text-red-500 mb-4" />
-          <h3 className="text-xl font-bold mb-2">You've blocked this user</h3>
-          <button onClick={() => handelUnblockUser(selectedUser._id)} className="px-4 py-2 bg-red-500 text-white rounded-lg">Unblock User</button>
-        </div>
-      </div>
-    );
-  }
-
-  const renderedMessages = useMemo(() => {
-    return sortedMessages.map((message, index, sortedMessagesArr) => {
+  const renderMessage = useCallback((message, index) => {
       const currentDateKey = getMessageDateKey(message.createdAt);
-      const previousDateKey = index > 0 ? getMessageDateKey(sortedMessagesArr[index - 1].createdAt) : null;
+      const previousDateKey = index > 0 ? getMessageDateKey(sortedMessages[index - 1].createdAt) : null;
       const showDateSeparator = currentDateKey !== previousDateKey;
 
       return (
-        <div key={message.optimisticId || message._id}>
+        <div key={message.optimisticId || message._id} className="mb-4 max-w-full min-w-0 box-border">
           {showDateSeparator && (
             <div className="flex justify-center my-4">
               <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">{formatDateSeparator(message.createdAt)}</div>
@@ -436,10 +416,10 @@ const ChatContainer = () => {
             <div className="text-center text-xs opacity-50 my-1">🕒 Scheduled for {new Date(message.scheduledFor || 0).toLocaleString()}</div>
           )}
 
-          <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`} ref={messageEndRef} >
+          <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
             <div className="chat-image avatar ml-2 md:ml-3">
               <div className="size-8 md:size-10 rounded-full border">
-                <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" />
+                <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
               </div>
             </div>
             <div className="chat-header mb-1 flex items-center gap-1">
@@ -457,13 +437,14 @@ const ChatContainer = () => {
               }}
             >
             <DoubleTapLike
+              className="group"
               disabled={
                 message.senderId === authUser._id ||
                 message.text === "This message was deleted"
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
-            <div className={`chat-bubble flex flex-col relative group !max-w-none w-fit ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
+            <div className={`chat-bubble flex flex-col relative w-fit max-w-full ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
               {message.replyToMessage && message.text !== "This message was deleted" && (
                 <div className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
                   onClick={(e) => {
@@ -480,7 +461,7 @@ const ChatContainer = () => {
                 >
                   <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">{message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}</p>
                   <div className="flex items-center gap-2">
-                    {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" onLoad={handleImageLoad} />}
+                    {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" loading="lazy" onLoad={handleImageLoad} />}
                     <p className="text-xs opacity-70 truncate max-w-[150px]">{message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}</p>
                   </div>
                 </div>
@@ -490,6 +471,8 @@ const ChatContainer = () => {
                 <img
                   src={message.image}
                   alt="Attachment"
+                  loading="lazy"
+                  decoding="async"
                   className={`max-w-[200px] md:max-w-[280px] rounded-xl mb-2 ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
                   onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
                   onLoad={handleImageLoad}
@@ -570,17 +553,15 @@ const ChatContainer = () => {
                 </div>
               )}
 
-              {/* New Reactions Display */}
               <MessageReactions messageId={message._id} reactions={message.reactions} senderId={message.senderId} />
 
-              {/* Reaction Picker on Hover */}
               {message.text !== "This message was deleted" &&
                 message.status !== 'scheduled' &&
                 message.senderId !== authUser._id &&
                 !message.reactions?.some(r => r.userId === authUser._id) && (
-                  <div className={`absolute top-full mt-1 ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
+                  <div className={`absolute bottom-full mb-1 ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
                       hidden md:flex items-center gap-1 p-1 bg-base-100/90 backdrop-blur-sm rounded-full shadow-lg border border-base-200 
-                      opacity-0 group-hover:opacity-100 transition-all duration-200 z-50`}
+                      opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 pointer-events-none group-hover:pointer-events-auto`}
                   >
                     {['👍', '❤️', '😂', '😮', '😢', '😡'].map(emoji => (
                       <button
@@ -602,6 +583,7 @@ const ChatContainer = () => {
                         <Check className="w-4 h-4 tick-sent message-status-icon" />}
                 </div>
               )}
+            </div>
 
               {message.text !== "This message was deleted" && message.status !== 'scheduled' && (
                 <MessageMenuTrigger
@@ -609,19 +591,48 @@ const ChatContainer = () => {
                   onOpen={(el) => openMessageMenu(message._id, el)}
                 />
               )}
-            </div>
             </DoubleTapLike>
             </SwipeableMessageBubble>
           </div>
         </div>
       );
-    });
-  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage, searchQuery, searchActiveId]);
+  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage, searchQuery, searchActiveId, openMessageMenu, editMessage, setPreviewImage]);
+
+  if (!selectedUser.isFriend) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <UserPlus className="w-12 h-12 mx-auto text-primary mb-4" />
+          <h3 className="text-xl font-bold mb-2">Not Friends Yet</h3>
+          <p className="text-base-content/70 mb-4">You need to be friends with {selectedUser.fullName} to send messages.</p>
+          {selectedUser.hasPendingRequest && selectedUser.pendingRequestSentByMe ? (
+            <div className="text-sm text-base-content/60">Friend request sent.</div>
+          ) : selectedUser.hasPendingRequest ? (
+            <button onClick={() => window.location.href = '/notifications'} className="btn btn-primary gap-2"><Check className="w-4 h-4" /> Accept Friend Request</button>
+          ) : (
+            <button onClick={handleSendFriendRequest} className="btn btn-primary gap-2"><UserPlus className="w-4 h-4" /> Send Friend Request</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (isBlocked) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <Ban className="w-12 h-12 mx-auto text-red-500 mb-4" />
+          <h3 className="text-xl font-bold mb-2">You've blocked this user</h3>
+          <button onClick={() => handelUnblockUser(selectedUser._id)} className="px-4 py-2 bg-red-500 text-white rounded-lg">Unblock User</button>
+        </div>
+      </div>
+    );
+  }
 
   const wallpaperStyle = resolveWallpaperStyle(wallpaper);
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-base-100">
+    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden overflow-x-hidden bg-base-100 chat-shell chat-shell--mobile-composer">
       <div className="chat-topbar shrink-0">
         {searchOpen ? (
           <ChatSearchBar
@@ -656,43 +667,68 @@ const ChatContainer = () => {
         </div>
       )}
 
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 custom-scrollbar messages-container pb-4"
-        style={wallpaperStyle.background ? { background: wallpaperStyle.background, backgroundSize: wallpaperStyle.backgroundSize, filter: wallpaperStyle.filter } : undefined}
-      >
-        {messages.length === 0 && !isMessagesLoading && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4"><span className="text-4xl">👋</span></div>
-            <h3 className="text-lg font-semibold text-base-content mb-2">Start a conversation</h3>
-            <p className="text-sm text-base-content/60 max-w-xs">Say hi to {selectedUser.fullName}!</p>
-          </div>
-        )}
-
-        {renderedMessages}
-
-        {isTyping && (
-          <div className="chat chat-start mb-2">
-            <div className="chat-image avatar ml-2 md:ml-3">
-              <div className="size-8 md:size-10 rounded-full border">
-                <img src={selectedUser.profilePic || defaultImg} alt="profile pic" />
-              </div>
+      <div className="flex-1 min-h-0 relative flex flex-col">
+        {/* Background Wallpaper Container */}
+        <div 
+          className="absolute inset-0 z-0 pointer-events-none"
+          style={{
+            background: wallpaperStyle.background,
+            backgroundSize: wallpaperStyle.backgroundSize,
+            filter: wallpaperStyle.filter,
+          }}
+        />
+        <VirtualMessageList
+          items={sortedMessages}
+          containerRef={containerRef}
+          onScroll={handleScroll}
+          onReachTop={loadOlderMessages}
+          hasMoreOlder={messagesMeta?.hasMoreOlder}
+          isLoadingOlder={isLoadingOlder}
+          scrollToBottomKey={scrollToBottomKey}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 md:p-4 custom-scrollbar messages-container relative z-10"
+          getItemKey={(message) => message.optimisticId || message._id}
+        renderItem={renderMessage}
+        header={
+          messages.length === 0 && isMessagesLoading ? (
+            <MessageSkeleton />
+          ) : messages.length === 0 && !isMessagesLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4">
+              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4"><span className="text-4xl">👋</span></div>
+              <h3 className="text-lg font-semibold text-base-content mb-2">Start a conversation</h3>
+              <p className="text-sm text-base-content/60 max-w-xs">Say hi to {selectedUser.fullName}!</p>
             </div>
-            <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+          ) : null
+        }
+        footer={
+          <>
+            {isTyping && (
+              <div className="chat chat-start mb-2">
+                <div className="chat-image avatar ml-2 md:ml-3">
+                  <div className="size-8 md:size-10 rounded-full border">
+                    <img src={selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
+                  </div>
+                </div>
+                <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messageEndRef} />
+            )}
+            <div ref={messageEndRef} style={{ overflowAnchor: "auto", height: 1 }} />
+            <div
+              className="md:hidden"
+              aria-hidden
+              style={{
+                height: "calc(var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px))",
+              }}
+            />
+          </>
+        }
+      />
       </div>
-
-      <div className="chat-composer-spacer md:hidden" aria-hidden />
       <MessageInput />
 
       <MessageActionMenu

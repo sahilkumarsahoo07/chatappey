@@ -11,6 +11,46 @@ import {
 } from "../lib/notifications";
 import { haptic } from "../lib/haptics";
 import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
+import {
+  hydrateThread,
+  writeThread,
+  writeMemoryThread,
+  readMemoryThread,
+  mergeMessages,
+  removeThread,
+} from "../lib/messageCache";
+
+const PAGE_SIZE = 60;
+
+const persistDmThread = (userId, messages, meta = {}) => {
+  if (!userId || !messages?.length) return;
+  const payload = {
+    messages,
+    hasMoreOlder: meta.hasMoreOlder ?? false,
+    oldestCachedAt: messages[0]?.createdAt,
+    newestAt: messages[messages.length - 1]?.createdAt,
+    syncedAt: Date.now(),
+  };
+  writeMemoryThread("dm", userId, payload);
+  writeThread("dm", userId, payload).catch(() => {});
+};
+
+const parseMessagesResponse = (data) => {
+  if (Array.isArray(data)) {
+    return {
+      messages: data,
+      hasMore: false,
+      oldestCursor: data[0]?.createdAt || null,
+      newestCursor: data[data.length - 1]?.createdAt || null,
+    };
+  }
+  return {
+    messages: data?.messages || [],
+    hasMore: Boolean(data?.hasMore),
+    oldestCursor: data?.oldestCursor || null,
+    newestCursor: data?.newestCursor || null,
+  };
+};
 
 const sameUserId = (a, b) =>
   a != null && b != null && String(a) === String(b);
@@ -26,6 +66,8 @@ function messagePreview(msg) {
 
 export const useChatStore = create((set, get) => ({
   messages: [],
+  messagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
+  isLoadingOlder: false,
   users: [],
   discoverUsers: [],
   selectedUser: null,
@@ -45,6 +87,7 @@ export const useChatStore = create((set, get) => ({
     try {
       const res = await axiosInstance.get("/messages/users");
       set({ users: res.data });
+      get().prefetchChats(res.data);
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to fetch users");
     } finally {
@@ -86,18 +129,106 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  getMessages: async (userId) => {
-    set({ isMessagesLoading: true });
-    try {
-      const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
+  getMessages: async (userId, options = {}) => {
+    if (!userId) return;
 
-      // Mark messages as read when opening a chat
-      get().markMessagesAsRead(userId);
+    const { before, after, background = false } = options;
+    const isInitial = !before && !after;
+    const isOlder = Boolean(before);
+    const isDelta = Boolean(after);
+
+    if (isInitial && !background) {
+      const hydrated = await hydrateThread("dm", userId);
+      if (hydrated?.messages?.length) {
+        set({
+          messages: hydrated.messages,
+          messagesMeta: {
+            hasMoreOlder: hydrated.hasMoreOlder ?? true,
+            isSyncing: true,
+            oldestCursor: hydrated.oldestCachedAt,
+            newestCursor: hydrated.newestAt,
+          },
+          isMessagesLoading: false,
+        });
+      } else if (!get().messages.length) {
+        set({ isMessagesLoading: true });
+      }
+    }
+
+    if (isOlder) set({ isLoadingOlder: true });
+
+    try {
+      const params = { limit: PAGE_SIZE };
+      if (before) params.before = before;
+      if (after) params.after = after;
+
+      const res = await axiosInstance.get(`/messages/${userId}`, { params });
+      const { messages: incoming, hasMore, oldestCursor, newestCursor } =
+        parseMessagesResponse(res.data);
+
+      let nextMessages;
+      if (isOlder || isDelta) {
+        nextMessages = mergeMessages(get().messages, incoming);
+      } else {
+        nextMessages = incoming;
+      }
+
+      const meta = {
+        hasMoreOlder: hasMore,
+        isSyncing: false,
+        oldestCursor,
+        newestCursor,
+      };
+
+      set({
+        messages: nextMessages,
+        messagesMeta: meta,
+        isMessagesLoading: false,
+        isLoadingOlder: false,
+      });
+
+      persistDmThread(userId, nextMessages, { hasMoreOlder: hasMore });
+
+      if (isInitial && !background) {
+        get().markMessagesAsRead(userId);
+      }
     } catch (error) {
-      toast.error(error.response.data.message);
-    } finally {
-      set({ isMessagesLoading: false });
+      set({
+        isMessagesLoading: false,
+        isLoadingOlder: false,
+        messagesMeta: { ...get().messagesMeta, isSyncing: false },
+      });
+      if (!background && get().messages.length === 0) {
+        toast.error(error.response?.data?.message || "Failed to load messages");
+      }
+    }
+  },
+
+  loadOlderMessages: async () => {
+    const { selectedUser, messages, messagesMeta, isLoadingOlder } = get();
+    if (!selectedUser || isLoadingOlder || !messagesMeta?.hasMoreOlder) return;
+    const oldest = messages[0]?.createdAt || messagesMeta.oldestCursor;
+    if (!oldest) return;
+    await get().getMessages(selectedUser._id, { before: oldest, background: true });
+  },
+
+  prefetchChats: async (usersList) => {
+    const list = usersList || get().users;
+    const ids = list.slice(0, 5).map((u) => u._id).filter(Boolean);
+    for (const id of ids) {
+      const mem = readMemoryThread("dm", id);
+      if (mem?.syncedAt && Date.now() - mem.syncedAt < 120000) continue;
+      try {
+        const res = await axiosInstance.get(`/messages/${id}`, {
+          params: { limit: PAGE_SIZE },
+        });
+        const { messages, hasMore } = parseMessagesResponse(res.data);
+        if (messages.length) {
+          persistDmThread(id, messages, { hasMoreOlder: hasMore });
+        }
+      } catch {
+        /* background prefetch — silent */
+      }
     }
   },
 
@@ -175,7 +306,9 @@ export const useChatStore = create((set, get) => ({
     const messageToAdd = { ...optimisticMessage, status: initialStatus };
     
     // Add message to state immediately - no delays
-    set({ messages: [...messages, messageToAdd] });
+    const optimisticList = [...messages, messageToAdd];
+    set({ messages: optimisticList });
+    persistDmThread(selectedUser._id, optimisticList, get().messagesMeta);
 
     // Send via WebSocket (non-blocking, fire-and-forget)
     socket.emit("sendMessage", {
@@ -255,6 +388,7 @@ export const useChatStore = create((set, get) => ({
         users: sortedUsers,
         replyingToMessage: null 
       });
+      persistDmThread(selectedUser._id, updatedMessages, get().messagesMeta);
     });
   },
 
@@ -318,12 +452,17 @@ export const useChatStore = create((set, get) => ({
 
           console.log('[Socket Debug] Adding message to UI with status:', isChatActive ? 'read' : newMessage.status);
 
-          set({
-            messages: [...messages, {
+          const nextMessages = [...messages, {
               ...newMessage,
               status: isChatActive ? 'read' : newMessage.status // INSTANT blue ticks if chat is active!
-            }],
-          });
+            }];
+
+          set({ messages: nextMessages });
+
+          const threadId = sameUserId(newMessage.senderId, authUser._id)
+            ? newMessage.receiverId
+            : newMessage.senderId;
+          persistDmThread(threadId, nextMessages, get().messagesMeta);
         } else {
           console.log('[Socket Debug] Message already exists, skipping');
         }
@@ -750,8 +889,33 @@ export const useChatStore = create((set, get) => ({
 
   setSelectedUser: (selectedUser) => {
     const currentUser = get().selectedUser;
+    const { messages, messagesMeta } = get();
+
+    if (currentUser?._id && messages.length) {
+      writeMemoryThread("dm", currentUser._id, {
+        messages,
+        hasMoreOlder: messagesMeta?.hasMoreOlder,
+        oldestCachedAt: messages[0]?.createdAt,
+        newestAt: messages[messages.length - 1]?.createdAt,
+      });
+    }
+
     if (selectedUser && (!currentUser || currentUser._id !== selectedUser._id)) {
-      set({ selectedUser, messages: [], isTyping: false });
+      const mem = readMemoryThread("dm", selectedUser._id);
+      set({
+        selectedUser,
+        isTyping: false,
+        messages: mem?.messages || [],
+        messagesMeta: mem
+          ? {
+              hasMoreOlder: mem.hasMoreOlder ?? true,
+              isSyncing: false,
+              oldestCursor: mem.oldestCachedAt,
+              newestCursor: mem.newestAt,
+            }
+          : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
+        isMessagesLoading: !mem?.messages?.length,
+      });
     } else {
       set({ selectedUser });
     }
@@ -764,6 +928,7 @@ export const useChatStore = create((set, get) => ({
   deleteChatForMe: async (userId) => {
     try {
       await axiosInstance.delete(`/messages/chat/${userId}`);
+      removeThread("dm", userId).catch(() => {});
 
       const { selectedUser, users } = get();
       set({

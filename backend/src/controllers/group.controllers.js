@@ -522,17 +522,61 @@ export const getGroupMessages = async (req, res) => {
             return res.status(403).json({ error: "You are not a member of this group" });
         }
 
-        // Only show messages created AFTER the user joined the group
-        const messages = await GroupMessage.find({
-            groupId,
-            createdAt: { $gte: memberInfo.joinedAt }
-        })
-            .populate("senderId", "fullName profilePic")
-            .populate("readBy", "fullName profilePic")
-            .populate("mentions", "fullName profilePic")
-            .sort({ createdAt: 1 });
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 60, 1), 100);
+        const before = req.query.before ? new Date(req.query.before) : null;
+        const after = req.query.after ? new Date(req.query.after) : null;
 
-        res.status(200).json(messages);
+        const baseQuery = {
+            groupId,
+            createdAt: { $gte: memberInfo.joinedAt },
+        };
+
+        if (after && !isNaN(after.getTime())) {
+            baseQuery.createdAt = { $gte: memberInfo.joinedAt, $gt: after };
+        } else if (before && !isNaN(before.getTime())) {
+            baseQuery.createdAt = {
+                $gte: memberInfo.joinedAt,
+                $lt: before,
+            };
+        }
+
+        let messages;
+        let hasMore = false;
+
+        if (after && !isNaN(after.getTime())) {
+            messages = await GroupMessage.find(baseQuery)
+                .populate("senderId", "fullName profilePic")
+                .populate("readBy", "fullName profilePic")
+                .populate("mentions", "fullName profilePic")
+                .sort({ createdAt: 1 })
+                .limit(limit);
+            hasMore = messages.length === limit;
+        } else if (before && !isNaN(before.getTime())) {
+            const batch = await GroupMessage.find(baseQuery)
+                .populate("senderId", "fullName profilePic")
+                .populate("readBy", "fullName profilePic")
+                .populate("mentions", "fullName profilePic")
+                .sort({ createdAt: -1 })
+                .limit(limit);
+            hasMore = batch.length === limit;
+            messages = batch.reverse();
+        } else {
+            const batch = await GroupMessage.find(baseQuery)
+                .populate("senderId", "fullName profilePic")
+                .populate("readBy", "fullName profilePic")
+                .populate("mentions", "fullName profilePic")
+                .sort({ createdAt: -1 })
+                .limit(limit);
+            hasMore = batch.length === limit;
+            messages = batch.reverse();
+        }
+
+        res.status(200).json({
+            messages,
+            hasMore,
+            oldestCursor: messages[0]?.createdAt || null,
+            newestCursor: messages[messages.length - 1]?.createdAt || null,
+        });
     } catch (error) {
         console.error("Error in getGroupMessages:", error.message);
         res.status(500).json({ error: "Internal server error" });

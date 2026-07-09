@@ -751,7 +751,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                     )}
 
                     {/* Main Input Row */}
-                    <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
+                    <form onSubmit={handleFormSubmit} className="flex items-end gap-2 min-w-0 w-full max-w-full">
 
                         {/* Attachment Button */}
                         <div className="relative" ref={attachmentMenuRef}>
@@ -798,11 +798,6 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 placeholder={isRecording ? "Recording..." : "Type a message..."}
                                 value={text}
                                 onChange={handleTextChange}
-                                onFocus={() => {
-                                    requestAnimationFrame(() => {
-                                        window.dispatchEvent(new Event("resize"));
-                                    });
-                                }}
                                 onKeyDown={handleKeyDown}
                                 onPaste={handlePaste}
                                 rows={1}

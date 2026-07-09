@@ -29,6 +29,9 @@ const GroupChatContainer = () => {
         selectedGroup,
         groupMessages,
         isGroupMessagesLoading,
+        isLoadingOlderGroup,
+        groupMessagesMeta,
+        loadOlderGroupMessages,
         getGroupMessages,
         sendGroupMessage,
         deleteGroupMessageForAll,
@@ -42,6 +45,9 @@ const GroupChatContainer = () => {
         selectedGroup: s.selectedGroup,
         groupMessages: s.groupMessages,
         isGroupMessagesLoading: s.isGroupMessagesLoading,
+        isLoadingOlderGroup: s.isLoadingOlderGroup,
+        groupMessagesMeta: s.groupMessagesMeta,
+        loadOlderGroupMessages: s.loadOlderGroupMessages,
         getGroupMessages: s.getGroupMessages,
         sendGroupMessage: s.sendGroupMessage,
         deleteGroupMessageForAll: s.deleteGroupMessageForAll,
@@ -76,6 +82,14 @@ const GroupChatContainer = () => {
     const containerRef = useRef(null);
     const prevSelectedGroupIdRef = useRef(null);
     const isAtBottomRef = useRef(true);
+    const loadOlderLockRef = useRef(false);
+    const prevScrollHeightRef = useRef(0);
+    const wasLoadingOlderRef = useRef(false);
+
+    const sortedGroupMessages = useMemo(
+        () => [...groupMessages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)),
+        [groupMessages]
+    );
 
     // Menu state
     const [anchorEl, setAnchorEl] = useState(null);
@@ -106,7 +120,32 @@ const GroupChatContainer = () => {
     const handleScroll = (e) => {
         const { scrollTop, scrollHeight, clientHeight } = e.target;
         isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+
+        if (
+            scrollTop < 120 &&
+            groupMessagesMeta?.hasMoreOlder &&
+            !isLoadingOlderGroup &&
+            !loadOlderLockRef.current
+        ) {
+            loadOlderLockRef.current = true;
+            Promise.resolve(loadOlderGroupMessages()).finally(() => {
+                loadOlderLockRef.current = false;
+            });
+        }
     };
+
+    useEffect(() => {
+        if (isLoadingOlderGroup) {
+            wasLoadingOlderRef.current = true;
+            prevScrollHeightRef.current = containerRef.current?.scrollHeight || 0;
+            return;
+        }
+        if (wasLoadingOlderRef.current && containerRef.current) {
+            const el = containerRef.current;
+            el.scrollTop += el.scrollHeight - prevScrollHeightRef.current;
+            wasLoadingOlderRef.current = false;
+        }
+    }, [isLoadingOlderGroup, groupMessages.length]);
 
     const handleImageLoad = () => {
         if (containerRef.current && isAtBottomRef.current) {
@@ -118,19 +157,18 @@ const GroupChatContainer = () => {
         if (!containerRef.current) return;
 
         const isNewGroup = selectedGroup?._id !== prevSelectedGroupIdRef.current;
-        const lastMessage = groupMessages[groupMessages.length - 1];
-        // In groupMessages, senderId is an object containing _id
+        const lastMessage = sortedGroupMessages[sortedGroupMessages.length - 1];
         const isMyMessage = lastMessage?.senderId?._id === authUser?._id || lastMessage?.senderId === authUser?._id;
 
         if (isNewGroup) {
-            containerRef.current.scrollTop = containerRef.current.scrollHeight;
             isAtBottomRef.current = true;
             prevSelectedGroupIdRef.current = selectedGroup?._id;
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
         } else if (isMyMessage || isAtBottomRef.current) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
             isAtBottomRef.current = true;
         }
-    }, [groupMessages?.length, selectedGroup?._id, typingUsers?.length, authUser?._id]);
+    }, [sortedGroupMessages.length, selectedGroup?._id, sortedGroupMessages[sortedGroupMessages.length - 1]?._id, authUser?._id]);
 
     const handleSendMessage = useCallback(async (messageData) => {
         await sendGroupMessage(messageData);
@@ -289,7 +327,7 @@ const GroupChatContainer = () => {
     if (!selectedGroup) return null;
 
     return (
-        <div className="flex flex-col h-full min-h-0 overflow-hidden">
+        <div className="flex flex-col h-full min-h-0 overflow-hidden overflow-x-hidden chat-shell chat-shell--mobile-composer">
             <div className="chat-topbar shrink-0">
                 {searchOpen ? (
                     <ChatSearchBar
@@ -308,10 +346,16 @@ const GroupChatContainer = () => {
             {/* Messages Area */}
             <div
                 ref={containerRef}
-                className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar messages-container"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 custom-scrollbar messages-container"
+                style={{ scrollBehavior: "auto" }}
                 onScroll={handleScroll}
             >
-                {isGroupMessagesLoading ? (
+                {isLoadingOlderGroup && (
+                    <div className="flex justify-center py-2">
+                        <span className="loading loading-spinner loading-sm text-primary" />
+                    </div>
+                )}
+                {groupMessages.length === 0 && isGroupMessagesLoading ? (
                     <MessageSkeleton />
                 ) : (
                     <>
@@ -324,18 +368,19 @@ const GroupChatContainer = () => {
                                 <p className="text-sm">Be the first to send a message!</p>
                             </div>
                         ) : (
-                            groupMessages.map((message, index) => {
+                            sortedGroupMessages.map((message, index) => {
+                                const msgs = sortedGroupMessages;
                                 const isMyMessage = message.senderId?._id === authUser._id;
                                 const sender = message.senderId;
                                 const showSender = !isMyMessage && (
                                     index === 0 ||
-                                    groupMessages[index - 1]?.senderId?._id !== sender?._id
+                                    msgs[index - 1]?.senderId?._id !== sender?._id
                                 );
                                 const isDeleted = message.text === "This message was deleted";
 
                                 // Check if we need to show a date separator
                                 const currentDateKey = getMessageDateKey(message.createdAt);
-                                const previousDateKey = index > 0 ? getMessageDateKey(groupMessages[index - 1].createdAt) : null;
+                                const previousDateKey = index > 0 ? getMessageDateKey(msgs[index - 1].createdAt) : null;
                                 const showDateSeparator = currentDateKey !== previousDateKey;
 
                                 // Date Separator Component
@@ -393,6 +438,7 @@ const GroupChatContainer = () => {
                                                         disabled={isDeleted}
                                                         onReply={() => handleSwipeReply(message)}
                                                         onLongPress={(el) => openMessageMenu(message._id, el)}
+                                                        className="group"
                                                     >
                                                     {/* Message bubble */}
                                                     <div
@@ -413,6 +459,8 @@ const GroupChatContainer = () => {
                                                             <img
                                                                 src={message.image}
                                                                 alt="Attachment"
+                                                                loading="lazy"
+                                                                decoding="async"
                                                                 className={`rounded-lg mb-2 max-w-xs ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
                                                                 onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
                                                                 onLoad={handleImageLoad}
@@ -459,15 +507,13 @@ const GroupChatContainer = () => {
                                                             </p>
                                                         )}
                                                     </div>
-                                                    </SwipeableMessageBubble>
-
-                                                    {/* 3-dot menu trigger (desktop hover only) */}
                                                     {!isDeleted && (
                                                         <MessageMenuTrigger
                                                             isMine={isMyMessage}
                                                             onOpen={(el) => openMessageMenu(message._id, el)}
                                                         />
                                                     )}
+                                                    </SwipeableMessageBubble>
                                                 </div>
                                             </div>
                                         </div>
@@ -497,7 +543,7 @@ const GroupChatContainer = () => {
                             </div>
                         )}
 
-                        <div ref={messagesEndRef} />
+                        <div ref={messagesEndRef} style={{ overflowAnchor: "auto", height: 1 }} />
                     </>
                 )}
             </div>
@@ -724,7 +770,6 @@ const GroupChatContainer = () => {
             )}
 
             {/* Message Input */}
-            <div className="chat-composer-spacer md:hidden" aria-hidden />
             <MessageInput
                 onSend={handleSendMessage}
                 isGroupChat={true}
