@@ -65,6 +65,10 @@
     line-height: 1.5;
 }
 
+.message-textarea::-webkit-scrollbar {
+    display: none;
+}
+
 .message-textarea::placeholder {
     color: oklch(var(--bc) / 0.4);
 }

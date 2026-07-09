@@ -33,10 +33,10 @@ const EmojiPickerComponent = ({ onEmojiSelect }) => {
             <button
                 type="button"
                 onClick={() => setShowPicker(!showPicker)}
-                className="btn btn-circle btn-ghost hover-lift"
+                className="p-1.5 rounded-full text-base-content/60 hover:bg-base-300 hover:text-base-content transition-colors"
                 title="Add emoji"
             >
-                <Smile className="w-5 h-5" />
+                <Smile className="w-[22px] h-[22px]" />
             </button>
 
             {showPicker && (

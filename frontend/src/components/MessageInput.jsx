@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2, Camera } from "lucide-react";
+import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2, Camera, Clapperboard } from "lucide-react";
 import toast from "react-hot-toast";
 import { chatFeaturesApi, MAX_VIDEO_MB, VIDEO_ACCEPT } from "../lib/chatFeaturesApi";
 import EmojiPickerComponent from "./EmojiPickerComponent";
@@ -135,6 +135,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
     const [showPollCreator, setShowPollCreator] = useState(false);
     const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [showGifPicker, setShowGifPicker] = useState(false);
 
     // Refs
     const fileInputRef = useRef(null);
@@ -758,18 +759,18 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         <input type="file" className="hidden" ref={docInputRef} onChange={handleFileChange} />
 
                         {/* WhatsApp-Style Input Capsule */}
-                        <div className="flex-grow flex-shrink min-w-0 flex items-end bg-base-200/90 hover:bg-base-200 rounded-[24px] px-2 py-1 transition-all focus-within:ring-2 focus-within:ring-primary/20">
-                            {/* Emoji / Gif Pickers Group (Left) */}
-                            <div className="flex items-center shrink-0 self-center">
+                        <div className="flex-grow flex-shrink min-w-0 flex items-end bg-base-200/90 hover:bg-base-200 rounded-[24px] px-1 py-1 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+                            {/* Emoji Group (Left) */}
+                            <div className="flex items-center shrink-0 self-end mb-0.5 ml-0.5">
                                 <EmojiPickerComponent onEmojiSelect={handleEmojiSelect} />
-                                <GifPicker onGifSelect={handleGifSelect} />
                             </div>
 
                             {/* Text Area (Middle) */}
                             <textarea
                                 ref={textareaRef}
-                                className="message-textarea flex-1 bg-transparent py-1.5 px-2 outline-none resize-none min-h-[20px] max-h-[120px] text-base placeholder:text-base-content/40 custom-scrollbar"
-                                placeholder={isRecording ? "Recording..." : "Type a message..."}
+                                className="message-textarea flex-1 bg-transparent py-2.5 px-1.5 sm:px-2 outline-none resize-none min-h-[20px] max-h-[120px] text-[14px] leading-[18px] sm:text-[15px] placeholder:text-base-content/40"
+                                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                                placeholder={isRecording ? "Recording..." : "Message"}
                                 value={text}
                                 onChange={handleTextChange}
                                 onKeyDown={handleKeyDown}
@@ -779,16 +780,16 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                             />
 
                             {/* Attachment Actions (Right) */}
-                            <div className="flex items-center shrink-0 self-center gap-0.5">
+                            <div className="flex items-center shrink-0 self-end mb-0.5 mr-0.5 gap-0.5">
                                 {/* Attachment (Paperclip) */}
                                 <div className="relative" ref={attachmentMenuRef}>
                                     <button
                                         type="button"
                                         onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                                        className={`p-2 rounded-full transition-all text-base-content/60 hover:bg-base-300 hover:text-base-content ${showAttachmentMenu ? 'rotate-45 text-primary bg-primary/10' : ''}`}
+                                        className={`p-1.5 rounded-full transition-all text-base-content/60 hover:bg-base-300 hover:text-base-content ${showAttachmentMenu ? 'rotate-45 text-primary bg-primary/10' : ''}`}
                                         title="Attach file"
                                     >
-                                        <Paperclip className="w-5 h-5" />
+                                        <Paperclip className="w-[22px] h-[22px]" />
                                     </button>
 
                                     {/* Attachment Menu */}
@@ -799,6 +800,9 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                             </button>
                                             <button type="button" onClick={() => { videoInputRef.current?.click(); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
                                                 <span className="p-1.5 bg-violet-100 text-violet-600 rounded-lg"><Film className="w-4 h-4" /></span> Video
+                                            </button>
+                                            <button type="button" onClick={() => { setShowAttachmentMenu(false); setShowGifPicker(true); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium w-full">
+                                                <span className="p-1.5 bg-pink-100 text-pink-600 rounded-lg"><Clapperboard className="w-4 h-4" /></span> GIF
                                             </button>
                                             <button type="button" onClick={() => { docInputRef.current?.click(); setShowAttachmentMenu(false); }} className="flex items-center gap-3 p-2 hover:bg-base-200 rounded-xl text-left text-sm font-medium">
                                                 <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><FileText className="w-4 h-4" /></span> Document
@@ -811,16 +815,26 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                             </button>
                                         </div>
                                     )}
+
+                                    {/* Standalone GIF Picker controlled by state */}
+                                    <GifPicker 
+                                        isOpen={showGifPicker}
+                                        onClose={() => setShowGifPicker(false)}
+                                        onGifSelect={(gifUrl) => {
+                                            handleGifSelect(gifUrl);
+                                            setShowGifPicker(false);
+                                        }} 
+                                    />
                                 </div>
 
                                 {/* Camera Instant Button */}
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="p-2 rounded-full text-base-content/60 hover:bg-base-300 hover:text-base-content"
+                                    className="p-1.5 rounded-full text-base-content/60 hover:bg-base-300 hover:text-base-content"
                                     title="Take photo"
                                 >
-                                    <Camera className="w-5 h-5" />
+                                    <Camera className="w-[22px] h-[22px]" />
                                 </button>
                             </div>
                         </div>
