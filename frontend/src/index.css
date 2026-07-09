@@ -209,13 +209,13 @@ html.keyboard-open body {
         top: 0;
         left: 0;
         right: 0;
-        bottom: 0;
         width: 100% !important;
         max-width: 100vw !important;
         display: flex !important;
         flex-direction: column !important;
         overflow: hidden !important;
         z-index: 50;
+        transform: translateY(var(--visual-viewport-offset-top, 0px)) !important;
     }
     .messages-container {
         padding-bottom: 24px !important;
