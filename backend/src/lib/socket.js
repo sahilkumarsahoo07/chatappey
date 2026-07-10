@@ -78,6 +78,7 @@ import Group from "../models/group.model.js";
 import GroupMessage from "../models/groupMessage.model.js";
 import cloudinary from "./cloudinary.js";
 import { unarchiveDmChat } from "../utils/chatPreference.utils.js";
+import { emitToUser, canUpgradeStatus } from "../utils/messageStatus.utils.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -177,8 +178,9 @@ io.on("connection", async (socket) => {
       return; // Exit early - do not add to userSocketMap or broadcast
     }
 
-    // 2. Now it is safe to add to the socket map
+    // 2. Now it is safe to add to the socket map + join personal room (multi-device)
     userSocketMap[String(userId)] = socket.id;
+    socket.join(`user:${String(userId)}`);
 
     // 3. Join user's groups (can remain async/background as it doesn't affect online status)
     (async () => {
@@ -195,9 +197,11 @@ io.on("connection", async (socket) => {
     // 4. Notify the user they are connected
     socket.emit("userOnline", { userId });
 
-    // 5. Notify others ONLY if NOT incognito
+    // 5. Notify others ONLY if NOT incognito — peer came online (for delivery upgrades)
     if (!incognitoUsers.has(userId.toString())) {
       io.emit("userListUpdate", { userId });
+      // Tell friends this user is online so they can upgrade pending ticks
+      io.emit("peerOnline", { userId: String(userId) });
     }
   }
 
@@ -206,19 +210,36 @@ io.on("connection", async (socket) => {
   io.emit("getOnlineUsers", visibleOnlineUsers);
 
   // Handle updating message status to delivered when receiver comes online
-  socket.on("updatePendingMessages", (data) => {
-    const { senderId, receiverId } = data;
+  socket.on("updatePendingMessages", async (data) => {
+    try {
+      const { senderId, receiverId } = data;
+      if (!senderId || !receiverId) return;
 
-    // If receiver is incognito, DO NOT send delivered receipt
-    if (incognitoUsers.has(receiverId.toString())) return;
+      // If receiver is incognito, DO NOT send delivered receipt
+      if (incognitoUsers.has(receiverId.toString())) return;
 
-    const senderSocketId = getReceiverSocketId(senderId);
+      const now = new Date();
+      const result = await Message.updateMany(
+        {
+          senderId,
+          receiverId,
+          status: "sent",
+        },
+        {
+          $set: { status: "delivered", deliveredAt: now },
+        }
+      );
 
-    if (senderSocketId) {
-      io.to(senderSocketId).emit("messagesDelivered", {
-        receiverId,
-        senderId
-      });
+      if (result.modifiedCount > 0) {
+        emitToUser(io, userSocketMap, senderId, "messagesDelivered", {
+          receiverId,
+          senderId,
+          status: "delivered",
+          deliveredAt: now,
+        });
+      }
+    } catch (err) {
+      console.error("updatePendingMessages error:", err.message);
     }
   });
 
@@ -402,82 +423,95 @@ io.on("connection", async (socket) => {
   // WebSocket-based message sending for direct messages
   socket.on("sendMessage", async (messageData, callback) => {
     try {
-      const { receiverId, text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = messageData;
+      const {
+        receiverId,
+        text,
+        image,
+        audio,
+        file,
+        fileName,
+        video,
+        videoThumbnail,
+        videoDuration,
+        videoPublicId,
+        replyTo,
+        replyToMessage,
+        poll,
+        scheduledFor,
+        isScheduled,
+        clientMessageId,
+      } = messageData;
 
       // Fetch sender, receiver, and reply target (if valid) in parallel to optimize latency
-      const fetchSender = User.findById(userId).select('blockedUsers friends');
-      const fetchReceiver = User.findById(receiverId).select('blockedUsers');
-      const fetchOriginalMessage = (replyTo && mongoose.Types.ObjectId.isValid(replyTo))
-        ? Message.findById(replyTo).populate('senderId', 'fullName')
-        : Promise.resolve(null);
+      const fetchSender = User.findById(userId).select("blockedUsers friends");
+      const fetchReceiver = User.findById(receiverId).select("blockedUsers");
+      const fetchOriginalMessage =
+        replyTo && mongoose.Types.ObjectId.isValid(replyTo)
+          ? Message.findById(replyTo).populate("senderId", "fullName")
+          : Promise.resolve(null);
 
       const [sender, receiver, originalMessage] = await Promise.all([
         fetchSender,
         fetchReceiver,
-        fetchOriginalMessage
+        fetchOriginalMessage,
       ]);
 
       if (!sender) {
         return callback?.({ error: "Sender not found." });
       }
 
-      // Check if users are friends
-      const isFriend = sender.friends.some(friendId => friendId.toString() === receiverId.toString());
+      const isFriend = sender.friends.some(
+        (friendId) => friendId.toString() === receiverId.toString()
+      );
 
       if (!isFriend) {
         return callback?.({ error: "Cannot send message. You must be friends to chat." });
       }
 
-      // Check if sender is blocked by receiver
-      if (receiver && receiver.blockedUsers.some(blockedId => blockedId.toString() === userId.toString())) {
+      if (
+        receiver &&
+        receiver.blockedUsers.some((blockedId) => blockedId.toString() === userId.toString())
+      ) {
         return callback?.({ error: "Cannot send message. You have been blocked by this user." });
       }
 
-      // Check if receiver is blocked by sender
-      if (sender.blockedUsers.some(blockedId => blockedId.toString() === receiverId.toString())) {
+      if (
+        sender.blockedUsers.some((blockedId) => blockedId.toString() === receiverId.toString())
+      ) {
         return callback?.({ error: "Cannot send message. You have blocked this user." });
       }
 
       let imageUrl, audioUrl, fileUrl;
 
-      // Upload Image
       if (image) {
         const uploadResponse = await cloudinary.uploader.upload(image);
         imageUrl = uploadResponse.secure_url;
       }
 
-      // Upload Audio
       if (audio) {
         const uploadResponse = await cloudinary.uploader.upload(audio, {
-          resource_type: "auto"
+          resource_type: "auto",
         });
         if (uploadResponse) {
           audioUrl = uploadResponse.secure_url;
-        } else {
-          console.error("Audio upload failed to Cloudinary");
         }
       }
 
-      // Upload File
       if (file) {
-        const uploadOptions = {
-          resource_type: "raw"
-        };
-
+        const uploadOptions = { resource_type: "raw" };
         if (fileName) {
-          const sanitizedName = fileName.split('/').pop().split('\\').pop();
-          const nameWithoutExt = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
+          const sanitizedName = fileName.split("/").pop().split("\\").pop();
+          const nameWithoutExt =
+            sanitizedName.substring(0, sanitizedName.lastIndexOf(".")) || sanitizedName;
           uploadOptions.public_id = nameWithoutExt;
         }
-
         const uploadResponse = await cloudinary.uploader.upload(file, uploadOptions);
         fileUrl = uploadResponse.secure_url;
       }
 
-      // Handle reply data if present
       let replyToMessageData = replyToMessage || null;
       let validReplyTo = replyTo;
-      
+
       if (replyTo) {
         if (mongoose.Types.ObjectId.isValid(replyTo)) {
           if (originalMessage) {
@@ -485,30 +519,20 @@ io.on("connection", async (socket) => {
               text: originalMessage.text,
               image: originalMessage.image,
               senderId: originalMessage.senderId._id,
-              senderName: originalMessage.senderId.fullName
+              senderName: originalMessage.senderId.fullName,
             };
           }
         } else {
-          // If replyTo is an invalid ObjectId (like 'temp-123' from optimistic update)
-          // We can't save it as a reference in DB, but we can still save the replyToMessageData
           validReplyTo = null;
         }
       }
 
-      // Check if receiver is online
-      const receiverSocketId = getReceiverSocketId(receiverId);
-
-      // Determine status
-      // If receiver is incognito, force status to 'sent' even if they are online
-      let initialStatus = (receiverSocketId && !incognitoUsers.has(receiverId.toString())) ? "delivered" : "sent";
-
-      // Check if message should be scheduled
       const shouldBeScheduled = isScheduled || !!scheduledFor;
+      // Always start as "sent" — upgrade to delivered only when receiver ACKs (WhatsApp-like)
+      let initialStatus = "sent";
+      if (shouldBeScheduled) initialStatus = "scheduled";
 
-      if (shouldBeScheduled) {
-        initialStatus = "scheduled";
-      }
-
+      const now = new Date();
       const newMessage = new Message({
         senderId: userId,
         receiverId,
@@ -522,43 +546,70 @@ io.on("connection", async (socket) => {
         file: fileUrl,
         fileName: fileName || null,
         status: initialStatus,
+        clientMessageId: clientMessageId || undefined,
+        sentAt: shouldBeScheduled ? undefined : now,
         replyTo: validReplyTo || null,
         replyToMessage: replyToMessageData,
-        poll: poll ? {
-          question: poll.question,
-          options: poll.options.map(opt => ({ text: opt.text, votes: [] }))
-        } : undefined,
-        scheduledFor: shouldBeScheduled ? new Date(scheduledFor) : undefined
+        poll: poll
+          ? {
+              question: poll.question,
+              options: poll.options.map((opt) => ({ text: opt.text, votes: [] })),
+            }
+          : undefined,
+        scheduledFor: shouldBeScheduled ? new Date(scheduledFor) : undefined,
       });
 
       await newMessage.save();
-      await unarchiveDmChat(userId, receiverId);
+      // Don't block the ACK on unarchive
+      unarchiveDmChat(userId, receiverId).catch(() => {});
 
-      // Only emit if NOT scheduled
+      const payload = newMessage.toObject ? newMessage.toObject() : newMessage;
+      payload.clientMessageId = clientMessageId || payload.clientMessageId;
+
+      // ACK sender immediately (status: sent) — ticks upgrade via delivery/read events
+      callback?.({ success: true, message: payload });
+
       if (!shouldBeScheduled) {
-        if (receiverSocketId) {
-          // Send new message to receiver (ALWAYS send to receiver so they get the msg)
-          io.to(receiverSocketId).emit("newMessage", newMessage);
-
-          // Notify sender that message was delivered
-          // ONLY if receiver is NOT incognito
-          if (!incognitoUsers.has(receiverId.toString())) {
-            const senderSocketId = getReceiverSocketId(userId);
-            if (senderSocketId) {
-              io.to(senderSocketId).emit("messageDelivered", {
-                messageId: newMessage._id,
-                status: "delivered"
-              });
-            }
-          }
-        }
+        // Fan-out to all receiver devices via user room
+        emitToUser(io, userSocketMap, receiverId, "newMessage", payload);
       }
-
-      // Send success response to sender
-      callback?.({ success: true, message: newMessage });
     } catch (error) {
       console.error("Error in sendMessage socket handler:", error.message);
       callback?.({ error: error.message || "Internal server error" });
+    }
+  });
+
+  /**
+   * Receiver confirms message reached their device → Delivered ✓✓
+   */
+  socket.on("messageReceived", async ({ messageId, clientMessageId, senderId }) => {
+    try {
+      if (!messageId && !clientMessageId) return;
+      if (incognitoUsers.has(String(userId))) return;
+
+      const query = messageId
+        ? { _id: messageId }
+        : { clientMessageId, receiverId: userId };
+
+      const message = await Message.findOne(query);
+      if (!message) return;
+      if (String(message.receiverId) !== String(userId)) return;
+
+      if (canUpgradeStatus(message.status, "delivered")) {
+        message.status = "delivered";
+        message.deliveredAt = new Date();
+        await message.save();
+      }
+
+      const targetSender = senderId || message.senderId;
+      emitToUser(io, userSocketMap, targetSender, "messageDelivered", {
+        messageId: message._id,
+        clientMessageId: message.clientMessageId || clientMessageId,
+        status: "delivered",
+        deliveredAt: message.deliveredAt,
+      });
+    } catch (err) {
+      console.error("messageReceived error:", err.message);
     }
   });
 
@@ -666,39 +717,38 @@ io.on("connection", async (socket) => {
   socket.on("markMessagesAsRead", async ({ userId: otherUserId }) => {
     try {
       const myId = userId;
+      if (!otherUserId) return;
 
-      // Get messages that need to be marked as read
+      const now = new Date();
       const messagesToUpdate = await Message.find({
         senderId: otherUserId,
         receiverId: myId,
-        status: { $ne: "read" }
-      }).select('_id');
+        status: { $ne: "read" },
+      }).select("_id status");
 
-      // Mark all messages from the other user as read
+      if (messagesToUpdate.length === 0) return;
+
       await Message.updateMany(
         {
           senderId: otherUserId,
           receiverId: myId,
-          status: { $ne: "read" }
+          status: { $ne: "read" },
         },
         {
-          $set: { status: "read" }
+          $set: { status: "read", readAt: now },
         }
       );
 
-      // Get user's privacy settings for read receipts
-      const user = await User.findById(myId).select('privacyReadReceipts isIncognito');
+      const user = await User.findById(myId).select("privacyReadReceipts isIncognito");
 
-      // If user is incognito, DO NOT send read receipts
-      if (user?.isIncognito || incognitoUsers.has(myId)) return;
+      if (user?.isIncognito || incognitoUsers.has(String(myId))) return;
 
-      // Notify sender via socket that messages were read (if privacy allows)
-      const senderSocketId = getReceiverSocketId(otherUserId);
-      if (senderSocketId && messagesToUpdate.length > 0 && user?.privacyReadReceipts !== false) {
-        io.to(senderSocketId).emit("messagesRead", {
-          readBy: myId,
-          chatWith: otherUserId,
-          messageIds: messagesToUpdate.map(msg => msg._id.toString())
+      if (user?.privacyReadReceipts !== false) {
+        emitToUser(io, userSocketMap, otherUserId, "messagesRead", {
+          readBy: String(myId),
+          chatWith: String(otherUserId),
+          messageIds: messagesToUpdate.map((msg) => msg._id.toString()),
+          readAt: now,
         });
       }
     } catch (error) {

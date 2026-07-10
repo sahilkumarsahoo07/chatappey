@@ -134,7 +134,7 @@ const Sidebar = () => {
         const isMine = lastMsg.senderId === authUser._id;
 
         // Handle deleted messages
-        if (lastMsg.text === "This message was deleted") {
+        if (lastMsg.text === "This message was deleted" || lastMsg.deletedForEveryone || lastMsg.deleted) {
             return { text: "This message was deleted", status: null, isMine };
         }
 

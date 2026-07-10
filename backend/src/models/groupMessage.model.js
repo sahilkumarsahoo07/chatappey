@@ -56,6 +56,21 @@ const groupMessageSchema = new mongoose.Schema(
                 ref: "User"
             }
         ],
+        deleted: {
+            type: Boolean,
+            default: false
+        },
+        deletedForEveryone: {
+            type: Boolean,
+            default: false
+        },
+        deletedAt: {
+            type: Date
+        },
+        deletedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User"
+        },
         isForwarded: {
             type: Boolean,
             default: false

@@ -12,6 +12,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
+import { isMessageDeleted } from "../lib/messageDelete";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "😡"];
 
@@ -233,6 +234,8 @@ export const buildPrivateChatActions = ({
   onDelete,
   onDownload,
 }) => {
+  if (isMessageDeleted(message)) return [];
+
   const actions = [
     {
       id: "reply",
@@ -291,15 +294,14 @@ export const buildPrivateChatActions = ({
     });
   }
 
-  if (message.senderId === authUserId) {
-    actions.push({
-      id: "delete",
-      label: "Delete",
-      icon: <Trash2 className="w-4 h-4" />,
-      danger: true,
-      onClick: onDelete,
-    });
-  }
+  // Anyone in the chat can open delete (sheet decides for-me vs everyone)
+  actions.push({
+    id: "delete",
+    label: "Delete",
+    icon: <Trash2 className="w-4 h-4" />,
+    danger: true,
+    onClick: onDelete,
+  });
 
   return actions;
 };
@@ -317,32 +319,32 @@ export const buildGroupChatActions = ({
   onForward,
   onDelete,
 }) => {
+  if (isMessageDeleted(message)) return [];
+
   const actions = [];
-  if (message.text !== "This message was deleted") {
-    if (onReply) {
-      actions.push({
-        id: "reply",
-        label: "Reply",
-        icon: <Reply className="w-4 h-4" />,
-        onClick: onReply,
-      });
-    }
-    if (onStar) {
-      actions.push({
-        id: "star",
-        label: isStarred ? "Unstar" : "Star message",
-        icon: <Star className={`w-4 h-4 ${isStarred ? "fill-warning text-warning" : ""}`} />,
-        onClick: onStar,
-      });
-    }
+  if (onReply) {
     actions.push({
-      id: "info",
-      label: "Message Info",
-      icon: <Info className="w-4 h-4" />,
-      onClick: onInfo,
+      id: "reply",
+      label: "Reply",
+      icon: <Reply className="w-4 h-4" />,
+      onClick: onReply,
     });
   }
-  if (isAdmin && message.text !== "This message was deleted") {
+  if (onStar) {
+    actions.push({
+      id: "star",
+      label: isStarred ? "Unstar" : "Star message",
+      icon: <Star className={`w-4 h-4 ${isStarred ? "fill-warning text-warning" : ""}`} />,
+      onClick: onStar,
+    });
+  }
+  actions.push({
+    id: "info",
+    label: "Message Info",
+    icon: <Info className="w-4 h-4" />,
+    onClick: onInfo,
+  });
+  if (isAdmin) {
     actions.push({
       id: "pin",
       label: isPinned ? "Unpin" : "Pin",
@@ -350,7 +352,7 @@ export const buildGroupChatActions = ({
       onClick: onPin,
     });
   }
-  if (!message.image && message.text && message.text !== "This message was deleted") {
+  if (!message.image && message.text) {
     actions.push({
       id: "copy",
       label: "Copy",
@@ -358,14 +360,12 @@ export const buildGroupChatActions = ({
       onClick: onCopy,
     });
   }
-  if (message.text !== "This message was deleted") {
-    actions.push({
-      id: "forward",
-      label: "Forward",
-      icon: <Forward className="w-4 h-4" />,
-      onClick: onForward,
-    });
-  }
+  actions.push({
+    id: "forward",
+    label: "Forward",
+    icon: <Forward className="w-4 h-4" />,
+    onClick: onForward,
+  });
   actions.push({
     id: "delete",
     label: "Delete",

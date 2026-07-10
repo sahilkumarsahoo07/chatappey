@@ -1,0 +1,124 @@
+.voice-msg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  max-width: 280px;
+  min-width: 200px;
+  margin: 2px 0;
+  border: 1px solid color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 10%, transparent);
+  background: color-mix(in oklab, var(--fallback-b1, oklch(var(--b1))) 12%, transparent);
+}
+
+.voice-msg--mine {
+  background: color-mix(in oklab, var(--fallback-pc, oklch(var(--pc))) 12%, transparent);
+  border-color: color-mix(in oklab, var(--fallback-pc, oklch(var(--pc))) 18%, transparent);
+}
+
+.voice-msg--compact {
+  min-width: 160px;
+  max-width: 240px;
+  padding: 6px 8px;
+}
+
+.voice-msg-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: none;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.voice-msg--theirs .voice-msg-play {
+  background: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 12%, transparent);
+  color: inherit;
+}
+
+.voice-msg--mine .voice-msg-play {
+  background: color-mix(in oklab, var(--fallback-pc, oklch(var(--pc))) 22%, transparent);
+  color: inherit;
+}
+
+.voice-msg-play:active {
+  transform: scale(0.94);
+}
+
+.voice-msg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-msg-wave {
+  display: flex;
+  align-items: center;
+  gap: 1.5px;
+  height: 28px;
+  width: 100%;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.voice-msg-bar {
+  flex: 1;
+  min-width: 2px;
+  max-width: 3.5px;
+  border-radius: 999px;
+  align-self: center;
+  opacity: 0.35;
+  background: currentColor;
+  transition: opacity 0.12s ease, height 0.08s linear;
+}
+
+.voice-msg-bar--played {
+  opacity: 0.95;
+}
+
+.voice-msg--mine .voice-msg-bar--played {
+  color: inherit;
+}
+
+.voice-msg-bar--live {
+  opacity: 1;
+  transform: scaleY(1.08);
+}
+
+.voice-msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.voice-msg-speed {
+  border: none;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  color: inherit;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.voice-msg-speed:hover {
+  background: color-mix(in oklab, currentColor 18%, transparent);
+}
+
+.voice-msg-mic {
+  flex-shrink: 0;
+  opacity: 0.4;
+  display: grid;
+  place-items: center;
+}

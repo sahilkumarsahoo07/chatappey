@@ -4,6 +4,13 @@ import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { io, getReceiverSocketId } from "../lib/socket.js";
 import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
+import {
+    annotateDeleteFlags,
+    applyDeleteForEveryoneFields,
+    canDeleteForEveryone,
+    getDeleteOptions,
+    DELETED_TEXT_EVERYONE,
+} from "../utils/messageDelete.utils.js";
 
 // Helper to send system messages to groups
 const sendSystemMessage = async (groupId, text) => {
@@ -522,13 +529,18 @@ export const getGroupMessages = async (req, res) => {
             return res.status(403).json({ error: "You are not a member of this group" });
         }
 
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 60, 1), 100);
-        const before = req.query.before ? new Date(req.query.before) : null;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 40, 1), 100);
+        const before = req.query.before
+          ? new Date(req.query.before)
+          : req.query.cursor
+            ? new Date(req.query.cursor)
+            : null;
         const after = req.query.after ? new Date(req.query.after) : null;
 
         const baseQuery = {
             groupId,
             createdAt: { $gte: memberInfo.joinedAt },
+            deletedFor: { $nin: [userId] },
         };
 
         if (after && !isNaN(after.getTime())) {
@@ -571,11 +583,14 @@ export const getGroupMessages = async (req, res) => {
             messages = batch.reverse();
         }
 
+        const oldestCursor = messages[0]?.createdAt || null;
+        const newestCursor = messages[messages.length - 1]?.createdAt || null;
         res.status(200).json({
-            messages,
+            messages: annotateDeleteFlags(messages, userId),
             hasMore,
-            oldestCursor: messages[0]?.createdAt || null,
-            newestCursor: messages[messages.length - 1]?.createdAt || null,
+            nextCursor: hasMore ? oldestCursor : null,
+            oldestCursor,
+            newestCursor,
         });
     } catch (error) {
         console.error("Error in getGroupMessages:", error.message);
@@ -742,7 +757,23 @@ export const markGroupMessagesAsRead = async (req, res) => {
     }
 };
 
-// Delete group message for everyone (sender only)
+// Delete options for WhatsApp-style sheet
+export const getGroupMessageDeleteOptions = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const userId = req.user._id;
+        const message = await GroupMessage.findById(messageId);
+        if (!message || message.groupId.toString() !== groupId) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+        return res.status(200).json(getDeleteOptions(message, userId));
+    } catch (error) {
+        console.error("getGroupMessageDeleteOptions:", error.message);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Delete group message for everyone (sender only, within time window)
 export const deleteGroupMessageForAll = async (req, res) => {
     try {
         const { groupId, messageId } = req.params;
@@ -758,32 +789,61 @@ export const deleteGroupMessageForAll = async (req, res) => {
             return res.status(400).json({ error: "Message does not belong to this group" });
         }
 
-        // Only the sender can delete for everyone
-        if (message.senderId.toString() !== userId.toString()) {
+        if (!message.senderId || message.senderId.toString() !== userId.toString()) {
             return res.status(403).json({ error: "Only the sender can delete this message for everyone" });
         }
 
-        // Update message to show as deleted
-        message.text = "This message was deleted";
-        message.image = null;
+        if (message.deletedForEveryone || message.deleted) {
+            return res.status(400).json({ error: "Message already deleted" });
+        }
+
+        if (!canDeleteForEveryone(message, userId)) {
+            return res.status(403).json({
+                error: "Delete for everyone is no longer available",
+                canDeleteForEveryone: false,
+            });
+        }
+
+        applyDeleteForEveryoneFields(message, userId);
         await message.save();
 
         const group = await Group.findById(groupId);
+        const payload = {
+            ...message.toObject(),
+            canDeleteForEveryone: false,
+        };
 
-        // Notify all group members via socket
-        group.members.forEach(member => {
+        if (
+            group?.lastMessage?.createdAt &&
+            message.createdAt &&
+            new Date(group.lastMessage.createdAt).getTime() === new Date(message.createdAt).getTime()
+        ) {
+            group.lastMessage = {
+                ...(group.lastMessage.toObject?.() ?? group.lastMessage),
+                text: DELETED_TEXT_EVERYONE,
+            };
+            await group.save();
+        }
+
+        group.members.forEach((member) => {
             const memberId = member.user || member;
             const socketId = getReceiverSocketId(memberId.toString());
             if (socketId) {
                 io.to(socketId).emit("group:messageDeleted", {
                     groupId,
                     messageId,
-                    deletedForAll: true
+                    deletedForAll: true,
+                    updatedMessage: payload,
                 });
             }
         });
 
-        res.status(200).json({ success: true, message: "Message deleted for everyone" });
+        res.status(200).json({
+            success: true,
+            message: "Message deleted for everyone",
+            updatedMessage: payload,
+            canDeleteForEveryone: false,
+        });
     } catch (error) {
         console.error("Error in deleteGroupMessageForAll:", error.message);
         res.status(500).json({ error: "Internal server error" });
@@ -806,10 +866,22 @@ export const deleteGroupMessageForMe = async (req, res) => {
             return res.status(400).json({ error: "Message does not belong to this group" });
         }
 
-        // Add user to deletedFor array
-        if (!message.deletedFor.includes(userId)) {
+        if (message.deletedForEveryone || message.deleted) {
+            return res.status(400).json({ error: "Message already deleted" });
+        }
+
+        if (!message.deletedFor.some((id) => id.toString() === userId.toString())) {
             message.deletedFor.push(userId);
             await message.save();
+        }
+
+        const mySocketId = getReceiverSocketId(userId.toString());
+        if (mySocketId) {
+            io.to(mySocketId).emit("group:messageDeleted", {
+                groupId,
+                messageId,
+                deletedForAll: false,
+            });
         }
 
         res.status(200).json({ success: true, message: "Message deleted for you" });

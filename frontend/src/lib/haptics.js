@@ -26,6 +26,10 @@ export const HapticPatterns = {
   storyLike: [14, 28, 14],
   archive: [16],
   mute: [14],
+  recordStart: [16],
+  recordLock: [12, 28, 12],
+  recordCancel: [30, 40, 20],
+  recordSend: [14],
 };
 
 export function haptic(pattern = "light") {

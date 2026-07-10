@@ -6,8 +6,8 @@ import {
   showBrowserNotification,
   showInAppNotification,
   playNotificationSound,
-  isDocumentVisible,
   shouldShowSystemNotification,
+  isActivelyViewingConversation,
 } from "../lib/notifications";
 import { haptic } from "../lib/haptics";
 import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
@@ -19,8 +19,19 @@ import {
   mergeMessages,
   removeThread,
 } from "../lib/messageCache";
+import {
+  applyOptimisticDeleteForEveryone,
+  deletedSidebarPreview,
+  DELETED_TEXT_EVERYONE,
+} from "../lib/messageDelete";
+import {
+  makeClientMessageId,
+  messageMatchesIds,
+  upgradeStatus,
+  sameId,
+} from "../lib/messageStatus";
 
-const PAGE_SIZE = 60;
+const PAGE_SIZE = 40;
 
 const persistDmThread = (userId, messages, meta = {}) => {
   if (!userId || !messages?.length) return;
@@ -145,12 +156,22 @@ export const useChatStore = create((set, get) => ({
           messagesMeta: {
             hasMoreOlder: hydrated.hasMoreOlder ?? true,
             isSyncing: true,
-            oldestCursor: hydrated.oldestCachedAt,
-            newestCursor: hydrated.newestAt,
+            oldestCursor: hydrated.oldestCachedAt || hydrated.messages[0]?.createdAt,
+            newestCursor: hydrated.newestAt || hydrated.messages[hydrated.messages.length - 1]?.createdAt,
           },
           isMessagesLoading: false,
         });
-      } else if (!get().messages.length) {
+        // WhatsApp: show cache instantly, then delta-sync only (never wipe older history)
+        const newest =
+          hydrated.newestAt ||
+          hydrated.messages[hydrated.messages.length - 1]?.createdAt;
+        if (newest) {
+          await get().getMessages(userId, { after: newest, background: true });
+        }
+        get().markMessagesAsRead(userId);
+        return;
+      }
+      if (!get().messages.length) {
         set({ isMessagesLoading: true });
       }
     }
@@ -173,11 +194,24 @@ export const useChatStore = create((set, get) => ({
         nextMessages = incoming;
       }
 
+      const prevMeta = get().messagesMeta || {};
+      let hasMoreOlder = prevMeta.hasMoreOlder ?? true;
+      if (isOlder || isInitial) {
+        // API hasMore = more messages older than this page
+        hasMoreOlder = Boolean(hasMore);
+      }
+      // Delta (after) must NEVER clear hasMoreOlder
+
       const meta = {
-        hasMoreOlder: hasMore,
+        hasMoreOlder,
         isSyncing: false,
-        oldestCursor,
-        newestCursor,
+        oldestCursor:
+          nextMessages[0]?.createdAt || oldestCursor || prevMeta.oldestCursor || null,
+        newestCursor:
+          nextMessages[nextMessages.length - 1]?.createdAt ||
+          newestCursor ||
+          prevMeta.newestCursor ||
+          null,
       };
 
       set({
@@ -187,7 +221,28 @@ export const useChatStore = create((set, get) => ({
         isLoadingOlder: false,
       });
 
-      persistDmThread(userId, nextMessages, { hasMoreOlder: hasMore });
+      persistDmThread(userId, nextMessages, { hasMoreOlder });
+
+      // ACK delivery for any undelivered messages we just loaded (peer was offline)
+      const authUser = useAuthStore.getState().authUser;
+      const sock = useAuthStore.getState().socket;
+      if (sock && authUser) {
+        nextMessages.forEach((m) => {
+          if (
+            sameId(m.receiverId, authUser._id) &&
+            (m.status === "sent" || m.status === "delivered")
+          ) {
+            // Only ACK "sent" → delivered; skip if already read
+            if (m.status === "sent") {
+              sock.emit("messageReceived", {
+                messageId: m._id,
+                clientMessageId: m.clientMessageId,
+                senderId: m.senderId?._id || m.senderId,
+              });
+            }
+          }
+        });
+      }
 
       if (isInitial && !background) {
         get().markMessagesAsRead(userId);
@@ -236,7 +291,6 @@ export const useChatStore = create((set, get) => ({
     const { selectedUser, messages, users, replyingToMessage } = get();
     const authUser = useAuthStore.getState().authUser;
     const socket = useAuthStore.getState().socket;
-    const onlineUsers = useAuthStore.getState().onlineUsers || [];
 
     haptic("send");
 
@@ -247,9 +301,11 @@ export const useChatStore = create((set, get) => ({
         replyTo: messageData.replyTo !== undefined ? messageData.replyTo : (replyingToMessage?._id || null),
       });
       if (queued.queued) {
+        const pendingId = makeClientMessageId();
         const pendingMsg = {
-          _id: `pending-${Date.now()}`,
-          optimisticId: `pending-${Date.now()}`,
+          _id: pendingId,
+          optimisticId: pendingId,
+          clientMessageId: pendingId,
           text: messageData.text,
           image: messageData.image,
           video: messageData.video,
@@ -270,14 +326,12 @@ export const useChatStore = create((set, get) => ({
       return;
     }
 
-    // Check if receiver is online
-    const isReceiverOnline = onlineUsers.includes(selectedUser._id);
-    
-    // Create optimistic message to show instantly
-    // Start with 'sent' (single tick), will upgrade to 'delivered' if receiver is online
+    // Stable client id for optimistic UI ↔ ACK ↔ delivery matching
+    const clientMessageId = makeClientMessageId();
     const optimisticMessage = {
-      _id: `temp-${Date.now()}`, // Temporary ID
-      optimisticId: `temp-${Date.now()}`, // Stable React key
+      _id: clientMessageId,
+      optimisticId: clientMessageId,
+      clientMessageId,
       text: messageData.text,
       image: messageData.image,
       video: messageData.video,
@@ -289,107 +343,115 @@ export const useChatStore = create((set, get) => ({
       scheduledFor: messageData.scheduledFor,
       senderId: authUser._id,
       receiverId: selectedUser._id,
-      createdAt: messageData.scheduledFor ? new Date(messageData.scheduledFor).toISOString() : new Date().toISOString(),
-      status: messageData.scheduledFor ? 'scheduled' : 'sent', // Start with 'sent' (single tick)
-      replyTo: messageData.replyTo !== undefined ? messageData.replyTo : (replyingToMessage?._id || null),
-      replyToMessage: messageData.replyToMessage !== undefined ? messageData.replyToMessage : (replyingToMessage ? {
-        text: replyingToMessage.text,
-        image: replyingToMessage.image,
-        senderId: replyingToMessage.senderId,
-        senderName: replyingToMessage.senderId === authUser._id ? authUser.fullName : selectedUser.fullName
-      } : null)
+      createdAt: messageData.scheduledFor
+        ? new Date(messageData.scheduledFor).toISOString()
+        : new Date().toISOString(),
+      // Always start as sent (single ✓) — never fake delivered from onlineUsers
+      status: messageData.scheduledFor ? "scheduled" : "sent",
+      replyTo:
+        messageData.replyTo !== undefined
+          ? messageData.replyTo
+          : replyingToMessage?._id || null,
+      replyToMessage:
+        messageData.replyToMessage !== undefined
+          ? messageData.replyToMessage
+          : replyingToMessage
+            ? {
+                text: replyingToMessage.text,
+                image: replyingToMessage.image,
+                senderId: replyingToMessage.senderId,
+                senderName:
+                  replyingToMessage.senderId === authUser._id
+                    ? authUser.fullName
+                    : selectedUser.fullName,
+              }
+            : null,
     };
 
-    // Add message to UI INSTANTLY (synchronous state update)
-    // Determine initial status based on receiver online status
-    const initialStatus = (isReceiverOnline && !messageData.scheduledFor) ? 'delivered' : optimisticMessage.status;
-    const messageToAdd = { ...optimisticMessage, status: initialStatus };
-    
-    // Add message to state immediately - no delays
-    const optimisticList = [...messages, messageToAdd];
+    const optimisticList = [...messages, optimisticMessage];
     set({ messages: optimisticList });
     persistDmThread(selectedUser._id, optimisticList, get().messagesMeta);
 
-    // Send via WebSocket (non-blocking, fire-and-forget)
-    socket.emit("sendMessage", {
-      receiverId: selectedUser._id,
-      ...messageData,
-      replyTo: optimisticMessage.replyTo,
-      replyToMessage: optimisticMessage.replyToMessage
-    }, (response) => {
-      // Process response immediately (no setTimeout delay)
-      if (response.error) {
-        // Handle error
+    socket.emit(
+      "sendMessage",
+      {
+        receiverId: selectedUser._id,
+        ...messageData,
+        clientMessageId,
+        replyTo: optimisticMessage.replyTo,
+        replyToMessage: optimisticMessage.replyToMessage,
+      },
+      (response) => {
+        if (response?.error) {
+          const currentMessages = get().messages;
+          set({
+            messages: currentMessages.filter(
+              (msg) => !messageMatchesIds(msg, { clientMessageId })
+            ),
+          });
+          toast.error(response.error);
+          return;
+        }
+
+        const newMessage = response.message;
         const currentMessages = get().messages;
-        set({ messages: currentMessages.filter(msg => msg._id !== optimisticMessage._id) });
-        toast.error(response.error);
-        return;
-      }
-
-      const newMessage = response.message;
-
-      // Batch all updates together to minimize re-renders
-      const currentMessages = get().messages;
-      const updatedMessages = currentMessages.map(msg => {
-        if (msg._id === optimisticMessage._id) {
-          // Preserve the status from optimistic update (sent or delivered)
-          // Server might return different status, but we keep our optimistic one
-          const preservedStatus = msg.status === 'delivered' ? 'delivered' : 
-                                 (newMessage.status === 'delivered' || newMessage.status === 'read') ? newMessage.status : 
-                                 msg.status; // Keep 'sent' if not upgraded yet
-          
+        const updatedMessages = currentMessages.map((msg) => {
+          if (!messageMatchesIds(msg, { clientMessageId })) return msg;
+          // Never downgrade ticks (e.g. delivered/read arrived before ACK)
+          const nextStatus = upgradeStatus(msg.status, newMessage.status || "sent");
           return {
-            ...msg, // Keep optimistic message as base
-            ...newMessage, // Overlay real data from server
-            optimisticId: optimisticMessage.optimisticId, // Stable React key
-            status: preservedStatus, // Use preserved status
+            ...msg,
+            ...newMessage,
+            _id: newMessage._id,
+            optimisticId: clientMessageId,
+            clientMessageId,
+            status: nextStatus,
             image: optimisticMessage.image || newMessage.image,
             audio: optimisticMessage.audio || newMessage.audio,
             file: optimisticMessage.file || newMessage.file,
             createdAt: optimisticMessage.createdAt,
-            // Preserve reply data from server response OR optimistic message
             replyTo: newMessage.replyTo || optimisticMessage.replyTo,
-            replyToMessage: newMessage.replyToMessage || optimisticMessage.replyToMessage,
-            realId: newMessage._id // Store real ID for reference if needed
+            replyToMessage:
+              newMessage.replyToMessage || optimisticMessage.replyToMessage,
+            realId: newMessage._id,
           };
-        }
-        return msg;
-      });
+        });
 
-      // Update users list (defer sorting to prevent blocking)
-      const currentUsers = get().users;
-      const updatedUsers = currentUsers.map(user => {
-        if (user._id === selectedUser._id) {
+        const currentUsers = get().users;
+        const updatedUsers = currentUsers.map((user) => {
+          if (!sameId(user._id, selectedUser._id)) return user;
           return {
             ...user,
             chatDeletedForMe: false,
             lastMessage: {
+              _id: newMessage._id,
               text: newMessage.text,
               image: newMessage.image,
+              audio: newMessage.audio,
               createdAt: newMessage.createdAt,
               senderId: newMessage.senderId,
-              status: updatedMessages.find(m => m._id === optimisticMessage._id)?.status || newMessage.status
-            }
+              status:
+                updatedMessages.find((m) =>
+                  messageMatchesIds(m, { clientMessageId })
+                )?.status || newMessage.status,
+            },
           };
-        }
-        return user;
-      });
+        });
 
-      // Sort users and update state IMMEDIATELY (no requestAnimationFrame delay)
-      const sortedUsers = [...updatedUsers].sort((a, b) => {
-        const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-        const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
-        return bTime - aTime;
-      });
+        const sortedUsers = [...updatedUsers].sort((a, b) => {
+          const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+          const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+          return bTime - aTime;
+        });
 
-      // Batch all state updates together - update immediately
-      set({ 
-        messages: updatedMessages,
-        users: sortedUsers,
-        replyingToMessage: null 
-      });
-      persistDmThread(selectedUser._id, updatedMessages, get().messagesMeta);
-    });
+        set({
+          messages: updatedMessages,
+          users: sortedUsers,
+          replyingToMessage: null,
+        });
+        persistDmThread(selectedUser._id, updatedMessages, get().messagesMeta);
+      }
+    );
   },
 
   subscribeToMessages: () => {
@@ -411,171 +473,159 @@ export const useChatStore = create((set, get) => ({
       const currentSelectedUser = get().selectedUser;
       const authUser = useAuthStore.getState().authUser;
       const users = get().users;
+      const socketRef = useAuthStore.getState().socket;
 
       // Skip scheduled messages - they should never arrive via socket
-      if (newMessage.status === 'scheduled') {
-        console.warn("Received scheduled message via socket - ignoring:", newMessage._id);
+      if (newMessage.status === "scheduled") {
         return;
       }
 
-      const isMessageForCurrentChat =
-        (sameUserId(newMessage.senderId, currentSelectedUser?._id) &&
-          sameUserId(newMessage.receiverId, authUser._id)) ||
-        (sameUserId(newMessage.senderId, authUser._id) &&
-          sameUserId(newMessage.receiverId, currentSelectedUser?._id));
-
-      console.log('[Socket Debug] newMessage received:', {
-        messageId: newMessage._id,
-        senderId: newMessage.senderId,
-        receiverId: newMessage.receiverId,
-        authUserId: authUser._id,
-        currentSelectedUserId: currentSelectedUser?._id,
-        isMessageForCurrentChat,
-        isFromAuthUser: newMessage.senderId === authUser._id
-      });
-
-      if (isMessageForCurrentChat && !sameUserId(newMessage.senderId, authUser._id)) {
-        // CRITICAL FIX: Check for duplicate by ID first
-        const messages = get().messages;
-        const alreadyExists = messages.some(m => m._id === newMessage._id);
-
-        console.log('[Socket Debug] Message for current chat:', {
-          alreadyExists,
-          messagesCount: messages.length
+      // Instant delivery ACK → sender gets ✓✓ (WhatsApp-like)
+      if (sameId(newMessage.receiverId, authUser._id) && socketRef) {
+        socketRef.emit("messageReceived", {
+          messageId: newMessage._id,
+          clientMessageId: newMessage.clientMessageId,
+          senderId: newMessage.senderId?._id || newMessage.senderId,
         });
+      }
+
+      const isMessageForCurrentChat =
+        (sameId(newMessage.senderId, currentSelectedUser?._id) &&
+          sameId(newMessage.receiverId, authUser._id)) ||
+        (sameId(newMessage.senderId, authUser._id) &&
+          sameId(newMessage.receiverId, currentSelectedUser?._id));
+
+      if (isMessageForCurrentChat && !sameId(newMessage.senderId, authUser._id)) {
+        const messages = get().messages;
+        const alreadyExists = messages.some(
+          (m) =>
+            sameId(m._id, newMessage._id) ||
+            (newMessage.clientMessageId &&
+              messageMatchesIds(m, { clientMessageId: newMessage.clientMessageId }))
+        );
 
         if (!alreadyExists) {
-          // Check if chat is active (window focused + sender is current chat)
-          const isWindowFocused = document.hasFocus() && !document.hidden;
-          const isChatActive =
-            isWindowFocused && sameUserId(currentSelectedUser?._id, newMessage.senderId);
-
-          console.log('[Socket Debug] Adding message to UI with status:', isChatActive ? 'read' : newMessage.status);
-
-          const nextMessages = [...messages, {
-              ...newMessage,
-              status: isChatActive ? 'read' : newMessage.status // INSTANT blue ticks if chat is active!
-            }];
-
+          const nextMessages = [...messages, { ...newMessage }];
           set({ messages: nextMessages });
-
-          const threadId = sameUserId(newMessage.senderId, authUser._id)
-            ? newMessage.receiverId
-            : newMessage.senderId;
-          persistDmThread(threadId, nextMessages, get().messagesMeta);
-        } else {
-          console.log('[Socket Debug] Message already exists, skipping');
+          persistDmThread(newMessage.senderId, nextMessages, get().messagesMeta);
         }
-      } else {
-        console.log('[Socket Debug] Message NOT for current chat or from self, skipping UI update');
       }
 
-      // Notification Logic
-      const isSenderActiveCurrentChat =
-        sameUserId(currentSelectedUser?._id, newMessage.senderId) &&
-        !shouldShowSystemNotification();
+      // WhatsApp: notify only when NOT actively viewing this conversation
+      const viewingThisChat = isActivelyViewingConversation(
+        newMessage.senderId,
+        currentSelectedUser?._id
+      );
       let shouldMarkRead = false;
 
-      if (sameUserId(newMessage.receiverId, authUser._id)) {
-        const senderUser = users.find((u) => sameUserId(u._id, newMessage.senderId));
-        const senderMuted = senderUser?.isMuted;
+      if (sameId(newMessage.receiverId, authUser._id)) {
+        if (viewingThisChat) {
+          // Message in open chat is the notification — no sound/toast/popup
+          shouldMarkRead = true;
+        } else {
+          const senderUser = users.find((u) => sameId(u._id, newMessage.senderId));
+          const senderMuted = senderUser?.isMuted;
 
-        if (!senderMuted) {
-          playNotificationSound();
+          if (!senderMuted) {
+            playNotificationSound();
 
-          const senderForNotify = senderUser || {
-            _id: newMessage.senderId,
-            fullName: newMessage.senderName || "New Message",
-            profilePic: newMessage.senderProfilePic || "/avatar.png",
-          };
+            const senderForNotify = senderUser || {
+              _id: newMessage.senderId,
+              fullName: newMessage.senderName || "New Message",
+              profilePic: newMessage.senderProfilePic || "/avatar.png",
+            };
 
-          const preview = messagePreview(newMessage);
+            const preview = messagePreview(newMessage);
 
-          if (shouldShowSystemNotification()) {
-            void showBrowserNotification(senderForNotify.fullName, {
-              body: preview,
-              icon: "/avatar.png",
-              tag: `chat-${newMessage.senderId}`,
-              requireInteraction: false,
-              silent: false,
-              url: `/?chat=${newMessage.senderId}`,
-              chatId: newMessage.senderId,
-              peer: {
-                _id: senderForNotify._id,
-                fullName: senderForNotify.fullName,
-                profilePic: senderForNotify.profilePic,
-                isFriend: senderForNotify.isFriend !== false,
-              },
-            });
-          }
-
-          if (!isSenderActiveCurrentChat) {
-            showInAppNotification(newMessage, senderForNotify, () => {
-              get().setSelectedUser(senderForNotify);
-            });
-            toast(`💬 ${senderForNotify.fullName}: ${preview}`, { duration: 5000 });
-          }
-
-          if (isSenderActiveCurrentChat) {
-            shouldMarkRead = true;
+            if (shouldShowSystemNotification()) {
+              void showBrowserNotification(senderForNotify.fullName, {
+                body: preview,
+                icon: "/avatar.png",
+                tag: `chat-${newMessage.senderId}`,
+                requireInteraction: false,
+                silent: false,
+                url: `/?chat=${newMessage.senderId}`,
+                chatId: newMessage.senderId,
+                peer: {
+                  _id: senderForNotify._id,
+                  fullName: senderForNotify.fullName,
+                  profilePic: senderForNotify.profilePic,
+                  isFriend: senderForNotify.isFriend !== false,
+                },
+              });
+            } else {
+              // In-app only when tab is focused but user is elsewhere in the app
+              showInAppNotification(newMessage, senderForNotify, () => {
+                get().setSelectedUser(senderForNotify);
+              });
+            }
           }
         }
       }
 
-      const senderId = sameUserId(newMessage.senderId, authUser._id)
+      const senderId = sameId(newMessage.senderId, authUser._id)
         ? newMessage.receiverId
         : newMessage.senderId;
-      const senderIndex = users.findIndex((u) => sameUserId(u._id, senderId));
+      const senderIndex = users.findIndex((u) => sameId(u._id, senderId));
 
-      const isChatAlreadyOpen =
-        sameUserId(currentSelectedUser?._id, senderId) && !shouldShowSystemNotification();
-      
+      // Open + focused chat for this peer (covers own echoes in the open thread)
+      const isChatAlreadyOpen = isActivelyViewingConversation(
+        senderId,
+        currentSelectedUser?._id
+      );
+
       if (senderIndex !== -1) {
         const updatedUsers = [...users];
         const sender = updatedUsers[senderIndex];
 
-        // If chat is already open, unreadCount should be 0
-        // If message is for me and chat is NOT open, increment unreadCount
         const shouldIncrementUnread =
-          sameUserId(newMessage.receiverId, authUser._id) &&
+          sameId(newMessage.receiverId, authUser._id) &&
           !isChatAlreadyOpen &&
           !shouldMarkRead;
 
         const updatedSender = {
           ...sender,
-          chatDeletedForMe: false, // new message brings chat back into the list
+          chatDeletedForMe: false,
           lastMessage: {
+            _id: newMessage._id,
             text: newMessage.text,
             image: newMessage.image,
+            audio: newMessage.audio,
             createdAt: newMessage.createdAt,
             senderId: newMessage.senderId,
-            status: (shouldMarkRead || isChatAlreadyOpen) ? 'read' : 'delivered'
+            status: shouldMarkRead || isChatAlreadyOpen ? "read" : "delivered",
           },
-          unreadCount: (shouldMarkRead || isChatAlreadyOpen)
-            ? 0  // Chat is open, no unread
-            : (shouldIncrementUnread ? (sender.unreadCount || 0) + 1 : sender.unreadCount)
+          unreadCount:
+            shouldMarkRead || isChatAlreadyOpen
+              ? 0
+              : shouldIncrementUnread
+                ? (sender.unreadCount || 0) + 1
+                : sender.unreadCount,
         };
 
         updatedUsers.splice(senderIndex, 1);
         updatedUsers.unshift(updatedSender);
         set({ users: updatedUsers });
-      } else {
+      } else if (sameId(newMessage.receiverId, authUser._id)) {
         get().refreshUsers();
       }
 
-      // Mark messages as read immediately if chat is open and visible
-      const isVisible = !document.hidden;
-      if (isVisible && isMessageForCurrentChat && sameUserId(newMessage.receiverId, authUser._id)) {
-        if (sameUserId(newMessage.senderId, currentSelectedUser?._id)) {
-          // Mark as read immediately - this will also update unreadCount to 0
-          get().markMessagesAsRead(currentSelectedUser._id);
-        }
+      // Mark as read only when actively viewing this conversation (WhatsApp)
+      if (
+        viewingThisChat &&
+        isMessageForCurrentChat &&
+        sameId(newMessage.receiverId, authUser._id)
+      ) {
+        get().markMessagesAsRead(currentSelectedUser._id);
       }
     });
 
     const handleActiveState = () => {
       const { selectedUser } = get();
-      if (!document.hidden && selectedUser) {
+      if (
+        selectedUser &&
+        isActivelyViewingConversation(selectedUser._id, selectedUser._id)
+      ) {
         get().markMessagesAsRead(selectedUser._id);
       }
     };
@@ -587,83 +637,191 @@ export const useChatStore = create((set, get) => ({
     };
 
     socket.on("deleteMessageForAll", (updatedMessage) => {
+      const authUser = useAuthStore.getState().authUser;
+      const { users, selectedUser, messages } = get();
+      const otherUserId =
+        String(updatedMessage.senderId) === String(authUser?._id)
+          ? updatedMessage.receiverId
+          : updatedMessage.senderId;
+
+      const inOpenChat =
+        selectedUser &&
+        (String(selectedUser._id) === String(updatedMessage.senderId) ||
+          String(selectedUser._id) === String(updatedMessage.receiverId));
+
       set({
-        messages: get().messages.map((msg) =>
-          msg._id === updatedMessage._id ? updatedMessage : msg
-        ),
+        messages: inOpenChat
+          ? messages.map((msg) =>
+              String(msg._id) === String(updatedMessage._id)
+                ? { ...msg, ...updatedMessage, canDeleteForEveryone: false }
+                : msg
+            )
+          : messages,
+        users: users.map((user) => {
+          const lm = user.lastMessage;
+          if (!lm) return user;
+          const matchesId = lm._id && String(lm._id) === String(updatedMessage._id);
+          const matchesPeer =
+            String(user._id) === String(otherUserId) &&
+            lm.createdAt &&
+            updatedMessage.createdAt &&
+            new Date(lm.createdAt).getTime() === new Date(updatedMessage.createdAt).getTime();
+          if (!matchesId && !matchesPeer) return user;
+          return {
+            ...user,
+            lastMessage: {
+              ...lm,
+              _id: updatedMessage._id,
+              ...deletedSidebarPreview,
+            },
+          };
+        }),
       });
     });
 
-    socket.on("messageDelivered", ({ messageId, status }) => {
+    socket.on("deleteMessageForMe", ({ messageId, chatUserId }) => {
+      const { messages, users, selectedUser } = get();
+      const inOpenChat =
+        selectedUser && String(selectedUser._id) === String(chatUserId);
+
       set({
-        messages: get().messages.map((msg) =>
-          msg._id === messageId ? { ...msg, status } : msg
-        ),
+        messages: inOpenChat
+          ? messages.filter((msg) => String(msg._id) !== String(messageId))
+          : messages,
+        users: users.map((user) => {
+          if (String(user._id) !== String(chatUserId)) return user;
+          const lm = user.lastMessage;
+          if (!lm) return user;
+          if (lm._id && String(lm._id) === String(messageId)) {
+            return { ...user, lastMessage: null };
+          }
+          return user;
+        }),
+      });
+    });
+
+    socket.on("messageDelivered", ({ messageId, clientMessageId, status, deliveredAt }) => {
+      const next = status || "delivered";
+      set({
+        messages: get().messages.map((msg) => {
+          if (!messageMatchesIds(msg, { messageId, clientMessageId })) return msg;
+          return {
+            ...msg,
+            status: upgradeStatus(msg.status, next),
+            deliveredAt: deliveredAt || msg.deliveredAt,
+          };
+        }),
+        users: get().users.map((user) => {
+          const lm = user.lastMessage;
+          if (!lm) return user;
+          if (
+            messageMatchesIds(lm, { messageId, clientMessageId }) ||
+            (messageId && sameId(lm._id, messageId))
+          ) {
+            return {
+              ...user,
+              lastMessage: {
+                ...lm,
+                status: upgradeStatus(lm.status, next),
+              },
+            };
+          }
+          return user;
+        }),
       });
     });
 
     socket.on("messagesDelivered", ({ receiverId, senderId }) => {
-      const { messages } = get();
+      const { messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
-      if (senderId === authUser._id) {
-        set({
-          messages: messages.map((msg) =>
-            msg.senderId === authUser._id &&
-              msg.receiverId === receiverId &&
-              msg.status === "sent"
-              ? { ...msg, status: "delivered" }
-              : msg
-          ),
-        });
-      }
+      // We are the sender of those messages
+      if (senderId != null && !sameId(senderId, authUser?._id)) return;
+
+      set({
+        messages: messages.map((msg) =>
+          sameId(msg.senderId, authUser._id) &&
+          sameId(msg.receiverId, receiverId) &&
+          msg.status === "sent"
+            ? { ...msg, status: "delivered", deliveredAt: new Date().toISOString() }
+            : msg
+        ),
+        users: users.map((user) => {
+          if (!sameId(user._id, receiverId)) return user;
+          const lm = user.lastMessage;
+          if (!lm || lm.status !== "sent") return user;
+          return { ...user, lastMessage: { ...lm, status: "delivered" } };
+        }),
+      });
     });
 
-    socket.on("messagesRead", ({ readBy, chatWith, messageIds }) => {
+    socket.on("messagesRead", ({ readBy, chatWith, messageIds, readAt }) => {
       const { selectedUser, messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
-      if (selectedUser && readBy === selectedUser._id && chatWith === authUser._id) {
-        // Update messages status to 'read'
-        const updatedMessages = messages.map((msg) =>
-          msg.senderId === authUser._id && msg.status !== "read"
-            ? { ...msg, status: "read" }
-            : msg
-        );
-        
-        // Update users list: set unreadCount to 0 and update lastMessage status
-        const updatedUsers = users.map(user =>
-          user._id === readBy
-            ? { 
-                ...user, 
-                unreadCount: 0,  // INSTANTLY remove unread badge when messages are read
-                lastMessage: user.lastMessage ? { ...user.lastMessage, status: 'read' } : null 
-              }
-            : user
-        );
-        
-        set({
-          messages: updatedMessages,
-          users: updatedUsers
-        });
+
+      // readBy = who read (the other user); chatWith = me (the sender of those messages)
+      if (!sameId(readBy, selectedUser?._id) || !sameId(chatWith, authUser?._id)) {
+        // Still update if we have the chat open with readBy even if chatWith format differs
+        if (!sameId(readBy, selectedUser?._id)) return;
       }
+
+      const idSet =
+        Array.isArray(messageIds) && messageIds.length > 0
+          ? new Set(messageIds.map(String))
+          : null;
+
+      const updatedMessages = messages.map((msg) => {
+        if (!sameId(msg.senderId, authUser._id)) return msg;
+        if (idSet && !idSet.has(String(msg._id)) && !idSet.has(String(msg.realId))) {
+          return msg;
+        }
+        if (msg.status === "read") return msg;
+        return {
+          ...msg,
+          status: "read",
+          readAt: readAt || new Date().toISOString(),
+        };
+      });
+
+      const updatedUsers = users.map((user) =>
+        sameId(user._id, readBy)
+          ? {
+              ...user,
+              lastMessage: user.lastMessage
+                ? { ...user.lastMessage, status: "read" }
+                : null,
+            }
+          : user
+      );
+
+      set({ messages: updatedMessages, users: updatedUsers });
     });
 
-    socket.on("userOnline", ({ userId }) => {
+    const requestDeliveryUpgrade = (peerId) => {
       const authUser = useAuthStore.getState().authUser;
       const { messages, selectedUser } = get();
-      if (selectedUser && userId === selectedUser._id) {
-        const pendingMessages = messages.filter(
-          msg => msg.senderId === authUser._id &&
-            msg.receiverId === userId &&
+      if (!peerId || !authUser) return;
+      if (selectedUser && sameId(peerId, selectedUser._id)) {
+        const pending = messages.some(
+          (msg) =>
+            sameId(msg.senderId, authUser._id) &&
+            sameId(msg.receiverId, peerId) &&
             msg.status === "sent"
         );
-
-        if (pendingMessages.length > 0) {
+        if (pending) {
           socket.emit("updatePendingMessages", {
             senderId: authUser._id,
-            receiverId: userId
+            receiverId: peerId,
           });
         }
       }
+    };
+
+    socket.on("userOnline", ({ userId }) => {
+      requestDeliveryUpgrade(userId);
+    });
+
+    socket.on("peerOnline", ({ userId }) => {
+      requestDeliveryUpgrade(userId);
     });
 
     // === NEW EVENTS ===
@@ -728,10 +886,12 @@ export const useChatStore = create((set, get) => ({
     if (socket) {
       socket.off("newMessage");
       socket.off("deleteMessageForAll");
+      socket.off("deleteMessageForMe");
       socket.off("messageDelivered");
       socket.off("messagesDelivered");
       socket.off("messagesRead");
       socket.off("userOnline");
+      socket.off("peerOnline");
       socket.off("messageReaction");
       socket.off("messageUpdated");
       socket.off("messagePinned");
@@ -748,24 +908,107 @@ export const useChatStore = create((set, get) => ({
   },
 
   deleteForAllMessage: async (messageId) => {
+    const authUser = useAuthStore.getState().authUser;
+    const { messages, users, selectedUser } = get();
+    const prevMessages = messages;
+    const prevUsers = users;
+
+    const optimistic = applyOptimisticDeleteForEveryone(
+      messages.find((m) => m._id === messageId) || { _id: messageId },
+      authUser?._id
+    );
+
+    const isLatestInOpenChat =
+      selectedUser &&
+      messages.length > 0 &&
+      String(messages[messages.length - 1]._id) === String(messageId);
+
+    set({
+      messages: messages.map((msg) =>
+        String(msg._id) === String(messageId) ? { ...msg, ...optimistic } : msg
+      ),
+      users: users.map((user) => {
+        const lm = user.lastMessage;
+        if (!lm) return user;
+        const matchesId = lm._id && String(lm._id) === String(messageId);
+        const matchesOpenChatLatest =
+          isLatestInOpenChat && String(user._id) === String(selectedUser._id);
+        const matchesByTime =
+          selectedUser &&
+          String(user._id) === String(selectedUser._id) &&
+          optimistic.createdAt &&
+          lm.createdAt &&
+          new Date(lm.createdAt).getTime() === new Date(optimistic.createdAt).getTime();
+        if (!matchesId && !matchesOpenChatLatest && !matchesByTime) return user;
+        return {
+          ...user,
+          lastMessage: {
+            ...lm,
+            _id: messageId,
+            ...deletedSidebarPreview,
+            createdAt: lm.createdAt,
+            senderId: lm.senderId,
+            status: lm.status,
+          },
+        };
+      }),
+    });
+
     try {
-      const socket = useAuthStore.getState().socket;
-      const { messages } = get();
-
-      set({
-        messages: messages.map((msg) =>
-          msg._id === messageId
-            ? { ...msg, text: "This message was deleted", image: null }
-            : msg
-        ),
-      });
-
-      socket?.emit("deleteMessageForAll", messageId);
-      await axiosInstance.put(`/messages/${messageId}`);
+      await axiosInstance.delete(`/messages/${messageId}/everyone`);
       toast.success("Message deleted for everyone");
     } catch (error) {
-      get().getMessages(get().selectedUser?._id);
-      toast.error("Delete failed");
+      set({ messages: prevMessages, users: prevUsers });
+      toast.error(error.response?.data?.error || "Delete failed");
+      throw error;
+    }
+  },
+
+  deleteForMeMessage: async (messageId) => {
+    const { messages, users, selectedUser } = get();
+    const prevMessages = messages;
+    const prevUsers = users;
+    const deletedMsg = messages.find((m) => String(m._id) === String(messageId));
+
+    set({
+      messages: messages.filter((msg) => String(msg._id) !== String(messageId)),
+      users: users.map((user) => {
+        if (!selectedUser || String(user._id) !== String(selectedUser._id)) return user;
+        const lm = user.lastMessage;
+        if (!lm) return user;
+        const matches =
+          (lm._id && String(lm._id) === String(messageId)) ||
+          (deletedMsg?.createdAt &&
+            lm.createdAt &&
+            new Date(lm.createdAt).getTime() === new Date(deletedMsg.createdAt).getTime());
+        if (!matches) return user;
+        // Best-effort: clear preview; next message send/refresh will restore
+        const remaining = messages.filter((m) => String(m._id) !== String(messageId));
+        const last = remaining[remaining.length - 1];
+        return {
+          ...user,
+          lastMessage: last
+            ? {
+                _id: last._id,
+                text: last.deletedForEveryone ? DELETED_TEXT_EVERYONE : last.text,
+                image: last.image,
+                audio: last.audio,
+                createdAt: last.createdAt,
+                senderId: last.senderId,
+                status: last.status,
+              }
+            : null,
+        };
+      }),
+    });
+
+    try {
+      await axiosInstance.delete(`/messages/${messageId}/me`);
+      toast.success("Message deleted for you");
+    } catch (error) {
+      set({ messages: prevMessages, users: prevUsers });
+      toast.error(error.response?.data?.error || "Delete failed");
+      throw error;
     }
   },
 

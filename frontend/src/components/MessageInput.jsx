@@ -2,105 +2,21 @@ import { useRef, useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, StopCircle, Play, Pause, Film, Loader2, Camera, Clapperboard } from "lucide-react";
+import { Image, Send, X, Reply, Megaphone, Mic, Paperclip, FileText, BarChart2, Calendar, Film, Loader2, Camera, Clapperboard } from "lucide-react";
 import toast from "react-hot-toast";
 import { chatFeaturesApi, MAX_VIDEO_MB, VIDEO_ACCEPT } from "../lib/chatFeaturesApi";
 import EmojiPickerComponent from "./EmojiPickerComponent";
 import GifPicker from "./GifPicker";
 import PollCreator from "./PollCreator";
 import ScheduleMessageModal from "./ScheduleMessageModal";
+import VoiceRecorderBar from "./chat/VoiceRecorderBar";
+import VoiceMessagePlayer from "./chat/VoiceMessagePlayer";
+import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
+import { haptic } from "../lib/haptics";
 import "./MessageInput.css";
 import { useShallow } from "zustand/react/shallow";
 
 const EMPTY_MEMBERS = [];
-
-// Voice Preview Player Component
-const VoicePreviewPlayer = ({ audioUrl }) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const audioRef = useRef(null);
-
-    useEffect(() => {
-        const audio = audioRef.current;
-        if (!audio) return;
-
-        const updateTime = () => setCurrentTime(audio.currentTime);
-        const updateDuration = () => setDuration(audio.duration);
-        const handleEnded = () => setIsPlaying(false);
-
-        audio.addEventListener('timeupdate', updateTime);
-        audio.addEventListener('loadedmetadata', updateDuration);
-        audio.addEventListener('ended', handleEnded);
-
-        return () => {
-            audio.removeEventListener('timeupdate', updateTime);
-            audio.removeEventListener('loadedmetadata', updateDuration);
-            audio.removeEventListener('ended', handleEnded);
-        };
-    }, [audioUrl]);
-
-    const togglePlay = () => {
-        if (isPlaying) {
-            audioRef.current?.pause();
-        } else {
-            audioRef.current?.play();
-        }
-        setIsPlaying(!isPlaying);
-    };
-
-    const handleProgressClick = (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const percentage = x / rect.width;
-        const newTime = percentage * duration;
-        if (audioRef.current) {
-            audioRef.current.currentTime = newTime;
-        }
-    };
-
-    const formatTime = (time) => {
-        if (isNaN(time)) return "0:00";
-        const mins = Math.floor(time / 60);
-        const secs = Math.floor(time % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    const progress = duration ? (currentTime / duration) * 100 : 0;
-
-    return (
-        <div className="flex items-center gap-3 flex-1">
-            <audio ref={audioRef} src={audioUrl} preload="metadata" />
-
-            <button
-                onClick={togglePlay}
-                className="p-2 rounded-full flex-shrink-0 bg-secondary/20 hover:bg-secondary/30 transition-all"
-            >
-                {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-            </button>
-
-            <div className="flex-1 flex flex-col gap-1">
-                <div
-                    className="h-1 bg-base-content/20 rounded-full cursor-pointer relative overflow-hidden"
-                    onClick={handleProgressClick}
-                >
-                    <div
-                        className="h-full bg-secondary rounded-full transition-all"
-                        style={{ width: `${progress}%` }}
-                    />
-                </div>
-                <div className="flex justify-between text-xs opacity-60">
-                    <span>{formatTime(currentTime)}</span>
-                    <span>{formatTime(duration)}</span>
-                </div>
-            </div>
-
-            <div className="flex-shrink-0 opacity-50">
-                <Mic size={16} />
-            </div>
-        </div>
-    );
-};
 
 const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announcementOnly = false, groupMembers = EMPTY_MEMBERS }) => {
     const [text, setText] = useState("");
@@ -121,12 +37,6 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
     const [selectedMentions, setSelectedMentions] = useState([]);
 
-    // Recording State
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingDuration, setRecordingDuration] = useState(0);
-    const mediaRecorderRef = useRef(null);
-    const audioChunksRef = useRef([]);
-    const timerRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const isTypingRef = useRef(false);
     const isSendingRef = useRef(false); // Ref to prevent double sending
@@ -286,80 +196,74 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         toast.success("GIF selected!");
     }, [isRestricted]);
 
-    // --- Audio Recording ---
+    // --- Audio Recording (WhatsApp hold / slide / lock) ---
 
-    const startRecording = async () => {
+    const blobToBase64 = (blob) => {
+        return new Promise((resolve, reject) => {
+            // Strip codecs= from mime so data URLs work in <audio> / Cloudinary
+            const cleanType = (blob.type || "audio/webm").split(";")[0] || "audio/webm";
+            const clean = blob.type.includes(";") ? new Blob([blob], { type: cleanType }) : blob;
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(clean);
+        });
+    };
+
+    const sendVoiceBlob = useCallback(async (blob) => {
+        if (!blob || isRestricted) return;
+        // Clear composer preview immediately so it can't sit next to the sent bubble
+        setAudioBlob(null);
+        setAudioUrl(null);
+        setMediaType(null);
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorderRef.current = new MediaRecorder(stream);
-            audioChunksRef.current = [];
-
-            mediaRecorderRef.current.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    audioChunksRef.current.push(e.data);
-                }
+            const base64Audio = await blobToBase64(blob);
+            const messageData = {
+                text: "🎤 Voice message",
+                audio: base64Audio,
             };
-
-            mediaRecorderRef.current.onstop = () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                setAudioBlob(audioBlob);
-                setAudioUrl(audioUrl);
-                setMediaType('audio');
-                setImagePreview(null);
-                setGifPreview(null);
-                setFilePreview(null);
-
-                // Stop all tracks
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorderRef.current.start();
-            setIsRecording(true);
-            setRecordingDuration(0);
-
-            timerRef.current = setInterval(() => {
-                setRecordingDuration(prev => prev + 1);
-            }, 1000);
-
-        } catch (error) {
-            console.error("Error accessing microphone:", error);
-            toast.error("Microphone access denied");
+            haptic("send");
+            if (onSend) {
+                await onSend(messageData);
+            } else {
+                await sendMessage(messageData);
+            }
+        } catch (err) {
+            console.error("Failed to send voice message:", err);
+            toast.error("Failed to send voice message");
         }
-    };
+    }, [isRestricted, onSend, sendMessage]);
 
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            clearInterval(timerRef.current);
+    const voice = useVoiceRecorder({
+        onAutoSend: (blob) => {
+            sendVoiceBlob(blob);
+        },
+    });
+
+    useEffect(() => {
+        if (voice.error) toast.error(voice.error);
+    }, [voice.error]);
+
+    // Sync release/lock preview into composer — clear composer when preview is gone
+    useEffect(() => {
+        if (voice.previewBlob && voice.previewUrl) {
+            setAudioBlob(voice.previewBlob);
+            setAudioUrl(voice.previewUrl);
+            setMediaType("audio");
+            return;
         }
-    };
+        setAudioBlob((prev) => (prev ? null : prev));
+        setAudioUrl((prev) => (prev ? null : prev));
+        setMediaType((prev) => (prev === "audio" ? null : prev));
+    }, [voice.previewBlob, voice.previewUrl]);
 
     const cancelRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            clearInterval(timerRef.current);
-            setAudioBlob(null);
-            setAudioUrl(null);
-            audioChunksRef.current = [];
-        } else {
-            // If already stopped but present (preview mode)
-            setAudioBlob(null);
-            setAudioUrl(null);
-            setMediaType(null);
-        }
+        voice.cancelRecording();
+        voice.clearPreview();
+        setAudioBlob(null);
+        setAudioUrl(null);
+        setMediaType(null);
     };
-
-    const formatDuration = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-
-    // --- Generic Helpers ---
 
     const removeMedia = () => {
         setImagePreview(null);
@@ -371,18 +275,10 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         setIsVideoUploading(false);
         setAudioBlob(null);
         setAudioUrl(null);
+        voice.clearPreview();
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (videoInputRef.current) videoInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
-    };
-
-    const blobToBase64 = (blob) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
     };
 
     const fileNode = (bytes) => {
@@ -722,9 +618,9 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         </div>
                     )}
 
-                    {audioBlob && !isRecording && (
-                        <div className="mb-3 p-3 bg-base-200 rounded-xl flex items-center gap-2 max-w-xs">
-                            <VoicePreviewPlayer audioUrl={audioUrl} />
+                    {audioBlob && !voice.isRecording && (
+                        <div className="mb-3 p-2 bg-base-200 rounded-xl flex items-center gap-2 max-w-xs animate-[voiceSendIn_0.28s_ease-out]">
+                            <VoiceMessagePlayer audioUrl={audioUrl} compact />
                             <button onClick={cancelRecording} className="btn btn-circle btn-xs btn-ghost hover:bg-base-300 flex-shrink-0"><X className="w-4 h-4" /></button>
                         </div>
                     )}
@@ -758,7 +654,29 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                         <input type="file" accept={VIDEO_ACCEPT} className="hidden" ref={videoInputRef} onChange={handleVideoChange} />
                         <input type="file" className="hidden" ref={docInputRef} onChange={handleFileChange} />
 
-                        {/* WhatsApp-Style Input Capsule */}
+                        {voice.isRecording || (voice.isLocked && !audioBlob) ? (
+                            <div className="flex-grow min-w-0 relative">
+                                <VoiceRecorderBar
+                                    duration={voice.duration}
+                                    levels={voice.levels}
+                                    slideX={voice.slideX}
+                                    slideY={voice.slideY}
+                                    cancelProgress={voice.cancelProgress}
+                                    lockProgress={voice.lockProgress}
+                                    isLocked={voice.isLocked}
+                                    previewUrl={voice.previewUrl}
+                                    onCancel={cancelRecording}
+                                    onSend={() => {
+                                            voice.sendLocked();
+                                            setAudioBlob(null);
+                                            setAudioUrl(null);
+                                            setMediaType(null);
+                                        }}
+                                        onStopToPreview={() => voice.stopToPreview()}
+                                />
+                            </div>
+                        ) : (
+                        /* WhatsApp-Style Input Capsule */
                         <div className="flex-grow flex-shrink min-w-0 flex items-end bg-base-200/90 hover:bg-base-200 rounded-[24px] px-1 py-1 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                             {/* Emoji Group (Left) */}
                             <div className="flex items-center shrink-0 self-end mb-0.5 ml-0.5">
@@ -770,13 +688,12 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 ref={textareaRef}
                                 className="message-textarea flex-1 bg-transparent py-2.5 px-1.5 sm:px-2 outline-none resize-none min-h-[20px] max-h-[120px] text-[14px] leading-[18px] sm:text-[15px] placeholder:text-base-content/40"
                                 style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                                placeholder={isRecording ? "Recording..." : "Message"}
+                                placeholder="Message"
                                 value={text}
                                 onChange={handleTextChange}
                                 onKeyDown={handleKeyDown}
                                 onPaste={handlePaste}
                                 rows={1}
-                                disabled={isRecording}
                             />
 
                             {/* Attachment Actions (Right) */}
@@ -838,36 +755,32 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 </button>
                             </div>
                         </div>
+                        )}
 
-                        {/* Mic / Send Button (Outside capsule) */}
-                        {text.trim() || imagePreview || gifPreview || filePreview || audioBlob || videoPreview ? (
+                        {/* Mic / Send — mic stays mounted while recording so pointer capture survives */}
+                        {!(voice.isRecording || (voice.isLocked && !audioBlob)) &&
+                        (text.trim() || imagePreview || gifPreview || filePreview || audioBlob || videoPreview) ? (
                             <button
                                 type="submit"
                                 className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-primary text-primary-content shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
                             >
                                 <Send className="w-5 h-5" />
                             </button>
-                        ) : (
+                        ) : voice.isLocked && !audioBlob ? null : (
                             <button
                                 type="button"
-                                onClick={isRecording ? stopRecording : startRecording}
-                                className={`flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecording ? 'bg-error text-white animate-pulse' : 'bg-primary text-primary-content hover:scale-105 active:scale-95'}`}
+                                className={`voice-mic-btn ${voice.isRecording ? "voice-mic-btn--recording" : ""}`}
+                                onPointerDown={voice.onPointerDown}
+                                onPointerMove={voice.onPointerMove}
+                                onPointerUp={voice.onPointerUp}
+                                onPointerCancel={voice.onPointerCancel}
+                                aria-label={voice.isRecording ? "Recording" : "Hold to record voice message"}
+                                title="Hold to record"
                             >
-                                {isRecording ? <StopCircle className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                                <Mic className="w-5 h-5" />
                             </button>
                         )}
                     </form>
-
-                    {/* Recording Status Overlay/Indicator if separate logic wanted, but simpler is inline */}
-                    {isRecording && (
-                        <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 bg-base-100 px-6 py-3 rounded-full shadow-2xl border border-red-100 flex items-center gap-4 animate-in slide-in-from-bottom-4">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-ping" />
-                            <span className="font-mono font-bold text-lg w-16 text-center">{formatDuration(recordingDuration)}</span>
-                            <button onClick={cancelRecording} className="btn btn-xs btn-circle btn-ghost text-base-content/50 hover:text-error hover:bg-error/10">
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
 
                     {/* Modals */}
                     {showPollCreator && (

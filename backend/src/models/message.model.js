@@ -43,6 +43,21 @@ const messageSchema = new mongoose.Schema(
             type: [mongoose.Schema.Types.ObjectId],
             ref: "User",
         },
+        deleted: {
+            type: Boolean,
+            default: false,
+        },
+        deletedForEveryone: {
+            type: Boolean,
+            default: false,
+        },
+        deletedAt: {
+            type: Date,
+        },
+        deletedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+        },
         isForwarded: {
             type: Boolean,
             default: false
@@ -59,6 +74,20 @@ const messageSchema = new mongoose.Schema(
             type: String,
             enum: ["sent", "delivered", "read", "scheduled"],
             default: "sent"
+        },
+        /** Client-generated id for optimistic UI ↔ server ACK matching */
+        clientMessageId: {
+            type: String,
+            index: true,
+        },
+        sentAt: {
+            type: Date,
+        },
+        deliveredAt: {
+            type: Date,
+        },
+        readAt: {
+            type: Date,
         },
         replyTo: {
             type: mongoose.Schema.Types.ObjectId,

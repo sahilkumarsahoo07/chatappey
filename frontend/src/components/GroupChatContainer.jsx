@@ -7,7 +7,7 @@ import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import defaultAvatar from "../public/avatar.png";
-import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Info, CheckCheck } from "lucide-react";
+import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Info, CheckCheck, ChevronDown } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent } from "@mui/material";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
@@ -18,9 +18,15 @@ import MessageActionMenu, {
 } from "./MessageActionMenu";
 import SwipeableMessageBubble from "./SwipeableMessageBubble";
 import VideoMessage from "./chat/VideoMessage";
+import VirtualMessageList from "./chat/VirtualMessageList";
+import VoiceMessagePlayer from "./chat/VoiceMessagePlayer";
 import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
+import DeleteMessageSheet from "./chat/DeleteMessageSheet";
+import DeletedMessageBubble from "./chat/DeletedMessageBubble";
+import { isMessageDeleted } from "../lib/messageDelete";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { useShallow } from "zustand/react/shallow";
+import "./ChatContainer.css";
 
 const EMPTY_MEMBERS = [];
 
@@ -82,9 +88,10 @@ const GroupChatContainer = () => {
     const containerRef = useRef(null);
     const prevSelectedGroupIdRef = useRef(null);
     const isAtBottomRef = useRef(true);
-    const loadOlderLockRef = useRef(false);
-    const prevScrollHeightRef = useRef(0);
-    const wasLoadingOlderRef = useRef(false);
+    const prevLastMsgIdRef = useRef(null);
+    const prevMsgLenRef = useRef(0);
+    const [pendingNewCount, setPendingNewCount] = useState(0);
+    const [scrollEpoch, setScrollEpoch] = useState(0);
 
     const sortedGroupMessages = useMemo(
         () => [...groupMessages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)),
@@ -109,66 +116,90 @@ const GroupChatContainer = () => {
     useEffect(() => {
         if (selectedGroup?._id) {
             getGroupMessages(selectedGroup._id);
-            // When switching groups, we want to force scroll to bottom on next messages load
             isAtBottomRef.current = true;
+            setPendingNewCount(0);
+            setScrollEpoch((n) => n + 1);
+            prevLastMsgIdRef.current = null;
+            prevMsgLenRef.current = 0;
             setSearchOpen(false);
             setSearchQuery("");
             setSearchActiveId(null);
         }
     }, [selectedGroup?._id, getGroupMessages]);
 
-    const handleScroll = (e) => {
-        const { scrollTop, scrollHeight, clientHeight } = e.target;
-        isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
-
-        if (
-            scrollTop < 120 &&
-            groupMessagesMeta?.hasMoreOlder &&
-            !isLoadingOlderGroup &&
-            !loadOlderLockRef.current
-        ) {
-            loadOlderLockRef.current = true;
-            Promise.resolve(loadOlderGroupMessages()).finally(() => {
-                loadOlderLockRef.current = false;
-            });
-        }
+    const handleScroll = () => {
+        if (!containerRef.current) return;
+        const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+        const atBottom = scrollHeight - scrollTop - clientHeight < 100;
+        isAtBottomRef.current = atBottom;
+        if (atBottom) setPendingNewCount(0);
     };
 
-    useEffect(() => {
-        if (isLoadingOlderGroup) {
-            wasLoadingOlderRef.current = true;
-            prevScrollHeightRef.current = containerRef.current?.scrollHeight || 0;
-            return;
-        }
-        if (wasLoadingOlderRef.current && containerRef.current) {
-            const el = containerRef.current;
-            el.scrollTop += el.scrollHeight - prevScrollHeightRef.current;
-            wasLoadingOlderRef.current = false;
-        }
-    }, [isLoadingOlderGroup, groupMessages.length]);
+    const handleAtBottomChange = useCallback((atBottom) => {
+        isAtBottomRef.current = atBottom;
+        if (atBottom) setPendingNewCount(0);
+    }, []);
 
-    const handleImageLoad = () => {
+    const jumpToLatest = useCallback(() => {
+        setPendingNewCount(0);
+        isAtBottomRef.current = true;
+        setScrollEpoch((n) => n + 1);
+        if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+    }, []);
+
+    const handleImageLoad = useCallback(() => {
         if (containerRef.current && isAtBottomRef.current) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    };
+    }, []);
 
     useLayoutEffect(() => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || isLoadingOlderGroup) return;
 
-        const isNewGroup = selectedGroup?._id !== prevSelectedGroupIdRef.current;
         const lastMessage = sortedGroupMessages[sortedGroupMessages.length - 1];
-        const isMyMessage = lastMessage?.senderId?._id === authUser?._id || lastMessage?.senderId === authUser?._id;
+        const lastId = lastMessage?.optimisticId || lastMessage?._id || null;
+        const len = sortedGroupMessages.length;
+        const isNewGroup = selectedGroup?._id !== prevSelectedGroupIdRef.current;
+        const lastChanged = lastId !== prevLastMsgIdRef.current;
+        const prepended = len > prevMsgLenRef.current && !lastChanged;
+        const isMyMessage =
+            lastMessage?.senderId?._id === authUser?._id ||
+            lastMessage?.senderId === authUser?._id;
 
         if (isNewGroup) {
             isAtBottomRef.current = true;
             prevSelectedGroupIdRef.current = selectedGroup?._id;
+            setPendingNewCount(0);
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
-        } else if (isMyMessage || isAtBottomRef.current) {
-            containerRef.current.scrollTop = containerRef.current.scrollHeight;
-            isAtBottomRef.current = true;
+        } else if (prepended) {
+            // VirtualMessageList preserves viewport
+        } else if (lastChanged) {
+            if (isAtBottomRef.current || isMyMessage) {
+                isAtBottomRef.current = true;
+                setPendingNewCount(0);
+                containerRef.current.scrollTop = containerRef.current.scrollHeight;
+            } else if (!isMyMessage) {
+                setPendingNewCount((c) => c + 1);
+            }
         }
-    }, [sortedGroupMessages.length, selectedGroup?._id, sortedGroupMessages[sortedGroupMessages.length - 1]?._id, authUser?._id]);
+
+        prevLastMsgIdRef.current = lastId;
+        prevMsgLenRef.current = len;
+    }, [
+        sortedGroupMessages.length,
+        selectedGroup?._id,
+        sortedGroupMessages[sortedGroupMessages.length - 1]?._id,
+        sortedGroupMessages[sortedGroupMessages.length - 1]?.optimisticId,
+        authUser?._id,
+        isLoadingOlderGroup,
+    ]);
+
+    const scrollToBottomKey = useMemo(
+        () => `${selectedGroup?._id}:${scrollEpoch}`,
+        [selectedGroup?._id, scrollEpoch]
+    );
 
     const handleSendMessage = useCallback(async (messageData) => {
         await sendGroupMessage(messageData);
@@ -184,12 +215,10 @@ const GroupChatContainer = () => {
 
     const handleDeleteForEveryone = async (messageId) => {
         await deleteGroupMessageForAll(selectedGroup._id, messageId);
-        setDeleteDialogMessageId(null);
     };
 
     const handleDeleteForMe = async (messageId) => {
         await deleteGroupMessageForMe(selectedGroup._id, messageId);
-        setDeleteDialogMessageId(null);
     };
 
     const handleForwardToUser = async (userId) => {
@@ -324,6 +353,175 @@ const GroupChatContainer = () => {
         });
     };
 
+    const renderGroupMessage = useCallback((message, index) => {
+        const msgs = sortedGroupMessages;
+        const isMyMessage = message.senderId?._id === authUser._id;
+        const sender = message.senderId;
+        const showSender = !isMyMessage && (
+            index === 0 ||
+            msgs[index - 1]?.senderId?._id !== sender?._id
+        );
+        const isDeleted = isMessageDeleted(message);
+
+        const currentDateKey = getMessageDateKey(message.createdAt);
+        const previousDateKey = index > 0 ? getMessageDateKey(msgs[index - 1].createdAt) : null;
+        const showDateSeparator = currentDateKey !== previousDateKey;
+
+        const DateSeparator = showDateSeparator ? (
+            <div className="flex justify-center my-4">
+                <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">
+                    {formatDateSeparator(message.createdAt)}
+                </div>
+            </div>
+        ) : null;
+
+        if (message.messageType === "system") {
+            return (
+                <div className="mb-2">
+                    {DateSeparator}
+                    <div className="flex justify-center my-2">
+                        <div className="bg-base-300/30 text-base-content/60 px-4 py-1.5 rounded-lg text-[11px] font-medium backdrop-blur-sm border border-base-content/5 shadow-sm">
+                            {message.text}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="mb-4">
+                {DateSeparator}
+                <div
+                    data-message-id={message._id}
+                    className={`flex ${isMyMessage ? "justify-end" : "justify-start"} ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}
+                >
+                    <div className={`flex gap-2 max-w-[80%] ${isMyMessage ? "flex-row-reverse" : ""}`}>
+                        {!isMyMessage && showSender && (
+                            <img
+                                src={sender?.profilePic || defaultAvatar}
+                                alt={sender?.fullName}
+                                className="w-8 h-8 rounded-full object-cover self-end"
+                                loading="lazy"
+                            />
+                        )}
+                        {!isMyMessage && !showSender && (
+                            <div className="w-8" />
+                        )}
+
+                        <div className="relative group">
+                            {showSender && !isMyMessage && (
+                                <p className="text-xs text-base-content/60 mb-1 ml-1">
+                                    {sender?.fullName}
+                                </p>
+                            )}
+
+                            <SwipeableMessageBubble
+                                isMine={isMyMessage}
+                                disabled={isDeleted}
+                                onReply={() => handleSwipeReply(message)}
+                                onLongPress={(el) => openMessageMenu(message._id, el)}
+                                className="group"
+                            >
+                                <div
+                                    className={`rounded-2xl p-3 w-fit max-w-full whitespace-pre-wrap break-words ${isMyMessage
+                                        ? "bg-primary text-primary-content rounded-br-md"
+                                        : "bg-base-200 text-base-content rounded-bl-md"
+                                        } ${isDeleted ? "opacity-90" : ""}`}
+                                >
+                                    {isDeleted ? (
+                                        <DeletedMessageBubble
+                                            message={message}
+                                            authUserId={authUser._id}
+                                            isMyMessage={isMyMessage}
+                                        />
+                                    ) : (
+                                    <>
+                                    {message.isForwarded && (
+                                        <div className={`flex items-center gap-1 text-xs mb-1.5 ${isMyMessage ? "text-primary-content/70" : "text-base-content/50"}`}>
+                                            <Forward className="w-3 h-3" />
+                                            <span className="italic">Forwarded</span>
+                                        </div>
+                                    )}
+                                    {message.image && (
+                                        <img
+                                            src={message.image}
+                                            alt="Attachment"
+                                            loading="lazy"
+                                            decoding="async"
+                                            className={`rounded-lg mb-2 max-w-xs ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
+                                            onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
+                                            onLoad={handleImageLoad}
+                                        />
+                                    )}
+                                    {message.video && (
+                                        <VideoMessage
+                                            video={message.video}
+                                            thumbnail={message.videoThumbnail}
+                                            duration={message.videoDuration}
+                                            isMyMessage={isMyMessage}
+                                        />
+                                    )}
+                                    {message.audio && (
+                                        <VoiceMessagePlayer
+                                            audioUrl={message.audio}
+                                            isMyMessage={isMyMessage}
+                                        />
+                                    )}
+                                    {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
+                                        <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
+                                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
+                                            <div className="space-y-2">
+                                                {message.poll.options.map((opt, i) => {
+                                                    const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
+                                                    const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
+                                                    const isVoted = opt.votes?.includes(authUser._id) || false;
+                                                    return (
+                                                        <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
+                                                            <div className="flex justify-between text-xs mb-1 font-medium">
+                                                                <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
+                                                                <span>{percent}%</span>
+                                                            </div>
+                                                            <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
+                                                                <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
+                                        </div>
+                                    )}
+                                    {message.text && !message.audio && (
+                                        <p className="whitespace-pre-wrap break-words">
+                                            {searchQuery
+                                                ? highlightText(message.text, searchQuery, searchActiveId === message._id)
+                                                : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
+                                        </p>
+                                    )}
+                                    </>
+                                    )}
+                                </div>
+                                {!isDeleted && (
+                                    <MessageMenuTrigger
+                                        isMine={isMyMessage}
+                                        onOpen={(el) => openMessageMenu(message._id, el)}
+                                    />
+                                )}
+                            </SwipeableMessageBubble>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }, [
+        sortedGroupMessages,
+        authUser._id,
+        searchActiveId,
+        searchQuery,
+        handleImageLoad,
+        votePoll,
+    ]);
+
     if (!selectedGroup) return null;
 
     return (
@@ -343,208 +541,80 @@ const GroupChatContainer = () => {
                 )}
             </div>
 
-            {/* Messages Area */}
-            <div
-                ref={containerRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 custom-scrollbar messages-container"
-                style={{ scrollBehavior: "auto" }}
-                onScroll={handleScroll}
-            >
-                {isLoadingOlderGroup && (
-                    <div className="flex justify-center py-2">
-                        <span className="loading loading-spinner loading-sm text-primary" />
-                    </div>
-                )}
-                {groupMessages.length === 0 && isGroupMessagesLoading ? (
-                    <MessageSkeleton />
-                ) : (
-                    <>
-                        {groupMessages.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-base-content/50">
+            {/* Messages Area — WhatsApp reverse infinite scroll */}
+            <div className="flex-1 min-h-0 relative flex flex-col">
+                <VirtualMessageList
+                    items={sortedGroupMessages}
+                    containerRef={containerRef}
+                    onScroll={handleScroll}
+                    onReachTop={loadOlderGroupMessages}
+                    hasMoreOlder={groupMessagesMeta?.hasMoreOlder}
+                    isLoadingOlder={isLoadingOlderGroup}
+                    scrollToBottomKey={scrollToBottomKey}
+                    onAtBottomChange={handleAtBottomChange}
+                    className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 custom-scrollbar messages-container relative z-10"
+                    getItemKey={(message) => message.optimisticId || message._id}
+                    renderItem={renderGroupMessage}
+                    header={
+                        groupMessages.length === 0 && isGroupMessagesLoading ? (
+                            <MessageSkeleton />
+                        ) : groupMessages.length === 0 && !isGroupMessagesLoading ? (
+                            <div className="flex flex-col items-center justify-center min-h-[50vh] text-base-content/50">
                                 <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                                     <span className="text-4xl">👥</span>
                                 </div>
                                 <p className="text-lg font-semibold">No messages yet</p>
                                 <p className="text-sm">Be the first to send a message!</p>
                             </div>
-                        ) : (
-                            sortedGroupMessages.map((message, index) => {
-                                const msgs = sortedGroupMessages;
-                                const isMyMessage = message.senderId?._id === authUser._id;
-                                const sender = message.senderId;
-                                const showSender = !isMyMessage && (
-                                    index === 0 ||
-                                    msgs[index - 1]?.senderId?._id !== sender?._id
-                                );
-                                const isDeleted = message.text === "This message was deleted";
-
-                                // Check if we need to show a date separator
-                                const currentDateKey = getMessageDateKey(message.createdAt);
-                                const previousDateKey = index > 0 ? getMessageDateKey(msgs[index - 1].createdAt) : null;
-                                const showDateSeparator = currentDateKey !== previousDateKey;
-
-                                // Date Separator Component
-                                const DateSeparator = showDateSeparator ? (
-                                    <div className="flex justify-center my-4">
-                                        <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">
-                                            {formatDateSeparator(message.createdAt)}
-                                        </div>
-                                    </div>
-                                ) : null;
-
-                                if (message.messageType === "system") {
-                                    return (
-                                        <div key={message.optimisticId || message._id}>
-                                            {DateSeparator}
-                                            <div className="flex justify-center my-2">
-                                                <div className="bg-base-300/30 text-base-content/60 px-4 py-1.5 rounded-lg text-[11px] font-medium backdrop-blur-sm border border-base-content/5 shadow-sm">
-                                                    {message.text}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-
-                                return (
-                                    <div key={message.optimisticId || message._id}>
-                                        {DateSeparator}
-                                        <div
-                                            data-message-id={message._id}
-                                            className={`flex ${isMyMessage ? "justify-end" : "justify-start"} ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}
-                                        >
-                                            <div className={`flex gap-2 max-w-[80%] ${isMyMessage ? "flex-row-reverse" : ""}`}>
-                                                {/* Avatar for other users */}
-                                                {!isMyMessage && showSender && (
-                                                    <img
-                                                        src={sender?.profilePic || defaultAvatar}
-                                                        alt={sender?.fullName}
-                                                        className="w-8 h-8 rounded-full object-cover self-end"
-                                                    />
-                                                )}
-                                                {!isMyMessage && !showSender && (
-                                                    <div className="w-8" />
-                                                )}
-
-                                                <div className="relative group">
-                                                    {/* Sender name */}
-                                                    {showSender && !isMyMessage && (
-                                                        <p className="text-xs text-base-content/60 mb-1 ml-1">
-                                                            {sender?.fullName}
-                                                        </p>
-                                                    )}
-
-                                                    <SwipeableMessageBubble
-                                                        isMine={isMyMessage}
-                                                        disabled={isDeleted}
-                                                        onReply={() => handleSwipeReply(message)}
-                                                        onLongPress={(el) => openMessageMenu(message._id, el)}
-                                                        className="group"
-                                                    >
-                                                    {/* Message bubble */}
-                                                    <div
-                                                        className={`rounded-2xl p-3 w-fit max-w-full whitespace-pre-wrap break-words ${isMyMessage
-                                                            ? "bg-primary text-primary-content rounded-br-md"
-                                                            : "bg-base-200 text-base-content rounded-bl-md"
-                                                            } ${isDeleted ? "opacity-60 italic" : ""}`}
-                                                    >
-                                                        {/* Forwarded badge */}
-                                                        {message.isForwarded && !isDeleted && (
-                                                            <div className={`flex items-center gap-1 text-xs mb-1.5 ${isMyMessage ? "text-primary-content/70" : "text-base-content/50"
-                                                                }`}>
-                                                                <Forward className="w-3 h-3" />
-                                                                <span className="italic">Forwarded</span>
-                                                            </div>
-                                                        )}
-                                                        {message.image && (
-                                                            <img
-                                                                src={message.image}
-                                                                alt="Attachment"
-                                                                loading="lazy"
-                                                                decoding="async"
-                                                                className={`rounded-lg mb-2 max-w-xs ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
-                                                                onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
-                                                                onLoad={handleImageLoad}
-                                                            />
-                                                        )}
-                                                        {message.video && (
-                                                            <VideoMessage
-                                                                video={message.video}
-                                                                thumbnail={message.videoThumbnail}
-                                                                duration={message.videoDuration}
-                                                                isMyMessage={isMyMessage}
-                                                            />
-                                                        )}
-                                                        {/* Poll support */}
-                                                        {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
-                                                            <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
-                                                                <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
-                                                                <div className="space-y-2">
-                                                                    {message.poll.options.map((opt, i) => {
-                                                                        const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
-                                                                        const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
-                                                                        const isVoted = opt.votes?.includes(authUser._id) || false;
-                                                                        return (
-                                                                            <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
-                                                                                <div className="flex justify-between text-xs mb-1 font-medium">
-                                                                                    <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
-                                                                                    <span>{percent}%</span>
-                                                                                </div>
-                                                                                <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
-                                                                                    <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
-                                                                                </div>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                                <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
-                                                            </div>
-                                                        )}
-                                                        {message.text && (
-                                                            <p className="whitespace-pre-wrap break-words">
-                                                                {searchQuery
-                                                                    ? highlightText(message.text, searchQuery, searchActiveId === message._id)
-                                                                    : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    {!isDeleted && (
-                                                        <MessageMenuTrigger
-                                                            isMine={isMyMessage}
-                                                            onOpen={(el) => openMessageMenu(message._id, el)}
-                                                        />
-                                                    )}
-                                                    </SwipeableMessageBubble>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-
-                        {/* Typing Indicator */}
-                        {typingUsers.length > 0 && (
-                            <div className="chat chat-start mb-2 px-2">
-                                <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
-                                    <div className="flex gap-1">
-                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                                        <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                                    </div>
-                                    <span className="text-xs opacity-70">
-                                        {typingUsers.length === 1
-                                            ? `${typingUsers[0].userName} is typing...`
-                                            : typingUsers.length === 2
-                                                ? `${typingUsers[0].userName} and ${typingUsers[1].userName} are typing...`
-                                                : `${typingUsers.length} people are typing...`
-                                        }
-                                    </span>
+                        ) : groupMessagesMeta?.hasMoreOlder === false && groupMessages.length > 0 ? (
+                            <div className="flex justify-center my-4">
+                                <div className="bg-base-300/70 text-base-content/60 px-4 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm">
+                                    Beginning of conversation
                                 </div>
                             </div>
-                        )}
-
-                        <div ref={messagesEndRef} style={{ overflowAnchor: "auto", height: 1 }} />
-                    </>
+                        ) : null
+                    }
+                    footer={
+                        <>
+                            {typingUsers.length > 0 && (
+                                <div className="chat chat-start mb-2 px-2">
+                                    <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
+                                        <div className="flex gap-1">
+                                            <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                            <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                            <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                                        </div>
+                                        <span className="text-xs opacity-70">
+                                            {typingUsers.length === 1
+                                                ? `${typingUsers[0].userName} is typing...`
+                                                : typingUsers.length === 2
+                                                    ? `${typingUsers[0].userName} and ${typingUsers[1].userName} are typing...`
+                                                    : `${typingUsers.length} people are typing...`
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} style={{ overflowAnchor: "auto", height: 1 }} />
+                            <div
+                                className="md:hidden"
+                                aria-hidden
+                                style={{
+                                    height: "calc(var(--composer-height, 76px) + env(safe-area-inset-bottom, 0px))",
+                                }}
+                            />
+                        </>
+                    }
+                />
+                {pendingNewCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={jumpToLatest}
+                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-content shadow-lg text-sm font-semibold hover:brightness-110 active:scale-95 transition"
+                    >
+                        <ChevronDown className="w-4 h-4" />
+                        {pendingNewCount} new message{pendingNewCount === 1 ? "" : "s"}
+                    </button>
                 )}
             </div>
 
@@ -606,47 +676,16 @@ const GroupChatContainer = () => {
                 actions={menuActions}
             />
 
-            {/* Delete Dialog */}
-            {deleteDialogMessageId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div
-                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                        onClick={() => setDeleteDialogMessageId(null)}
-                    />
-                    <div className="relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
-                        <div className="p-6 pb-4 text-center">
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-error/10 flex items-center justify-center">
-                                <Trash2 className="w-8 h-8 text-error" />
-                            </div>
-                            <h3 className="text-xl font-bold text-base-content mb-2">Delete Message?</h3>
-                            <p className="text-sm text-base-content/60">Choose how you want to delete this message</p>
-                        </div>
-                        <div className="p-4 pt-0 space-y-3">
-                            {groupMessages.find((m) => m._id === deleteDialogMessageId)?.senderId?._id === authUser._id && (
-                                <button
-                                    onClick={() => handleDeleteForEveryone(deleteDialogMessageId)}
-                                    className="w-full py-3.5 px-4 rounded-xl bg-error hover:bg-error/90 text-white font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                                >
-                                    <Trash2 className="w-5 h-5" />
-                                    Delete for Everyone
-                                </button>
-                            )}
-                            <button
-                                onClick={() => handleDeleteForMe(deleteDialogMessageId)}
-                                className="w-full py-3.5 px-4 rounded-xl bg-base-200 hover:bg-base-300 text-base-content font-semibold transition-all active:scale-[0.98]"
-                            >
-                                Delete for Me
-                            </button>
-                            <button
-                                onClick={() => setDeleteDialogMessageId(null)}
-                                className="w-full py-3 px-4 rounded-xl text-base-content/70 hover:text-base-content hover:bg-base-200/50 font-medium transition-all"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Delete Dialog — WhatsApp-style sheet */}
+            <DeleteMessageSheet
+                open={!!deleteDialogMessageId}
+                messageId={deleteDialogMessageId}
+                mode="group"
+                groupId={selectedGroup?._id}
+                onClose={() => setDeleteDialogMessageId(null)}
+                onDeleteForEveryone={handleDeleteForEveryone}
+                onDeleteForMe={handleDeleteForMe}
+            />
 
             {/* Forward Dialog */}
             {forwardDialogMessageId && (

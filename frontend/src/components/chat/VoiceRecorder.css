@@ -1,0 +1,292 @@
+.voice-rec-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  user-select: none;
+  touch-action: none;
+}
+
+.voice-rec-lock-rail {
+  position: absolute;
+  right: -50px; /* align above the 44px mic button to the right of the bar */
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.voice-rec-lock-rail--active .voice-rec-lock-icon {
+  transform: scale(1.05);
+}
+
+.voice-rec-lock-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--fallback-b1, oklch(var(--b1))) 94%, transparent);
+  border: 1px solid color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 12%, transparent);
+  color: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 50%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.voice-rec-lock-icon--armed {
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  border-color: transparent;
+  transform: scale(1.1);
+}
+
+.voice-rec-lock-chevron {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 45%, transparent);
+}
+
+.voice-rec-lock-chevron span {
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  transform: rotate(45deg);
+  animation: voiceLockPulse 1s ease-in-out infinite;
+}
+
+.voice-rec-lock-chevron span:nth-child(2) {
+  animation-delay: 0.15s;
+  opacity: 0.65;
+}
+
+@keyframes voiceLockPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: rotate(45deg) translateY(2px);
+  }
+  50% {
+    opacity: 0.95;
+    transform: rotate(45deg) translateY(-1px);
+  }
+}
+
+.voice-rec-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in oklab, var(--fallback-b2, oklch(var(--b2))) 94%, transparent);
+  border-radius: 24px;
+  padding: 8px 12px;
+  transition: transform 0.04s linear, background 0.2s ease;
+  will-change: transform;
+}
+
+.voice-rec-panel--locked {
+  padding-right: 8px;
+}
+
+.voice-rec-dot-wrap {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.voice-rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ef4444;
+  animation: voiceRecPulse 1.2s ease-out infinite;
+}
+
+@keyframes voiceRecPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.voice-rec-trash {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #ef4444;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.voice-rec-trash:active {
+  transform: scale(0.94);
+}
+
+.voice-rec-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-rec-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 85%, transparent);
+  line-height: 1;
+  min-width: 42px;
+  flex-shrink: 0;
+}
+
+.voice-rec-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  flex: 1;
+  min-width: 0;
+  max-width: 180px;
+}
+
+.voice-rec-bar-item {
+  flex: 1;
+  min-width: 2px;
+  max-width: 3.5px;
+  border-radius: 999px;
+  background: oklch(var(--p));
+  opacity: 0.9;
+  transition: height 0.05s linear;
+  align-self: center;
+}
+
+.voice-rec-slide-hint {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 42%, transparent);
+  white-space: nowrap;
+  margin-left: auto;
+  padding-left: 4px;
+}
+
+.voice-rec-slide-arrow {
+  animation: voiceSlideArrow 1s ease-in-out infinite;
+}
+
+@keyframes voiceSlideArrow {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateX(-4px);
+    opacity: 1;
+  }
+}
+
+.voice-rec-locked-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.voice-rec-stop {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 8%, transparent);
+  color: color-mix(in oklab, var(--fallback-bc, oklch(var(--bc))) 70%, transparent);
+  cursor: pointer;
+}
+
+.voice-rec-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  box-shadow: 0 8px 18px color-mix(in oklab, oklch(var(--p)) 35%, transparent);
+  cursor: pointer;
+}
+
+.voice-rec-send:active {
+  transform: scale(0.94);
+}
+
+.voice-mic-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  box-shadow: 0 8px 18px color-mix(in oklab, oklch(var(--p)) 30%, transparent);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.voice-mic-btn:active,
+.voice-mic-btn--recording {
+  transform: scale(1.1);
+  background: #ef4444;
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.4);
+}
+
+.voice-mic-btn--locked {
+  visibility: hidden;
+  pointer-events: none;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .voice-rec-slide-hint span {
+    max-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .voice-rec-wave {
+    max-width: 110px;
+  }
+}

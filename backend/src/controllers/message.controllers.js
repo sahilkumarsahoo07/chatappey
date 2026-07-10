@@ -6,6 +6,13 @@ import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import mongoose from "mongoose";
 import { getPreferencesMap, isChatMuted, unarchiveDmChat } from "../utils/chatPreference.utils.js";
+import {
+    annotateDeleteFlags,
+    applyDeleteForEveryoneFields,
+    canDeleteForEveryone,
+    getDeleteOptions,
+    DELETED_TEXT_EVERYONE,
+} from "../utils/messageDelete.utils.js";
 
 export const getUsersForSidebar = async (req, res) => {
     try {
@@ -254,8 +261,12 @@ export const getMessages = async (req, res) => {
     try {
         const { id: userToChatId } = req.params;
         const myId = req.user._id;
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 60, 1), 100);
-        const before = req.query.before ? new Date(req.query.before) : null;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 40, 1), 100);
+        const before = req.query.before
+          ? new Date(req.query.before)
+          : req.query.cursor
+            ? new Date(req.query.cursor)
+            : null;
         const after = req.query.after ? new Date(req.query.after) : null;
 
         const baseFilter = buildDmMessageFilter(myId, userToChatId);
@@ -298,11 +309,15 @@ export const getMessages = async (req, res) => {
             });
         }
 
+        const oldestCursor = messages[0]?.createdAt || null;
+        const newestCursor = messages[messages.length - 1]?.createdAt || null;
         res.status(200).json({
-            messages,
+            messages: annotateDeleteFlags(messages, myId),
             hasMore,
-            oldestCursor: messages[0]?.createdAt || null,
-            newestCursor: messages[messages.length - 1]?.createdAt || null,
+            // nextCursor = load older page (WhatsApp reverse infinite scroll)
+            nextCursor: hasMore ? oldestCursor : null,
+            oldestCursor,
+            newestCursor,
         });
     } catch (error) {
         console.log("Error in getMessages controller: ", error.message);
@@ -520,38 +535,126 @@ export const deleteChatForMe = async (req, res) => {
     }
 };
 
+/** WhatsApp-style: options for delete sheet (backend is source of truth) */
+export const getMessageDeleteOptions = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const userId = req.user._id;
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+        const participant =
+            String(message.senderId) === String(userId) ||
+            String(message.receiverId) === String(userId);
+        if (!participant) {
+            return res.status(403).json({ error: "Not allowed" });
+        }
+        return res.status(200).json(getDeleteOptions(message, userId));
+    } catch (error) {
+        console.error("getMessageDeleteOptions:", error.message);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+/** Delete for me only — hide from this user's view */
+export const deleteForMeMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const userId = req.user._id;
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+        const participant =
+            String(message.senderId) === String(userId) ||
+            String(message.receiverId) === String(userId);
+        if (!participant) {
+            return res.status(403).json({ error: "Not allowed" });
+        }
+        if (message.deletedForEveryone || message.deleted) {
+            return res.status(400).json({ error: "Message already deleted" });
+        }
+
+        await Message.findByIdAndUpdate(messageId, {
+            $addToSet: { deletedFor: userId },
+        });
+
+        const otherId =
+            String(message.senderId) === String(userId)
+                ? message.receiverId
+                : message.senderId;
+
+        // Only notify this user's other devices
+        const mySocketId = getReceiverSocketId(userId.toString());
+        if (mySocketId) {
+            io.to(mySocketId).emit("deleteMessageForMe", {
+                messageId,
+                chatUserId: otherId,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Message deleted for you",
+            messageId,
+        });
+    } catch (error) {
+        console.error("deleteForMeMessage:", error.message);
+        return res.status(500).json({ error: "Internal server error" });
+    }
+};
+
 export const deleteForAllMessage = async (req, res) => {
     const { messageId } = req.params;
     const userId = req.user._id;
 
     try {
-        const message = await Message.findByIdAndUpdate(
-            messageId,
-            {
-                $addToSet: { deletedFor: userId },
-                text: "This message was deleted",
-                image: null
-            },
-            { new: true }
-        );
-
+        const message = await Message.findById(messageId);
         if (!message) {
-            return res.status(404).json({ message: "Message not found" });
+            return res.status(404).json({ error: "Message not found" });
         }
 
-        // ✅ Emit updated message to all clients
-        io.emit("deleteMessageForAll", message);
+        if (String(message.senderId) !== String(userId)) {
+            return res.status(403).json({ error: "You can only delete your own messages for everyone" });
+        }
+
+        if (message.deletedForEveryone || message.deleted) {
+            return res.status(400).json({ error: "Message already deleted" });
+        }
+
+        if (!canDeleteForEveryone(message, userId)) {
+            return res.status(403).json({
+                error: "Delete for everyone is no longer available",
+                canDeleteForEveryone: false,
+            });
+        }
+
+        applyDeleteForEveryoneFields(message, userId);
+        await message.save();
+
+        const payload = {
+            ...message.toObject(),
+            canDeleteForEveryone: false,
+        };
+
+        // Notify both participants (and any other sockets)
+        const senderSocket = getReceiverSocketId(message.senderId.toString());
+        const receiverSocket = getReceiverSocketId(message.receiverId.toString());
+        if (senderSocket) io.to(senderSocket).emit("deleteMessageForAll", payload);
+        if (receiverSocket) io.to(receiverSocket).emit("deleteMessageForAll", payload);
 
         return res.status(200).json({
             success: true,
             message: "Message marked as deleted for everyone",
-            updatedMessage: message
+            updatedMessage: payload,
+            canDeleteForEveryone: false,
         });
     } catch (err) {
         console.error("Delete error:", err);
         return res.status(500).json({
             success: false,
-            error: err.message
+            error: err.message,
         });
     }
 };

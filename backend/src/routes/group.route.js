@@ -14,6 +14,7 @@ import {
     markGroupMessagesAsRead,
     deleteGroupMessageForAll,
     deleteGroupMessageForMe,
+    getGroupMessageDeleteOptions,
     updateMemberRole,
     pinMessage,
     unpinMessage,
@@ -41,6 +42,7 @@ router.post("/:groupId/unpin", protectRoute, unpinMessage);
 router.get("/:groupId/messages", protectRoute, getGroupMessages);
 router.post("/:groupId/messages", protectRoute, sendGroupMessage);
 router.put("/:groupId/messages/read", protectRoute, markGroupMessagesAsRead);
+router.get("/:groupId/messages/:messageId/delete-options", protectRoute, getGroupMessageDeleteOptions);
 router.delete("/:groupId/messages/:messageId/all", protectRoute, deleteGroupMessageForAll);
 router.delete("/:groupId/messages/:messageId/me", protectRoute, deleteGroupMessageForMe);
 router.post("/:groupId/messages/:messageId/vote", protectRoute, voteGroupPoll);

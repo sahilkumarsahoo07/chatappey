@@ -2,7 +2,13 @@ import { create } from "zustand";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
-import { showBrowserNotification, playNotificationSound, showInAppNotification, shouldShowSystemNotification } from "../lib/notifications";
+import {
+  showBrowserNotification,
+  playNotificationSound,
+  showInAppNotification,
+  shouldShowSystemNotification,
+  isActivelyViewingConversation,
+} from "../lib/notifications";
 import {
   hydrateThread,
   writeThread,
@@ -11,8 +17,13 @@ import {
   mergeMessages,
   removeThread,
 } from "../lib/messageCache";
+import {
+  applyOptimisticDeleteForEveryone,
+  deletedSidebarPreview,
+  DELETED_TEXT_EVERYONE,
+} from "../lib/messageDelete";
 
-const PAGE_SIZE = 60;
+const PAGE_SIZE = 40;
 
 const persistGroupThread = (groupId, messages, meta = {}) => {
   if (!groupId || !messages?.length) return;
@@ -242,12 +253,21 @@ export const useGroupStore = create((set, get) => ({
                     groupMessagesMeta: {
                         hasMoreOlder: hydrated.hasMoreOlder ?? true,
                         isSyncing: true,
-                        oldestCursor: hydrated.oldestCachedAt,
-                        newestCursor: hydrated.newestAt,
+                        oldestCursor: hydrated.oldestCachedAt || hydrated.messages[0]?.createdAt,
+                        newestCursor: hydrated.newestAt || hydrated.messages[hydrated.messages.length - 1]?.createdAt,
                     },
                     isGroupMessagesLoading: false,
                 });
-            } else if (!get().groupMessages.length) {
+                const newest =
+                    hydrated.newestAt ||
+                    hydrated.messages[hydrated.messages.length - 1]?.createdAt;
+                if (newest) {
+                    await get().getGroupMessages(groupId, { after: newest, background: true });
+                }
+                get().markGroupMessagesAsRead(groupId);
+                return;
+            }
+            if (!get().groupMessages.length) {
                 set({ isGroupMessagesLoading: true });
             }
         }
@@ -270,11 +290,22 @@ export const useGroupStore = create((set, get) => ({
                 nextMessages = incoming;
             }
 
+            const prevMeta = get().groupMessagesMeta || {};
+            let hasMoreOlder = prevMeta.hasMoreOlder ?? true;
+            if (isOlder || isInitial) {
+                hasMoreOlder = Boolean(hasMore);
+            }
+
             const meta = {
-                hasMoreOlder: hasMore,
+                hasMoreOlder,
                 isSyncing: false,
-                oldestCursor,
-                newestCursor,
+                oldestCursor:
+                    nextMessages[0]?.createdAt || oldestCursor || prevMeta.oldestCursor || null,
+                newestCursor:
+                    nextMessages[nextMessages.length - 1]?.createdAt ||
+                    newestCursor ||
+                    prevMeta.newestCursor ||
+                    null,
             };
 
             set({
@@ -284,7 +315,7 @@ export const useGroupStore = create((set, get) => ({
                 isLoadingOlderGroup: false,
             });
 
-            persistGroupThread(groupId, nextMessages, { hasMoreOlder: hasMore });
+            persistGroupThread(groupId, nextMessages, { hasMoreOlder });
 
             if (isInitial && !background) {
                 get().markGroupMessagesAsRead(groupId);
@@ -338,6 +369,8 @@ export const useGroupStore = create((set, get) => ({
             },
             text: messageData.text,
             image: messageData.image,
+            audio: messageData.audio,
+            video: messageData.video,
             createdAt: new Date().toISOString(),
             readBy: [authUser._id],
             isForwarded: messageData.isForwarded || false,
@@ -446,37 +479,84 @@ export const useGroupStore = create((set, get) => ({
 
     // Delete group message for everyone
     deleteGroupMessageForAll: async (groupId, messageId) => {
+        const authUser = useAuthStore.getState().authUser;
+        const { groupMessages, groups } = get();
+        const prevMessages = groupMessages;
+        const prevGroups = groups;
+        const target = groupMessages.find((m) => String(m._id) === String(messageId));
+        const optimistic = applyOptimisticDeleteForEveryone(target || { _id: messageId }, authUser?._id);
+        const isLatest =
+            groupMessages.length > 0 &&
+            String(groupMessages[groupMessages.length - 1]._id) === String(messageId);
+
+        set({
+            groupMessages: groupMessages.map((msg) =>
+                String(msg._id) === String(messageId) ? { ...msg, ...optimistic } : msg
+            ),
+            groups: groups.map((g) => {
+                if (String(g._id) !== String(groupId)) return g;
+                const lm = g.lastMessage;
+                if (!lm) return g;
+                const matches = (lm._id && String(lm._id) === String(messageId)) || isLatest;
+                if (!matches) return g;
+                return {
+                    ...g,
+                    lastMessage: {
+                        ...lm,
+                        _id: messageId,
+                        ...deletedSidebarPreview,
+                    },
+                };
+            }),
+        });
+
         try {
             await axiosInstance.delete(`/groups/${groupId}/messages/${messageId}/all`);
-
-            // Update message in local state immediately
-            set({
-                groupMessages: get().groupMessages.map(msg =>
-                    msg._id === messageId
-                        ? { ...msg, text: "This message was deleted", image: null }
-                        : msg
-                )
-            });
-
             toast.success("Message deleted for everyone");
         } catch (error) {
+            set({ groupMessages: prevMessages, groups: prevGroups });
             toast.error(error.response?.data?.error || "Failed to delete message");
+            throw error;
         }
     },
 
     // Delete group message for me only
     deleteGroupMessageForMe: async (groupId, messageId) => {
+        const { groupMessages, groups } = get();
+        const prevMessages = groupMessages;
+        const prevGroups = groups;
+        const remaining = groupMessages.filter((msg) => String(msg._id) !== String(messageId));
+        const last = remaining[remaining.length - 1];
+
+        set({
+            groupMessages: remaining,
+            groups: groups.map((g) => {
+                if (String(g._id) !== String(groupId)) return g;
+                const lm = g.lastMessage;
+                if (!lm) return g;
+                if (lm._id && String(lm._id) !== String(messageId)) return g;
+                return {
+                    ...g,
+                    lastMessage: last
+                        ? {
+                            _id: last._id,
+                            text: last.deletedForEveryone ? DELETED_TEXT_EVERYONE : last.text,
+                            senderId: last.senderId,
+                            senderName: last.senderId?.fullName,
+                            createdAt: last.createdAt,
+                        }
+                        : null,
+                };
+            }),
+        });
+
         try {
             await axiosInstance.delete(`/groups/${groupId}/messages/${messageId}/me`);
-
-            // Remove message from local state immediately
-            set({
-                groupMessages: get().groupMessages.filter(msg => msg._id !== messageId)
-            });
-
             toast.success("Message deleted for you");
         } catch (error) {
+            set({ groupMessages: prevMessages, groups: prevGroups });
             toast.error(error.response?.data?.error || "Failed to delete message");
+            throw error;
         }
     },
 
@@ -637,86 +717,128 @@ export const useGroupStore = create((set, get) => ({
                 }
             }
 
-            // Notification Logic for Group Messages
-            const isGroupActive =
-              selectedGroup?._id === groupId && !shouldShowSystemNotification();
+            // WhatsApp: notify only when NOT actively viewing this group
+            const viewingThisGroup = isActivelyViewingConversation(
+              groupId,
+              selectedGroup?._id
+            );
 
             if (isFromOther && !isSystem) {
-                const group = groups.find(g => g._id === groupId) || selectedGroup;
-                if (!group?.isMuted) {
-                playNotificationSound();
+                if (viewingThisGroup) {
+                    get().markGroupMessagesAsRead(groupId);
+                } else {
+                    const group = groups.find((g) => String(g._id) === String(groupId)) || selectedGroup;
+                    if (!group?.isMuted) {
+                        playNotificationSound();
 
-                const body = `${message.senderId?.fullName || 'Someone'}: ${message.text || "📷 Photo"}`;
+                        const body = `${message.senderId?.fullName || "Someone"}: ${message.text || "📷 Photo"}`;
+                        const g = group || { name: "New Group Message" };
 
-                if (shouldShowSystemNotification()) {
-                    const g = group || { name: "New Group Message" };
-                    showBrowserNotification(g.name || "New Group Message", {
-                        body,
-                        icon: "/avatar.png",
-                        tag: `group-${groupId}`,
-                        requireInteraction: false,
-                        silent: false,
-                        url: `/?group=${groupId}`,
-                        groupId,
-                        group: {
-                            _id: g._id || groupId,
-                            name: g.name,
-                            image: g.image,
-                            members: g.members,
-                        },
-                    });
-                }
-
-                if (!isGroupActive) {
-                    const g = group || { name: "New Group Message" };
-                    showInAppNotification(
-                        { text: body },
-                        { fullName: g.name, profilePic: g.image || "/avatar.png" },
-                        () => {
-                            get().setSelectedGroup(g);
+                        if (shouldShowSystemNotification()) {
+                            showBrowserNotification(g.name || "New Group Message", {
+                                body,
+                                icon: "/avatar.png",
+                                tag: `group-${groupId}`,
+                                requireInteraction: false,
+                                silent: false,
+                                url: `/?group=${groupId}`,
+                                groupId,
+                                group: {
+                                    _id: g._id || groupId,
+                                    name: g.name,
+                                    image: g.image,
+                                    members: g.members,
+                                },
+                            });
+                        } else {
+                            showInAppNotification(
+                                { text: body },
+                                { fullName: g.name, profilePic: g.image || "/avatar.png" },
+                                () => {
+                                    get().setSelectedGroup(g);
+                                }
+                            );
                         }
-                    );
-                    toast(`💬 ${g.name}: ${body}`, { duration: 5000 });
-                }
+                    }
                 }
             }
 
             // Update group's lastMessage and unread count in the list
             set({
-                groups: groups.map(g => {
-                    if (g._id === groupId) {
-                        // Only increment unread if message is from another user AND group is not selected
-                        // System messages don't increment unread
-                        const shouldIncrementUnread = isFromOther && !isSystem && selectedGroup?._id !== groupId;
+                groups: groups.map((g) => {
+                    if (String(g._id) !== String(groupId)) return g;
 
-                        return {
-                            ...g,
-                            lastMessage: {
-                                text: message.text || "📷 Photo",
-                                senderId: message.senderId?._id || null,
-                                senderName: message.senderId?.fullName || (isSystem ? "System" : "Unknown"),
-                                createdAt: message.createdAt
-                            },
-                            updatedAt: message.createdAt,
-                            unreadCount: shouldIncrementUnread ? (g.unreadCount || 0) + 1 : g.unreadCount
-                        };
-                    }
-                    return g;
-                }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+                    const shouldIncrementUnread =
+                        isFromOther && !isSystem && !viewingThisGroup;
+
+                    return {
+                        ...g,
+                        lastMessage: {
+                            text: message.text || "📷 Photo",
+                            senderId: message.senderId?._id || null,
+                            senderName:
+                                message.senderId?.fullName ||
+                                (isSystem ? "System" : "Unknown"),
+                            createdAt: message.createdAt,
+                        },
+                        updatedAt: message.createdAt,
+                        unreadCount: viewingThisGroup
+                            ? 0
+                            : shouldIncrementUnread
+                              ? (g.unreadCount || 0) + 1
+                              : g.unreadCount,
+                    };
+                }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)),
             });
         });
 
         // Message deleted in group
-        socket.on("group:messageDeleted", ({ groupId, messageId, deletedForAll }) => {
-            const { selectedGroup, groupMessages } = get();
+        socket.on("group:messageDeleted", ({ groupId, messageId, deletedForAll, updatedMessage }) => {
+            const { selectedGroup, groupMessages, groups } = get();
+            const open = selectedGroup && String(selectedGroup._id) === String(groupId);
 
-            if (selectedGroup?._id === groupId && deletedForAll) {
+            if (deletedForAll) {
+                const patch = updatedMessage || {
+                    ...applyOptimisticDeleteForEveryone({ _id: messageId }, null),
+                    text: DELETED_TEXT_EVERYONE,
+                };
+                const isLatest =
+                    open &&
+                    groupMessages.length > 0 &&
+                    String(groupMessages[groupMessages.length - 1]._id) === String(messageId);
+
                 set({
-                    groupMessages: groupMessages.map(msg =>
-                        msg._id === messageId
-                            ? { ...msg, text: "This message was deleted", image: null }
-                            : msg
-                    )
+                    groupMessages: open
+                        ? groupMessages.map((msg) =>
+                            String(msg._id) === String(messageId) ? { ...msg, ...patch } : msg
+                          )
+                        : groupMessages,
+                    groups: groups.map((g) => {
+                        if (String(g._id) !== String(groupId)) return g;
+                        const lm = g.lastMessage;
+                        if (!lm) return g;
+                        const matches =
+                            (lm._id && String(lm._id) === String(messageId)) || isLatest;
+                        if (!matches) return g;
+                        return {
+                            ...g,
+                            lastMessage: {
+                                ...lm,
+                                _id: messageId,
+                                ...deletedSidebarPreview,
+                            },
+                        };
+                    }),
+                });
+                return;
+            }
+
+            // Delete for me (this device / multi-device sync)
+            if (open) {
+                set({
+                    groupMessages: groupMessages.filter(
+                        (msg) => String(msg._id) !== String(messageId)
+                    ),
                 });
             }
         });

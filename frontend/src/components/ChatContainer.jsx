@@ -11,7 +11,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import defaultImg from "../public/avatar.png";
-import { Ban, Check, CheckCheck, Download, Forward, Search, UserPlus, Reply, FileText, Pin, Clock, Mic, Play, Pause, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Ban, Check, CheckCheck, ChevronDown, Download, Forward, Search, UserPlus, Reply, FileText, Pin, Clock, X, ZoomIn, ZoomOut } from "lucide-react";
 import "./ChatContainer.css";
 import { Dialog, DialogTitle, DialogActions, Button, Typography, DialogContent, Avatar, List, ListItem, ListItemAvatar, ListItemText, Divider, Box, InputAdornment, TextField, } from "@mui/material";
 import toast from "react-hot-toast";
@@ -28,101 +28,10 @@ import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { resolveWallpaperStyle, getDefaultWallpaper } from "../lib/chatWallpaper";
 import DoubleTapLike from "./DoubleTapLike";
 import { haptic } from "../lib/haptics";
-
-// Custom Audio Player Component
-const AudioPlayer = ({ audioUrl, isMyMessage }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const audioRef = useRef(null);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const updateTime = () => setCurrentTime(audio.currentTime);
-    const updateDuration = () => setDuration(audio.duration);
-    const handleEnded = () => setIsPlaying(false);
-
-    audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('loadedmetadata', updateDuration);
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('loadedmetadata', updateDuration);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, []);
-
-  const togglePlay = () => {
-    if (isPlaying) {
-      audioRef.current?.pause();
-    } else {
-      audioRef.current?.play();
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleProgressClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentage = x / rect.width;
-    const newTime = percentage * duration;
-    if (audioRef.current) {
-      audioRef.current.currentTime = newTime;
-    }
-  };
-
-  const formatTime = (time) => {
-    if (isNaN(time)) return "0:00";
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const progress = duration ? (currentTime / duration) * 100 : 0;
-
-  return (
-    <div className="flex items-center gap-3 p-3 bg-base-100/10 rounded-xl my-1 border border-base-content/10 max-w-[280px]">
-      <audio ref={audioRef} src={audioUrl} preload="metadata" />
-
-      {/* Play/Pause Button */}
-      <button
-        onClick={togglePlay}
-        className={`p-2 rounded-full flex-shrink-0 transition-all ${isMyMessage
-          ? 'bg-primary-content/20 hover:bg-primary-content/30'
-          : 'bg-base-content/10 hover:bg-base-content/20'
-          }`}
-      >
-        {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-      </button>
-
-      {/* Waveform / Progress Bar */}
-      <div className="flex-1 flex flex-col gap-1">
-        <div
-          className="h-1 bg-base-content/20 rounded-full cursor-pointer relative overflow-hidden"
-          onClick={handleProgressClick}
-        >
-          <div
-            className={`h-full rounded-full transition-all ${isMyMessage ? 'bg-primary-content' : 'bg-secondary'
-              }`}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs opacity-60">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-      </div>
-
-      {/* Mic Icon */}
-      <div className="flex-shrink-0 opacity-50">
-        <Mic size={16} />
-      </div>
-    </div>
-  );
-};
+import VoiceMessagePlayer from "./chat/VoiceMessagePlayer";
+import DeleteMessageSheet from "./chat/DeleteMessageSheet";
+import DeletedMessageBubble from "./chat/DeletedMessageBubble";
+import { isMessageDeleted } from "../lib/messageDelete";
 
 const ChatContainer = () => {
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -156,6 +65,7 @@ const ChatContainer = () => {
     subscribeToMessages,
     unsubscribeFromMessages,
     deleteForAllMessage,
+    deleteForMeMessage,
     users,
     forwardMessage,
     sendFriendRequest,
@@ -177,6 +87,7 @@ const ChatContainer = () => {
     subscribeToMessages: state.subscribeToMessages,
     unsubscribeFromMessages: state.unsubscribeFromMessages,
     deleteForAllMessage: state.deleteForAllMessage,
+    deleteForMeMessage: state.deleteForMeMessage,
     users: state.users,
     forwardMessage: state.forwardMessage,
     sendFriendRequest: state.sendFriendRequest,
@@ -193,6 +104,10 @@ const ChatContainer = () => {
   const containerRef = useRef(null);
   const prevSelectedUserIdRef = useRef(null);
   const isAtBottomRef = useRef(true);
+  const prevLastMsgIdRef = useRef(null);
+  const prevMsgLenRef = useRef(0);
+  const [pendingNewCount, setPendingNewCount] = useState(0);
+  const [scrollEpoch, setScrollEpoch] = useState(0);
 
   const pinnedMessage = messages.find(m => m.isPinned);
   const sortedMessages = useMemo(() => {
@@ -211,8 +126,11 @@ const ChatContainer = () => {
 
   useEffect(() => {
     getMessages(selectedUser._id);
-    // When switching chats, we want to force scroll to bottom on next messages load
     isAtBottomRef.current = true;
+    setPendingNewCount(0);
+    setScrollEpoch((n) => n + 1);
+    prevLastMsgIdRef.current = null;
+    prevMsgLenRef.current = 0;
   }, [selectedUser._id, getMessages]);
 
   useEffect(() => {
@@ -243,10 +161,16 @@ const ChatContainer = () => {
   const handleScroll = () => {
     if (containerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      // If the user is within 100px of the bottom, we consider them "at the bottom"
-      isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+      const atBottom = scrollHeight - scrollTop - clientHeight < 100;
+      isAtBottomRef.current = atBottom;
+      if (atBottom) setPendingNewCount(0);
     }
   };
+
+  const handleAtBottomChange = useCallback((atBottom) => {
+    isAtBottomRef.current = atBottom;
+    if (atBottom) setPendingNewCount(0);
+  }, []);
 
   const handleImageLoad = useCallback(() => {
     if (containerRef.current && isAtBottomRef.current) {
@@ -254,24 +178,54 @@ const ChatContainer = () => {
     }
   }, []);
 
-  // Pin to bottom instantly when opening chat or receiving at-bottom updates
-  useLayoutEffect(() => {
-    if (!containerRef.current) return;
+  const jumpToLatest = useCallback(() => {
+    setPendingNewCount(0);
+    isAtBottomRef.current = true;
+    setScrollEpoch((n) => n + 1);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, []);
 
-    const isNewChat = selectedUser?._id !== prevSelectedUserIdRef.current;
+  // Auto-scroll only on chat open, own send, or when already at bottom — never on older-page prepend
+  useLayoutEffect(() => {
+    if (!containerRef.current || isLoadingOlder) return;
+
     const lastMessage = sortedMessages[sortedMessages.length - 1];
-    const isMyMessage = lastMessage?.senderId === authUser?._id;
+    const lastId = lastMessage?.optimisticId || lastMessage?._id || null;
+    const len = sortedMessages.length;
+    const isNewChat = selectedUser?._id !== prevSelectedUserIdRef.current;
+    const lastChanged = lastId !== prevLastMsgIdRef.current;
+    const prepended = len > prevMsgLenRef.current && !lastChanged;
 
     if (isNewChat) {
       isAtBottomRef.current = true;
       prevSelectedUserIdRef.current = selectedUser?._id;
+      setPendingNewCount(0);
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    } else if (isMyMessage || isAtBottomRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      isAtBottomRef.current = true;
+    } else if (prepended) {
+      // Older messages inserted — VirtualMessageList preserves viewport
+    } else if (lastChanged) {
+      const isMine = lastMessage?.senderId === authUser?._id;
+      if (isAtBottomRef.current || isMine) {
+        isAtBottomRef.current = true;
+        setPendingNewCount(0);
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      } else if (!isMine) {
+        setPendingNewCount((c) => c + 1);
+      }
     }
-  }, [sortedMessages.length, selectedUser?._id, sortedMessages[sortedMessages.length - 1]?._id, authUser?._id]);
 
+    prevLastMsgIdRef.current = lastId;
+    prevMsgLenRef.current = len;
+  }, [
+    sortedMessages.length,
+    selectedUser?._id,
+    sortedMessages[sortedMessages.length - 1]?._id,
+    sortedMessages[sortedMessages.length - 1]?.optimisticId,
+    authUser?._id,
+    isLoadingOlder,
+  ]);
 
   // Optimized: Check blocked status with caching
   useEffect(() => {
@@ -307,13 +261,11 @@ const ChatContainer = () => {
   }, [selectedUser._id, authUser._id, subscribeToBlockEvents]);
 
   const handleDeleteForEveryone = async (messageId) => {
-    const socket = useAuthStore.getState().socket;
-    if (!socket || !socket.connected) {
-      toast.error("Socket not connected. Please refresh the page.");
-      return;
-    }
     await deleteForAllMessage(messageId);
-    setDeletePopupMessageId(null);
+  };
+
+  const handleDeleteForMe = async (messageId) => {
+    await deleteForMeMessage(messageId);
   };
 
   const handleCopyText = (text) => {
@@ -394,10 +346,11 @@ const ChatContainer = () => {
       })
     : [];
 
-  const scrollToBottomKey = useMemo(() => {
-    const last = sortedMessages[sortedMessages.length - 1];
-    return `${selectedUser?._id}-${sortedMessages.length}-${last?._id || ""}`;
-  }, [selectedUser?._id, sortedMessages.length, sortedMessages[sortedMessages.length - 1]?._id]);
+  // Only bump on chat open / explicit jump — never on older-page length changes
+  const scrollToBottomKey = useMemo(
+    () => `${selectedUser?._id}:${scrollEpoch}`,
+    [selectedUser?._id, scrollEpoch]
+  );
 
   const renderMessage = useCallback((message, index) => {
       const currentDateKey = getMessageDateKey(message.createdAt);
@@ -424,12 +377,12 @@ const ChatContainer = () => {
             </div>
             <div className="chat-header mb-1 flex items-center gap-1">
               <time className="text-xs opacity-50 ml-1">{formatMessageTime(message.createdAt)}</time>
-              {message.isEdited && <span className="text-[10px] opacity-40 italic">(edited)</span>}
+              {message.isEdited && !isMessageDeleted(message) && <span className="text-[10px] opacity-40 italic">(edited)</span>}
             </div>
 
             <SwipeableMessageBubble
               isMine={message.senderId === authUser._id}
-              disabled={message.text === "This message was deleted" || message.status === "scheduled"}
+              disabled={isMessageDeleted(message) || message.status === "scheduled"}
               onReply={() => setReplyingToMessage(message)}
               onLongPress={(el) => {
                 haptic("longPress");
@@ -440,12 +393,29 @@ const ChatContainer = () => {
               className="group"
               disabled={
                 message.senderId === authUser._id ||
-                message.text === "This message was deleted"
+                isMessageDeleted(message)
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
             <div className={`chat-bubble flex flex-col relative w-fit max-w-full ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
-              {message.replyToMessage && message.text !== "This message was deleted" && (
+              {isMessageDeleted(message) ? (
+                <>
+                  <DeletedMessageBubble
+                    message={message}
+                    authUserId={authUser._id}
+                    isMyMessage={message.senderId === authUser._id}
+                  />
+                  {message.senderId === authUser._id && (
+                    <div className="status-container mt-1 self-end">
+                      {message.status === "read" ? <CheckCheck className="w-4 h-4 tick-read message-status-icon text-blue-500" /> :
+                        message.status === "delivered" ? <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" /> :
+                          <Check className="w-4 h-4 tick-sent message-status-icon" />}
+                    </div>
+                  )}
+                </>
+              ) : (
+              <>
+              {message.replyToMessage && (
                 <div className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -461,7 +431,7 @@ const ChatContainer = () => {
                 >
                   <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">{message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}</p>
                   <div className="flex items-center gap-2">
-                    {message.replyToMessage.image && message.replyToMessage.text !== "This message was deleted" && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" loading="lazy" onLoad={handleImageLoad} />}
+                    {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" loading="lazy" onLoad={handleImageLoad} />}
                     <p className="text-xs opacity-70 truncate max-w-[150px]">{message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}</p>
                   </div>
                 </div>
@@ -488,7 +458,12 @@ const ChatContainer = () => {
                 />
               )}
 
-              {message.audio && <AudioPlayer audioUrl={message.audio} isMyMessage={message.senderId === authUser._id} />}
+              {message.audio && (
+                <VoiceMessagePlayer
+                  audioUrl={message.audio}
+                  isMyMessage={message.senderId === authUser._id}
+                />
+              )}
 
               {message.file && (
                 <div className="flex items-center gap-3 p-3 bg-base-100/10 rounded-xl my-1 border border-base-content/10">
@@ -528,10 +503,10 @@ const ChatContainer = () => {
 
               {message.text && !message.audio && (
                 <div className="relative">
-                  {message.isForwarded && message.text !== "This message was deleted" && (
+                  {message.isForwarded && (
                     <div className="forwarded-badge mb-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
                   )}
-                  <div className={`relative ${message.text === "This message was deleted" ? "opacity-50 italic" : ""} `} >
+                  <div className="relative">
                     {editingMessageId === message._id ? (
                       <MessageEditField
                         initialText={message.text}
@@ -555,8 +530,7 @@ const ChatContainer = () => {
 
               <MessageReactions messageId={message._id} reactions={message.reactions} senderId={message.senderId} />
 
-              {message.text !== "This message was deleted" &&
-                message.status !== 'scheduled' &&
+              {message.status !== 'scheduled' &&
                 message.senderId !== authUser._id &&
                 !message.reactions?.some(r => r.userId === authUser._id) && (
                   <div className={`absolute bottom-full mb-1 ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
@@ -583,9 +557,11 @@ const ChatContainer = () => {
                         <Check className="w-4 h-4 tick-sent message-status-icon" />}
                 </div>
               )}
+              </>
+              )}
             </div>
 
-              {message.text !== "This message was deleted" && message.status !== 'scheduled' && (
+              {!isMessageDeleted(message) && message.status !== 'scheduled' && (
                 <MessageMenuTrigger
                   isMine={message.senderId === authUser._id}
                   onOpen={(el) => openMessageMenu(message._id, el)}
@@ -685,6 +661,7 @@ const ChatContainer = () => {
           hasMoreOlder={messagesMeta?.hasMoreOlder}
           isLoadingOlder={isLoadingOlder}
           scrollToBottomKey={scrollToBottomKey}
+          onAtBottomChange={handleAtBottomChange}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 md:p-4 custom-scrollbar messages-container relative z-10"
           getItemKey={(message) => message.optimisticId || message._id}
         renderItem={renderMessage}
@@ -696,6 +673,12 @@ const ChatContainer = () => {
               <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4"><span className="text-4xl">👋</span></div>
               <h3 className="text-lg font-semibold text-base-content mb-2">Start a conversation</h3>
               <p className="text-sm text-base-content/60 max-w-xs">Say hi to {selectedUser.fullName}!</p>
+            </div>
+          ) : messagesMeta?.hasMoreOlder === false && messages.length > 0 ? (
+            <div className="flex justify-center my-4">
+              <div className="bg-base-300/70 text-base-content/60 px-4 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm">
+                Beginning of conversation
+              </div>
             </div>
           ) : null
         }
@@ -728,6 +711,16 @@ const ChatContainer = () => {
           </>
         }
       />
+        {pendingNewCount > 0 && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-content shadow-lg text-sm font-semibold hover:brightness-110 active:scale-95 transition"
+          >
+            <ChevronDown className="w-4 h-4" />
+            {pendingNewCount} new message{pendingNewCount === 1 ? "" : "s"}
+          </button>
+        )}
       </div>
       <MessageInput />
 
@@ -745,45 +738,15 @@ const ChatContainer = () => {
         onReact={(emoji) => menuMessage && sendReaction(menuMessage._id, emoji)}
       />
 
-      {/* Delete Dialog */}
-      <Dialog
+      {/* Delete Dialog — WhatsApp-style sheet */}
+      <DeleteMessageSheet
         open={!!deletePopupMessageId}
+        messageId={deletePopupMessageId}
+        mode="dm"
         onClose={() => setDeletePopupMessageId(null)}
-        PaperProps={{ sx: { borderRadius: "16px", width: "90%", maxWidth: "400px" } }}
-      >
-        <div className="px-5 pt-3">
-          <DialogTitle sx={{ fontSize: "1.25rem", fontWeight: 700, px: 0, py: 1 }}>
-            Delete message?
-          </DialogTitle>
-          <DialogContent sx={{ px: 0, py: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              This action cannot be undone.
-            </Typography>
-          </DialogContent>
-        </div>
-        <DialogActions sx={{ flexDirection: "column", gap: 1, px: 3, pb: 3, pt: 0 }}>
-          <Button
-            fullWidth
-            variant="contained"
-            color="error"
-            onClick={() => {
-              handleDeleteForEveryone(deletePopupMessageId);
-              setDeletePopupMessageId(null);
-            }}
-            sx={{ py: 1.5, borderRadius: "10px", fontWeight: 600 }}
-          >
-            Delete for everyone
-          </Button>
-          <Button
-            fullWidth
-            variant="text"
-            onClick={() => setDeletePopupMessageId(null)}
-            sx={{ py: 1.5, borderRadius: "10px" }}
-          >
-            Cancel
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onDeleteForEveryone={handleDeleteForEveryone}
+        onDeleteForMe={handleDeleteForMe}
+      />
 
       {/* Forward Dialog */}
       <Dialog

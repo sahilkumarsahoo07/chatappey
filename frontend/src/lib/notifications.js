@@ -188,6 +188,25 @@ export const isDocumentVisible = () => document.visibilityState === "visible";
 export const shouldShowSystemNotification = () =>
   document.hidden || !document.hasFocus();
 
+/**
+ * WhatsApp-style active chat check.
+ * True only when this conversation is open on the chat screen AND the tab is
+ * visible + focused. When true: append message only — no sound, toast, in-app,
+ * or OS notification; unread stays 0; mark read immediately.
+ */
+export const isActivelyViewingConversation = (conversationId, selectedId) => {
+  if (conversationId == null || selectedId == null) return false;
+  if (String(conversationId) !== String(selectedId)) return false;
+  try {
+    // Chat UI only mounts on home; Settings/Calls/etc. must still notify
+    if (window.location.pathname !== "/") return false;
+  } catch (_) {
+    return false;
+  }
+  if (shouldShowSystemNotification()) return false;
+  return true;
+};
+
 const style = document.createElement("style");
 style.textContent = `
   @keyframes slideInRight {

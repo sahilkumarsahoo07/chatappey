@@ -5,7 +5,7 @@
 const DB_NAME = "chatappey_cache";
 const DB_VERSION = 1;
 const STORE = "threads";
-export const CACHE_MAX_MESSAGES = 300;
+export const CACHE_MAX_MESSAGES = 500;
 
 function openDb() {
   return new Promise((resolve, reject) => {
