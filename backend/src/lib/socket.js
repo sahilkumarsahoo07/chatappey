@@ -79,6 +79,7 @@ import GroupMessage from "../models/groupMessage.model.js";
 import cloudinary from "./cloudinary.js";
 import { unarchiveDmChat } from "../utils/chatPreference.utils.js";
 import { emitToUser, canUpgradeStatus } from "../utils/messageStatus.utils.js";
+import { applyComputedStatus } from "../utils/groupMessageStatus.utils.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -299,11 +300,13 @@ io.on("connection", async (socket) => {
   // Group typing events
   socket.on("group:typing", async ({ groupId }) => {
     try {
+      if (!groupId) return;
+      const room = String(groupId);
       const user = await User.findById(userId).select('fullName');
 
       // Broadcast to all group members except sender
-      socket.to(groupId).emit("group:typing", {
-        groupId,
+      socket.to(room).emit("group:typing", {
+        groupId: room,
         userId,
         userName: user?.fullName || "User"
       });
@@ -313,9 +316,11 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("group:stopTyping", ({ groupId }) => {
+    if (!groupId) return;
+    const room = String(groupId);
     // Broadcast to all group members except sender
-    socket.to(groupId).emit("group:stopTyping", {
-      groupId,
+    socket.to(room).emit("group:stopTyping", {
+      groupId: room,
       userId
     });
   });
@@ -734,11 +739,15 @@ io.on("connection", async (socket) => {
         replyTo: validReplyTo,
         replyToMessage: replyToMessageData,
         clientMessageId: clientMessageId || null,
+        status: "sent",
         poll: poll ? {
           question: poll.question,
           options: poll.options.map(opt => ({ text: opt.text, votes: [] }))
         } : undefined,
-        readBy: [userId]
+        // Sender in readBy so unread counts exclude self; not shown in Message Info as reader
+        readBy: [userId],
+        deliveredTo: [],
+        readReceipts: [],
       });
 
       await newMessage.save();
@@ -752,6 +761,7 @@ io.on("connection", async (socket) => {
           : newMessage;
       payload.clientMessageId = clientMessageId || payload.clientMessageId;
       payload.serverCreatedAt = payload.createdAt;
+      payload.status = "sent";
 
       // Update group's lastMessage and updatedAt
       group.lastMessage = {
@@ -773,6 +783,77 @@ io.on("connection", async (socket) => {
     } catch (error) {
       console.error("Error in sendGroupMessage socket handler:", error.message);
       callback?.({ error: error.message || "Internal server error" });
+    }
+  });
+
+  /**
+   * Recipient device ACK — WhatsApp grey ✓✓ when all members delivered.
+   */
+  socket.on("group:messageReceived", async ({ groupId, messageId, clientMessageId }) => {
+    try {
+      if (!groupId || (!messageId && !clientMessageId)) return;
+      if (incognitoUsers.has(String(userId))) return;
+
+      const query = messageId
+        ? { _id: messageId, groupId }
+        : { clientMessageId, groupId };
+      const message = await GroupMessage.findOne(query);
+      if (!message || message.messageType === "system") return;
+
+      const senderId = String(message.senderId || "");
+      if (senderId === String(userId)) return;
+
+      const group = await Group.findById(groupId).select("members");
+      if (!group) return;
+      const isMember = group.members.some(
+        (m) => String(m.user?._id || m.user) === String(userId)
+      );
+      if (!isMember) return;
+
+      const now = new Date();
+      const already = (message.deliveredTo || []).some(
+        (d) => String(d.userId) === String(userId)
+      );
+      if (!already) {
+        message.deliveredTo = message.deliveredTo || [];
+        message.deliveredTo.push({ userId, deliveredAt: now });
+      }
+
+      const memberIds = group.members.map((m) => m.user?._id || m.user);
+      const nextStatus = applyComputedStatus(message, memberIds);
+      if (canUpgradeStatus(message.status, nextStatus) || !message.status) {
+        message.status = nextStatus;
+      }
+      await message.save();
+
+      io.to(String(groupId)).emit("group:messageDelivered", {
+        groupId: String(groupId),
+        messageId: String(message._id),
+        clientMessageId: message.clientMessageId || clientMessageId || null,
+        deliveredBy: {
+          _id: userId,
+          deliveredAt: now,
+        },
+        status: message.status,
+        deliveredAt: now,
+      });
+    } catch (err) {
+      console.error("group:messageReceived error:", err.message);
+    }
+  });
+
+  socket.on("group:recording", async ({ groupId, isRecording }) => {
+    try {
+      if (!groupId) return;
+      const user = await User.findById(userId).select("fullName");
+      socket.to(String(groupId)).emit("group:recording", {
+        groupId: String(groupId),
+        userId,
+        userName: user?.fullName || "User",
+        isRecording: !!isRecording,
+      });
+    } catch (err) {
+      console.error("group:recording error:", err.message);
     }
   });
 

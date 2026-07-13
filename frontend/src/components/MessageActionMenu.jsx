@@ -319,9 +319,32 @@ export const buildGroupChatActions = ({
   onForward,
   onDelete,
 }) => {
-  if (isMessageDeleted(message)) return [];
-
+  const deleted = isMessageDeleted(message);
   const actions = [];
+
+  // Available for every accessible message (own or others), including deleted
+  if (onInfo) {
+    actions.push({
+      id: "info",
+      label: "Message Info",
+      icon: <Info className="w-4 h-4" />,
+      onClick: onInfo,
+    });
+  }
+
+  if (deleted) {
+    if (onDelete) {
+      actions.push({
+        id: "delete",
+        label: "Delete",
+        icon: <Trash2 className="w-4 h-4" />,
+        danger: true,
+        onClick: onDelete,
+      });
+    }
+    return actions;
+  }
+
   if (onReply) {
     actions.push({
       id: "reply",
@@ -338,12 +361,6 @@ export const buildGroupChatActions = ({
       onClick: onStar,
     });
   }
-  actions.push({
-    id: "info",
-    label: "Message Info",
-    icon: <Info className="w-4 h-4" />,
-    onClick: onInfo,
-  });
   if (isAdmin) {
     actions.push({
       id: "pin",

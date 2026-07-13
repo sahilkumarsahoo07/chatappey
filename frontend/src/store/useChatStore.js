@@ -621,6 +621,16 @@ export const useChatStore = create((set, get) => ({
           !isChatAlreadyOpen &&
           !shouldMarkRead;
 
+        // Sidebar ticks must match bubble status.
+        // Never force "read" on OUR outgoing messages just because the chat is open —
+        // open chat only means WE read THEIR messages.
+        const isOutgoing = sameId(newMessage.senderId, authUser._id);
+        const lastMessageStatus = isOutgoing
+          ? newMessage.status || "sent"
+          : shouldMarkRead || isChatAlreadyOpen
+            ? "read"
+            : newMessage.status || "delivered";
+
         const updatedSender = {
           ...sender,
           chatDeletedForMe: false,
@@ -631,7 +641,7 @@ export const useChatStore = create((set, get) => ({
             audio: newMessage.audio,
             createdAt: newMessage.createdAt,
             senderId: newMessage.senderId,
-            status: shouldMarkRead || isChatAlreadyOpen ? "read" : "delivered",
+            status: lastMessageStatus,
           },
           unreadCount:
             shouldMarkRead || isChatAlreadyOpen
@@ -786,8 +796,16 @@ export const useChatStore = create((set, get) => ({
         users: users.map((user) => {
           if (!sameId(user._id, receiverId)) return user;
           const lm = user.lastMessage;
-          if (!lm || lm.status !== "sent") return user;
-          return { ...user, lastMessage: { ...lm, status: "delivered" } };
+          if (!lm) return user;
+          if (!sameId(lm.senderId, authUser._id)) return user;
+          if (lm.status !== "sent") return user;
+          return {
+            ...user,
+            lastMessage: {
+              ...lm,
+              status: upgradeStatus(lm.status, "delivered"),
+            },
+          };
         }),
       });
     });
@@ -820,16 +838,28 @@ export const useChatStore = create((set, get) => ({
         };
       });
 
-      const updatedUsers = users.map((user) =>
-        sameId(user._id, readBy)
-          ? {
-              ...user,
-              lastMessage: user.lastMessage
-                ? { ...user.lastMessage, status: "read" }
-                : null,
-            }
-          : user
-      );
+      const updatedUsers = users.map((user) => {
+        if (!sameId(user._id, readBy)) return user;
+        const lm = user.lastMessage;
+        if (!lm) return user;
+        // Only upgrade ticks on OUR last preview message
+        if (!sameId(lm.senderId, authUser._id)) return user;
+        if (
+          idSet &&
+          lm._id &&
+          !idSet.has(String(lm._id)) &&
+          !idSet.has(String(lm.realId || ""))
+        ) {
+          return user;
+        }
+        return {
+          ...user,
+          lastMessage: {
+            ...lm,
+            status: upgradeStatus(lm.status, "read"),
+          },
+        };
+      });
 
       set({ messages: updatedMessages, users: updatedUsers });
     });

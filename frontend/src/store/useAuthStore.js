@@ -426,6 +426,32 @@ export const useAuthStore = create((set, get) => ({
             import("./useGroupStore").then(({ useGroupStore }) => {
                 useGroupStore.getState().unsubscribeFromGroupEvents();
                 useGroupStore.getState().subscribeToGroupEvents();
+                const { selectedGroup, groupMessages, markGroupMessagesAsRead } =
+                    useGroupStore.getState();
+                if (selectedGroup?._id) {
+                    markGroupMessagesAsRead(selectedGroup._id);
+                    // Re-ACK delivery for any messages still pending delivery on this device
+                    const socketRef = get().socket;
+                    const authUser = get().authUser;
+                    if (socketRef?.connected && authUser) {
+                        for (const message of groupMessages || []) {
+                            if (!message || message.messageType === "system") continue;
+                            const senderId = message.senderId?._id || message.senderId;
+                            if (String(senderId) === String(authUser._id)) continue;
+                            const delivered = (message.deliveredTo || []).some(
+                                (d) =>
+                                    String(d.userId?._id || d.userId || d._id || d) ===
+                                    String(authUser._id)
+                            );
+                            if (delivered) continue;
+                            socketRef.emit("group:messageReceived", {
+                                groupId: selectedGroup._id,
+                                messageId: message.realId || message._id,
+                                clientMessageId: message.clientMessageId,
+                            });
+                        }
+                    }
+                }
             });
             get().syncLiveConversations?.();
             import("./useStatusStore").then(({ useStatusStore }) => {

@@ -131,7 +131,8 @@ const Sidebar = () => {
         if (!user.lastMessage) return { text: "Tap to chat", status: null, isMine: false };
 
         const lastMsg = user.lastMessage;
-        const isMine = lastMsg.senderId === authUser._id;
+        const isMine =
+            String(lastMsg.senderId?._id || lastMsg.senderId) === String(authUser._id);
 
         // Handle deleted messages
         if (lastMsg.text === "This message was deleted" || lastMsg.deletedForEveryone || lastMsg.deleted) {

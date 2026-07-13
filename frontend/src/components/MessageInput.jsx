@@ -245,6 +245,31 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         if (voice.error) toast.error(voice.error);
     }, [voice.error]);
 
+    // Broadcast voice-recording presence in group chats
+    useEffect(() => {
+        if (!isGroupChat || !selectedGroup?._id || !socket) return;
+        const isRec = !!(voice.isRecording || voice.isLocked);
+        socket.emit("group:recording", {
+            groupId: selectedGroup._id,
+            isRecording: isRec,
+        });
+        if (isRec) {
+            socket.emit("group:stopTyping", { groupId: selectedGroup._id });
+        }
+        return () => {
+            socket.emit("group:recording", {
+                groupId: selectedGroup._id,
+                isRecording: false,
+            });
+        };
+    }, [
+        isGroupChat,
+        selectedGroup?._id,
+        socket,
+        voice.isRecording,
+        voice.isLocked,
+    ]);
+
     // Sync release/lock preview into composer — clear composer when preview is gone
     useEffect(() => {
         if (voice.previewBlob && voice.previewUrl) {

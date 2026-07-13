@@ -8,8 +8,8 @@ import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import { sortMessages } from "../lib/messageSync";
 import defaultAvatar from "../public/avatar.png";
-import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Info, CheckCheck, ChevronDown } from "lucide-react";
-import { Dialog, DialogTitle, DialogContent } from "@mui/material";
+import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Check, CheckCheck, Clock, ChevronDown } from "lucide-react";
+import { formatGroupTypingLabel, formatGroupRecordingLabel } from "../lib/groupPresence";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useSwipeBack } from "../hooks/useSwipeBack";
@@ -24,6 +24,7 @@ import VoiceMessagePlayer from "./chat/VoiceMessagePlayer";
 import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
 import DeleteMessageSheet from "./chat/DeleteMessageSheet";
 import DeletedMessageBubble from "./chat/DeletedMessageBubble";
+import GroupMessageInfoDialog from "./chat/GroupMessageInfoDialog";
 import { isMessageDeleted } from "../lib/messageDelete";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { useShallow } from "zustand/react/shallow";
@@ -47,7 +48,9 @@ const GroupChatContainer = () => {
         unpinMessage,
         groups,
         votePoll,
-        typingUsers
+        typingUsers,
+        recordingUsers,
+        markGroupMessagesAsRead,
     } = useGroupStore(useShallow((s) => ({
         selectedGroup: s.selectedGroup,
         groupMessages: s.groupMessages,
@@ -64,6 +67,8 @@ const GroupChatContainer = () => {
         groups: s.groups,
         votePoll: s.votePoll,
         typingUsers: s.typingUsers,
+        recordingUsers: s.recordingUsers,
+        markGroupMessagesAsRead: s.markGroupMessagesAsRead,
     })));
     const { users, setSelectedUser, setReplyingToMessage } = useChatStore(useShallow((s) => ({
         users: s.users,
@@ -79,6 +84,22 @@ const GroupChatContainer = () => {
     useEffect(() => {
         loadStarredIds();
     }, [loadStarredIds]);
+
+    // Remark as read when returning to an open group (WhatsApp-style)
+    useEffect(() => {
+        if (!selectedGroup?._id) return;
+        const rematch = () => {
+            if (document.hidden) return;
+            markGroupMessagesAsRead(selectedGroup._id);
+        };
+        rematch();
+        document.addEventListener("visibilitychange", rematch);
+        window.addEventListener("focus", rematch);
+        return () => {
+            document.removeEventListener("visibilitychange", rematch);
+            window.removeEventListener("focus", rematch);
+        };
+    }, [selectedGroup?._id, markGroupMessagesAsRead]);
 
     // Swipe back hook for mobile navigation
     useSwipeBack(() => {
@@ -298,7 +319,12 @@ const GroupChatContainer = () => {
     }, [authUser._id, setReplyingToMessage]);
 
     const menuMessage = openMenuId
-        ? groupMessages.find((m) => m._id === openMenuId)
+        ? groupMessages.find(
+            (m) =>
+                String(m._id) === String(openMenuId) ||
+                String(m.realId) === String(openMenuId) ||
+                String(m.optimisticId) === String(openMenuId)
+          )
         : null;
 
     const menuActions = menuMessage
@@ -309,7 +335,11 @@ const GroupChatContainer = () => {
             isStarred: isStarred(menuMessage._id),
             onReply: () => handleSwipeReply(menuMessage),
             onStar: () => toggleStar(menuMessage._id, "group", selectedGroup._id, isStarred(menuMessage._id)),
-            onInfo: () => setInfoDialogMessageId(menuMessage._id),
+            // Message Info for every accessible message (own or others)
+            onInfo: () =>
+                setInfoDialogMessageId(
+                    menuMessage.realId || menuMessage._id || menuMessage.clientMessageId
+                ),
             onPin: () => handlePinMessage(menuMessage._id),
             onCopy: () => handleCopyText(menuMessage.text),
             onForward: () => setForwardDialogMessageId(menuMessage._id),
@@ -425,8 +455,8 @@ const GroupChatContainer = () => {
 
                             <SwipeableMessageBubble
                                 isMine={isMyMessage}
-                                disabled={isDeleted}
-                                onReply={() => handleSwipeReply(message)}
+                                disabled={false}
+                                onReply={isDeleted ? undefined : () => handleSwipeReply(message)}
                                 onLongPress={(el) => openMessageMenu(message._id, el)}
                                 className="group"
                             >
@@ -549,15 +579,35 @@ const GroupChatContainer = () => {
                                                 : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
                                         </p>
                                     )}
+                                    <div
+                                        className={`flex items-center justify-end gap-1 mt-1 ${
+                                            isMyMessage ? "text-primary-content/70" : "text-base-content/50"
+                                        }`}
+                                    >
+                                        <time className="text-[10px] leading-none">
+                                            {formatMessageTime(message.createdAt)}
+                                        </time>
+                                        {isMyMessage && (
+                                            <span className="inline-flex items-center status-container">
+                                                {message.status === "pending" || message.pending || message.isOptimistic ? (
+                                                    <Clock className="w-3.5 h-3.5 opacity-70" />
+                                                ) : message.status === "read" ? (
+                                                    <CheckCheck className="w-3.5 h-3.5 tick-read message-status-icon text-sky-300" />
+                                                ) : message.status === "delivered" ? (
+                                                    <CheckCheck className="w-3.5 h-3.5 tick-delivered message-status-icon opacity-80" />
+                                                ) : (
+                                                    <Check className="w-3.5 h-3.5 tick-sent message-status-icon opacity-80" />
+                                                )}
+                                            </span>
+                                        )}
+                                    </div>
                                     </>
                                     )}
                                 </div>
-                                {!isDeleted && (
-                                    <MessageMenuTrigger
-                                        isMine={isMyMessage}
-                                        onOpen={(el) => openMessageMenu(message._id, el)}
-                                    />
-                                )}
+                                <MessageMenuTrigger
+                                    isMine={isMyMessage}
+                                    onOpen={(el) => openMessageMenu(message._id, el)}
+                                />
                             </SwipeableMessageBubble>
                         </div>
                     </div>
@@ -628,7 +678,7 @@ const GroupChatContainer = () => {
                     }
                     footer={
                         <>
-                            {typingUsers.length > 0 && (
+                            {(recordingUsers.length > 0 || typingUsers.length > 0) && (
                                 <div className="chat chat-start mb-2 px-2">
                                     <div className="chat-bubble bg-base-200 text-base-content px-4 py-2 flex items-center gap-2">
                                         <div className="flex gap-1">
@@ -637,12 +687,8 @@ const GroupChatContainer = () => {
                                             <span className="w-2 h-2 bg-base-content/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                                         </div>
                                         <span className="text-xs opacity-70">
-                                            {typingUsers.length === 1
-                                                ? `${typingUsers[0].userName} is typing...`
-                                                : typingUsers.length === 2
-                                                    ? `${typingUsers[0].userName} and ${typingUsers[1].userName} are typing...`
-                                                    : `${typingUsers.length} people are typing...`
-                                            }
+                                            {formatGroupRecordingLabel(recordingUsers) ||
+                                                formatGroupTypingLabel(typingUsers)}
                                         </span>
                                     </div>
                                 </div>
@@ -670,258 +716,23 @@ const GroupChatContainer = () => {
                 )}
             </div>
 
-            {/* Message Info — WhatsApp-style read / delivered */}
-            <Dialog
+            <GroupMessageInfoDialog
                 open={!!infoDialogMessageId}
+                messageId={infoDialogMessageId}
+                messages={groupMessages}
+                members={selectedGroup?.members || EMPTY_MEMBERS}
+                authUser={authUser}
                 onClose={() => setInfoDialogMessageId(null)}
-                maxWidth="xs"
-                fullWidth
-                PaperProps={{
-                    className: "bg-base-100",
-                    sx: { borderRadius: "12px", overflow: "hidden" },
-                }}
-            >
-                <DialogTitle className="flex items-center justify-between border-b border-base-300 !py-3 !px-4 bg-base-100">
-                    <div className="flex items-center gap-2">
-                        <Info className="w-5 h-5 text-primary" />
-                        <span className="text-base font-semibold">Message info</span>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => setInfoDialogMessageId(null)}
-                        className="btn btn-ghost btn-sm btn-circle"
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
-                </DialogTitle>
-                <DialogContent className="!p-0 bg-base-100">
-                    {(() => {
-                        const msg = groupMessages.find(
-                            (m) =>
-                                String(m._id) === String(infoDialogMessageId) ||
-                                String(m.realId) === String(infoDialogMessageId)
-                        );
-                        if (!msg) {
-                            return (
-                                <p className="text-sm text-center py-8 text-base-content/50">
-                                    Message not found
-                                </p>
-                            );
-                        }
-
-                        const myId = String(authUser._id);
-                        const senderId = String(msg.senderId?._id || msg.senderId || "");
-
-                        const resolveMember = (raw) => {
-                            const id = String(raw?._id || raw?.user?._id || raw?.user || raw || "");
-                            if (!id) return null;
-                            if (raw && typeof raw === "object" && (raw.fullName || raw.profilePic)) {
-                                return {
-                                    _id: id,
-                                    fullName: raw.fullName || "Member",
-                                    profilePic: raw.profilePic || "",
-                                    readAt: raw.readAt || null,
-                                };
-                            }
-                            const member = (selectedGroup?.members || []).find(
-                                (m) => String(m.user?._id || m.user || m) === id
-                            );
-                            const user = member?.user;
-                            if (user && typeof user === "object") {
-                                return {
-                                    _id: id,
-                                    fullName: user.fullName || "Member",
-                                    profilePic: user.profilePic || "",
-                                    readAt: raw?.readAt || null,
-                                };
-                            }
-                            if (id === myId) {
-                                return {
-                                    _id: myId,
-                                    fullName: authUser.fullName || "You",
-                                    profilePic: authUser.profilePic || "",
-                                    readAt: raw?.readAt || null,
-                                };
-                            }
-                            return {
-                                _id: id,
-                                fullName: "Member",
-                                profilePic: "",
-                                readAt: raw?.readAt || null,
-                            };
-                        };
-
-                        const readerIds = new Set(
-                            (msg.readBy || [])
-                                .map((r) => String(r?._id || r))
-                                .filter((id) => id && id !== senderId)
-                        );
-
-                        const readByList = (msg.readBy || [])
-                            .map(resolveMember)
-                            .filter((r) => r && r._id !== senderId);
-
-                        // Deduplicate by id
-                        const readByUnique = [];
-                        const seenRead = new Set();
-                        for (const r of readByList) {
-                            if (seenRead.has(r._id)) continue;
-                            seenRead.add(r._id);
-                            readByUnique.push(r);
-                        }
-
-                        const deliveredToList = (selectedGroup?.members || [])
-                            .map((m) => resolveMember(m.user || m))
-                            .filter(
-                                (m) =>
-                                    m &&
-                                    m._id !== senderId &&
-                                    m._id !== myId &&
-                                    !readerIds.has(m._id)
-                            );
-
-                        const sentAt = msg.createdAt
-                            ? formatMessageTime(msg.createdAt)
-                            : null;
-
-                        return (
-                            <div>
-                                {/* Message preview strip */}
-                                <div className="px-4 py-3 bg-base-200/60 border-b border-base-300">
-                                    <div
-                                        className={`ml-auto max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                                            senderId === myId
-                                                ? "bg-primary text-primary-content"
-                                                : "bg-base-100 text-base-content"
-                                        }`}
-                                    >
-                                        {msg.image && (
-                                            <img
-                                                src={msg.image}
-                                                alt=""
-                                                className="max-h-24 rounded mb-1 object-cover"
-                                            />
-                                        )}
-                                        <p className="whitespace-pre-wrap break-words line-clamp-4">
-                                            {msg.text ||
-                                                (msg.image
-                                                    ? "Photo"
-                                                    : msg.video
-                                                      ? "Video"
-                                                      : msg.audio
-                                                        ? "Audio"
-                                                        : msg.poll
-                                                          ? "Poll"
-                                                          : "Message")}
-                                        </p>
-                                        {sentAt && (
-                                            <p className="text-[10px] opacity-70 text-right mt-1">
-                                                {sentAt}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Read by */}
-                                <div className="px-2 pt-3 pb-1">
-                                    <div className="flex items-center justify-between px-3 mb-1">
-                                        <h4 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-                                            Read by
-                                        </h4>
-                                        <span className="text-xs text-base-content/40">
-                                            {readByUnique.length}
-                                        </span>
-                                    </div>
-                                    {readByUnique.length === 0 ? (
-                                        <p className="text-sm text-base-content/50 px-3 py-3">
-                                            No one has read this message yet
-                                        </p>
-                                    ) : (
-                                        <div className="divide-y divide-base-200">
-                                            {readByUnique.map((reader) => (
-                                                <div
-                                                    key={reader._id}
-                                                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-base-200/50"
-                                                >
-                                                    <img
-                                                        src={reader.profilePic || defaultAvatar}
-                                                        alt={reader.fullName}
-                                                        className="w-10 h-10 rounded-full object-cover shrink-0"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium truncate">
-                                                            {reader._id === myId ? "You" : reader.fullName}
-                                                        </p>
-                                                        <div className="flex items-center gap-1 text-xs text-sky-500">
-                                                            <CheckCheck className="w-3.5 h-3.5" />
-                                                            <span>
-                                                                {reader.readAt
-                                                                    ? formatMessageTime(reader.readAt)
-                                                                    : "Read"}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Delivered to */}
-                                <div className="px-2 pt-2 pb-4 border-t border-base-300 mt-1">
-                                    <div className="flex items-center justify-between px-3 mb-1 mt-2">
-                                        <h4 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-                                            Delivered to
-                                        </h4>
-                                        <span className="text-xs text-base-content/40">
-                                            {deliveredToList.length}
-                                        </span>
-                                    </div>
-                                    {deliveredToList.length === 0 ? (
-                                        <p className="text-sm text-base-content/50 px-3 py-3">
-                                            {readByUnique.length > 0
-                                                ? "Delivered to everyone who can see this chat"
-                                                : "Waiting for delivery"}
-                                        </p>
-                                    ) : (
-                                        <div className="divide-y divide-base-200">
-                                            {deliveredToList.map((member) => (
-                                                <div
-                                                    key={member._id}
-                                                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-base-200/50"
-                                                >
-                                                    <img
-                                                        src={member.profilePic || defaultAvatar}
-                                                        alt={member.fullName}
-                                                        className="w-10 h-10 rounded-full object-cover shrink-0"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium truncate">
-                                                            {member.fullName}
-                                                        </p>
-                                                        <div className="flex items-center gap-1 text-xs text-base-content/50">
-                                                            <CheckCheck className="w-3.5 h-3.5" />
-                                                            <span>
-                                                                {sentAt ? `Delivered ${sentAt}` : "Delivered"}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })()}
-                </DialogContent>
-            </Dialog>
+            />
 
             <MessageActionMenu
                 open={!!menuMessage}
                 onClose={() => setOpenMenuId(null)}
                 anchorEl={anchorEl}
-                isMine={menuMessage?.senderId?._id === authUser._id}
+                isMine={
+                    String(menuMessage?.senderId?._id || menuMessage?.senderId) ===
+                    String(authUser._id)
+                }
                 actions={menuActions}
             />
 

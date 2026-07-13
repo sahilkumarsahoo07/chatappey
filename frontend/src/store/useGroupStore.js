@@ -23,11 +23,38 @@ import {
   deletedSidebarPreview,
   DELETED_TEXT_EVERYONE,
 } from "../lib/messageDelete";
-import { makeClientMessageId, messageMatchesIds } from "../lib/messageStatus";
+import { makeClientMessageId, messageMatchesIds, upgradeStatus } from "../lib/messageStatus";
 
 const PAGE_SIZE = 40;
 
 const sameGroupId = (a, b) => a != null && b != null && String(a) === String(b);
+
+/** ACK delivery for messages from others that we haven't delivered yet */
+const ackGroupDelivery = (groupId, messages) => {
+  const socket = useAuthStore.getState().socket;
+  const authUser = useAuthStore.getState().authUser;
+  if (!socket?.connected || !authUser || !groupId || !messages?.length) return;
+
+  for (const message of messages) {
+    if (!message || message.messageType === "system") continue;
+    const senderId = message.senderId?._id || message.senderId;
+    if (String(senderId) === String(authUser._id)) continue;
+
+    const delivered = (message.deliveredTo || []).some(
+      (d) => String(d.userId?._id || d.userId || d._id || d) === String(authUser._id)
+    );
+    const read = (message.readBy || []).some(
+      (r) => String(r?._id || r?.userId || r) === String(authUser._id)
+    );
+    if (delivered || read) continue;
+
+    socket.emit("group:messageReceived", {
+      groupId,
+      messageId: message.realId || message._id,
+      clientMessageId: message.clientMessageId,
+    });
+  }
+};
 
 const persistGroupThread = (groupId, messages, meta = {}) => {
   if (!groupId || !messages?.length) return;
@@ -67,7 +94,10 @@ export const useGroupStore = create((set, get) => ({
     isLoadingOlderGroup: false,
     isGroupsLoading: false,
     isGroupMessagesLoading: false,
-    typingUsers: [], // Array of {userId, userName} objects for group typing
+    typingUsers: [], // Array of {userId, userName}
+    recordingUsers: [], // Array of {userId, userName}
+    _typingTimers: {},
+    _recordingTimers: {},
     _isSubscribedToGroupEvents: false,
 
     // Get all groups for current user
@@ -272,6 +302,7 @@ export const useGroupStore = create((set, get) => ({
                     await get().getGroupMessages(groupId, { after: newest, background: true });
                 }
                 get().markGroupMessagesAsRead(groupId);
+                ackGroupDelivery(groupId, hydrated.messages);
                 return;
             }
             if (!get().groupMessages.length) {
@@ -330,6 +361,8 @@ export const useGroupStore = create((set, get) => ({
             });
 
             persistGroupThread(groupId, nextMessages, { hasMoreOlder });
+
+            ackGroupDelivery(groupId, incoming);
 
             // Delta sync can return only one page — keep fetching until caught up
             if (isDelta && hasMore && incoming.length > 0) {
@@ -415,9 +448,12 @@ export const useGroupStore = create((set, get) => ({
             createdAt: clientCreatedAt,
             serverCreatedAt: null,
             readBy: [authUser._id],
+            deliveredTo: [],
+            readReceipts: [],
             isForwarded: messageData.isForwarded || false,
             isOptimistic: true,
             pending: true,
+            status: "pending",
         };
 
         const applyOptimistic = () => {
@@ -536,25 +572,50 @@ export const useGroupStore = create((set, get) => ({
             // Optimistically stamp me into readBy so Message Info is accurate on this device
             if (authUser && sameGroupId(get().selectedGroup?._id, groupId)) {
                 const myId = String(authUser._id);
+                const now = new Date().toISOString();
                 set({
                     groupMessages: get().groupMessages.map((msg) => {
                         const senderId = msg.senderId?._id || msg.senderId;
                         if (String(senderId) === myId) return msg;
+                        if (msg.messageType === "system") return msg;
+
                         const readers = msg.readBy || [];
                         const already = readers.some(
-                            (r) => String(r?._id || r) === myId
+                            (r) => String(r?._id || r?.userId || r) === myId
                         );
-                        if (already) return msg;
+                        const readReceipts = msg.readReceipts || [];
+                        const hasRR = readReceipts.some(
+                            (r) => String(r.userId?._id || r.userId) === myId
+                        );
+                        const deliveredTo = msg.deliveredTo || [];
+                        const hasDel = deliveredTo.some(
+                            (d) => String(d.userId?._id || d.userId) === myId
+                        );
+
+                        if (already && hasRR && hasDel) return msg;
+
                         return {
                             ...msg,
-                            readBy: [
-                                ...readers,
-                                {
-                                    _id: authUser._id,
-                                    fullName: authUser.fullName,
-                                    profilePic: authUser.profilePic,
-                                },
-                            ],
+                            readBy: already
+                                ? readers
+                                : [
+                                    ...readers,
+                                    {
+                                        _id: authUser._id,
+                                        fullName: authUser.fullName,
+                                        profilePic: authUser.profilePic,
+                                        readAt: now,
+                                    },
+                                  ],
+                            readReceipts: hasRR
+                                ? readReceipts
+                                : [...readReceipts, { userId: authUser._id, readAt: now }],
+                            deliveredTo: hasDel
+                                ? deliveredTo
+                                : [
+                                    ...deliveredTo,
+                                    { userId: authUser._id, deliveredAt: now },
+                                  ],
                         };
                     }),
                 });
@@ -786,10 +847,26 @@ export const useGroupStore = create((set, get) => ({
             if (sameGroupId(selectedGroup?._id, groupId)) {
                 const next = upsertMessage(
                     groupMessages,
-                    withServerOrdering(message)
+                    withServerOrdering({ ...message, status: message.status || "sent" })
                 );
-                set({ groupMessages: next });
+                // Stop typing / recording for the sender once their message arrives
+                const sid = String(senderIdStr || "");
+                set({
+                    groupMessages: next,
+                    typingUsers: get().typingUsers.filter((u) => String(u.userId) !== sid),
+                    recordingUsers: get().recordingUsers.filter((u) => String(u.userId) !== sid),
+                });
                 persistGroupThread(groupId, next, get().groupMessagesMeta);
+            }
+
+            // Delivery ACK to sender (WhatsApp grey ticks)
+            if (isFromOther && !isSystem) {
+                const socketRef = useAuthStore.getState().socket;
+                socketRef?.emit("group:messageReceived", {
+                    groupId,
+                    messageId: message._id,
+                    clientMessageId: message.clientMessageId,
+                });
             }
 
             // WhatsApp: notify only when NOT actively viewing this group
@@ -928,13 +1005,16 @@ export const useGroupStore = create((set, get) => ({
             }
         });
 
-        // Someone read group messages — update Message Info live
-        socket.on("group:messagesRead", ({ groupId, messageIds, readBy, readAt }) => {
+        // Someone read group messages — update Message Info + ticks live
+        socket.on("group:messagesRead", ({ groupId, messageIds, readBy, readAt, statusUpdates }) => {
             if (!sameGroupId(get().selectedGroup?._id, groupId) || !readBy) return;
             const readerId = String(readBy._id || readBy);
             const idSet = messageIds?.length
                 ? new Set(messageIds.map(String))
                 : null;
+            const statusMap = new Map(
+                (statusUpdates || []).map((s) => [String(s.messageId), s.status])
+            );
 
             set({
                 groupMessages: get().groupMessages.map((msg) => {
@@ -945,38 +1025,97 @@ export const useGroupStore = create((set, get) => ({
                     if (senderId === readerId) return msg;
 
                     const readers = msg.readBy || [];
-                    const already = readers.some((r) => String(r?._id || r) === readerId);
-                    if (already) {
-                        // Upgrade bare ids to populated reader objects
-                        return {
-                            ...msg,
-                            readBy: readers.map((r) =>
-                                String(r?._id || r) === readerId
-                                    ? {
-                                        _id: readBy._id || readBy,
-                                        fullName: readBy.fullName,
-                                        profilePic: readBy.profilePic,
-                                        readAt: readAt || r.readAt,
-                                      }
-                                    : r
-                            ),
-                        };
-                    }
+                    const already = readers.some(
+                        (r) => String(r?._id || r?.userId || r) === readerId
+                    );
+                    const receipt = {
+                        _id: readBy._id || readBy,
+                        userId: readBy._id || readBy,
+                        fullName: readBy.fullName,
+                        profilePic: readBy.profilePic,
+                        readAt,
+                    };
+                    const nextReadBy = already
+                        ? readers.map((r) =>
+                            String(r?._id || r?.userId || r) === readerId
+                              ? { ...r, ...receipt }
+                              : r
+                          )
+                        : [...readers, receipt];
+
+                    const readReceipts = msg.readReceipts || [];
+                    const hasRR = readReceipts.some(
+                        (r) => String(r.userId?._id || r.userId) === readerId
+                    );
+                    const nextReceipts = hasRR
+                        ? readReceipts
+                        : [...readReceipts, { userId: readBy._id || readBy, readAt }];
+
+                    const deliveredTo = msg.deliveredTo || [];
+                    const hasDel = deliveredTo.some(
+                        (d) => String(d.userId?._id || d.userId) === readerId
+                    );
+                    const nextDelivered = hasDel
+                        ? deliveredTo
+                        : [
+                            ...deliveredTo,
+                            { userId: readBy._id || readBy, deliveredAt: readAt },
+                          ];
+
+                    const mid = String(msg.realId || msg._id);
+                    const nextStatus = statusMap.get(mid);
                     return {
                         ...msg,
-                        readBy: [
-                            ...readers,
-                            {
-                                _id: readBy._id || readBy,
-                                fullName: readBy.fullName,
-                                profilePic: readBy.profilePic,
-                                readAt,
-                            },
-                        ],
+                        readBy: nextReadBy,
+                        readReceipts: nextReceipts,
+                        deliveredTo: nextDelivered,
+                        status: nextStatus
+                            ? upgradeStatus(msg.status, nextStatus)
+                            : msg.status,
                     };
                 }),
             });
         });
+
+        // Per-member delivery ACK — upgrade aggregate ticks
+        socket.on(
+            "group:messageDelivered",
+            ({ groupId, messageId, clientMessageId, deliveredBy, status, deliveredAt }) => {
+                if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
+                const did = String(deliveredBy?._id || deliveredBy || "");
+                set({
+                    groupMessages: get().groupMessages.map((msg) => {
+                        if (
+                            !messageMatchesIds(msg, {
+                                messageId,
+                                clientMessageId,
+                            })
+                        ) {
+                            return msg;
+                        }
+                        const deliveredTo = msg.deliveredTo || [];
+                        const already = deliveredTo.some(
+                            (d) => String(d.userId?._id || d.userId) === did
+                        );
+                        return {
+                            ...msg,
+                            deliveredTo: already
+                                ? deliveredTo
+                                : [
+                                    ...deliveredTo,
+                                    {
+                                        userId: deliveredBy?._id || deliveredBy,
+                                        deliveredAt: deliveredAt || deliveredBy?.deliveredAt,
+                                    },
+                                  ],
+                            status: status
+                                ? upgradeStatus(msg.status, status)
+                                : upgradeStatus(msg.status, "delivered"),
+                        };
+                    }),
+                });
+            }
+        );
 
         // Poll updated in group
         socket.on("group:pollUpdated", ({ groupId, messageId, poll }) => {
@@ -993,26 +1132,59 @@ export const useGroupStore = create((set, get) => ({
 
         // Group typing indicators
         socket.on("group:typing", ({ groupId, userId, userName }) => {
-            const { selectedGroup, typingUsers } = get();
-            if (selectedGroup?._id === groupId) {
-                // Add user to typing list if not already there
-                if (!typingUsers.find(u => u.userId === userId)) {
-                    const newTypingUsers = [...typingUsers, { userId, userName }];
-                    set({ typingUsers: newTypingUsers });
+            if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
+            const timers = get()._typingTimers || {};
+            if (timers[userId]) clearTimeout(timers[userId]);
 
-                    // Auto-clear after 2 seconds
-                    setTimeout(() => {
-                        set({ typingUsers: get().typingUsers.filter(u => u.userId !== userId) });
-                    }, 2000);
-                }
-            }
+            const typingUsers = get().typingUsers.filter((u) => u.userId !== userId);
+            typingUsers.push({ userId, userName });
+            const t = setTimeout(() => {
+                set({
+                    typingUsers: get().typingUsers.filter((u) => u.userId !== userId),
+                    _typingTimers: { ...get()._typingTimers, [userId]: null },
+                });
+            }, 3000);
+            set({
+                typingUsers,
+                _typingTimers: { ...timers, [userId]: t },
+            });
         });
 
         socket.on("group:stopTyping", ({ groupId, userId }) => {
-            const { selectedGroup } = get();
-            if (selectedGroup?._id === groupId) {
-                set({ typingUsers: get().typingUsers.filter(u => u.userId !== userId) });
+            if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
+            const timers = get()._typingTimers || {};
+            if (timers[userId]) clearTimeout(timers[userId]);
+            set({
+                typingUsers: get().typingUsers.filter((u) => u.userId !== userId),
+                _typingTimers: { ...timers, [userId]: null },
+            });
+        });
+
+        socket.on("group:recording", ({ groupId, userId, userName, isRecording }) => {
+            if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
+            const timers = get()._recordingTimers || {};
+            if (timers[userId]) clearTimeout(timers[userId]);
+
+            if (!isRecording) {
+                set({
+                    recordingUsers: get().recordingUsers.filter((u) => u.userId !== userId),
+                    _recordingTimers: { ...timers, [userId]: null },
+                });
+                return;
             }
+
+            const recordingUsers = get().recordingUsers.filter((u) => u.userId !== userId);
+            recordingUsers.push({ userId, userName });
+            const t = setTimeout(() => {
+                set({
+                    recordingUsers: get().recordingUsers.filter((u) => u.userId !== userId),
+                    _recordingTimers: { ...get()._recordingTimers, [userId]: null },
+                });
+            }, 15000);
+            set({
+                recordingUsers,
+                _recordingTimers: { ...timers, [userId]: t },
+            });
         });
     },
 
@@ -1030,11 +1202,23 @@ export const useGroupStore = create((set, get) => ({
             socket.off("group:newMessage");
             socket.off("group:messageDeleted");
             socket.off("group:messagesRead");
+            socket.off("group:messageDelivered");
             socket.off("group:pollUpdated");
             socket.off("group:typing");
             socket.off("group:stopTyping");
+            socket.off("group:recording");
         }
-        set({ _isSubscribedToGroupEvents: false });
+        const typingTimers = get()._typingTimers || {};
+        Object.values(typingTimers).forEach((t) => t && clearTimeout(t));
+        const recordingTimers = get()._recordingTimers || {};
+        Object.values(recordingTimers).forEach((t) => t && clearTimeout(t));
+        set({
+            _isSubscribedToGroupEvents: false,
+            typingUsers: [],
+            recordingUsers: [],
+            _typingTimers: {},
+            _recordingTimers: {},
+        });
     },
 
     // Set selected group
@@ -1056,6 +1240,7 @@ export const useGroupStore = create((set, get) => ({
                 selectedGroup: null,
                 groupMessages: [],
                 typingUsers: [],
+                recordingUsers: [],
                 isGroupMessagesLoading: false,
                 groupMessagesMeta: {
                     hasMoreOlder: true,
@@ -1078,6 +1263,7 @@ export const useGroupStore = create((set, get) => ({
         set({
             selectedGroup: group,
             typingUsers: [],
+            recordingUsers: [],
             groupMessages: mem?.messages || [],
             groupMessagesMeta: mem
                 ? {
@@ -1093,7 +1279,12 @@ export const useGroupStore = create((set, get) => ({
 
     // Clear selected group
     clearSelectedGroup: () => {
-        set({ selectedGroup: null, groupMessages: [] });
+        set({
+            selectedGroup: null,
+            groupMessages: [],
+            typingUsers: [],
+            recordingUsers: [],
+        });
     },
 
     // Vote on a poll option in group message

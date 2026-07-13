@@ -12,6 +12,8 @@ import {
     getDeleteOptions,
     DELETED_TEXT_EVERYONE,
 } from "../utils/messageDelete.utils.js";
+import { applyComputedStatus } from "../utils/groupMessageStatus.utils.js";
+import { canUpgradeStatus } from "../utils/messageStatus.utils.js";
 
 // Helper to send system messages to groups
 const sendSystemMessage = async (groupId, text) => {
@@ -560,6 +562,8 @@ export const getGroupMessages = async (req, res) => {
             messages = await GroupMessage.find(baseQuery)
                 .populate("senderId", "fullName profilePic")
                 .populate("readBy", "fullName profilePic")
+                .populate("deliveredTo.userId", "fullName profilePic")
+                .populate("readReceipts.userId", "fullName profilePic")
                 .populate("mentions", "fullName profilePic")
                 .sort({ createdAt: 1 })
                 .limit(limit);
@@ -568,6 +572,8 @@ export const getGroupMessages = async (req, res) => {
             const batch = await GroupMessage.find(baseQuery)
                 .populate("senderId", "fullName profilePic")
                 .populate("readBy", "fullName profilePic")
+                .populate("deliveredTo.userId", "fullName profilePic")
+                .populate("readReceipts.userId", "fullName profilePic")
                 .populate("mentions", "fullName profilePic")
                 .sort({ createdAt: -1 })
                 .limit(limit);
@@ -577,6 +583,8 @@ export const getGroupMessages = async (req, res) => {
             const batch = await GroupMessage.find(baseQuery)
                 .populate("senderId", "fullName profilePic")
                 .populate("readBy", "fullName profilePic")
+                .populate("deliveredTo.userId", "fullName profilePic")
+                .populate("readReceipts.userId", "fullName profilePic")
                 .populate("mentions", "fullName profilePic")
                 .sort({ createdAt: -1 })
                 .limit(limit);
@@ -700,6 +708,9 @@ export const sendGroupMessage = async (req, res) => {
             file: fileUrl,
             fileName: fileName || undefined,
             readBy: [senderId],
+            deliveredTo: [],
+            readReceipts: [],
+            status: "sent",
             isForwarded: isForwarded || false,
             mentions: validMentions,
             replyTo: validReplyTo,
@@ -771,6 +782,11 @@ export const markGroupMessagesAsRead = async (req, res) => {
         const { groupId } = req.params;
         const userId = req.user._id;
 
+        // Respect privacy / incognito like DMs
+        if (req.user.privacyReadReceipts === false) {
+            return res.status(200).json({ success: true, skipped: true });
+        }
+
         const group = await Group.findById(groupId);
 
         if (!group) {
@@ -783,37 +799,68 @@ export const markGroupMessagesAsRead = async (req, res) => {
 
         const memberInfo = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
         const joinedAt = memberInfo?.joinedAt || new Date(0);
+        const memberIds = group.members.map((m) => m.user?._id || m.user || m);
 
         const unreadFilter = {
             groupId,
             senderId: { $ne: userId },
             readBy: { $ne: userId },
-            createdAt: { $gte: joinedAt }
+            createdAt: { $gte: joinedAt },
+            messageType: { $ne: "system" },
         };
 
-        const unreadIds = await GroupMessage.find(unreadFilter).select("_id").lean();
-
-        // Mark all unread messages as read by this user
-        await GroupMessage.updateMany(unreadFilter, {
-            $addToSet: { readBy: userId }
-        });
+        const unreadMsgs = await GroupMessage.find(unreadFilter);
+        if (unreadMsgs.length === 0) {
+            return res.status(200).json({ success: true });
+        }
 
         const reader = await User.findById(userId).select("fullName profilePic");
         const readAt = new Date();
+        const statusUpdates = [];
 
-        // Notify group so senders can update Message Info live (WhatsApp-style)
-        if (unreadIds.length > 0) {
-            io.to(String(groupId)).emit("group:messagesRead", {
-                groupId: String(groupId),
-                messageIds: unreadIds.map((m) => String(m._id)),
-                readBy: {
-                    _id: userId,
-                    fullName: reader?.fullName,
-                    profilePic: reader?.profilePic || "",
-                },
-                readAt,
+        for (const message of unreadMsgs) {
+            if (!message.readBy.some((id) => String(id) === String(userId))) {
+                message.readBy.push(userId);
+            }
+
+            const hasReceipt = (message.readReceipts || []).some(
+                (r) => String(r.userId) === String(userId)
+            );
+            if (!hasReceipt) {
+                message.readReceipts = message.readReceipts || [];
+                message.readReceipts.push({ userId, readAt });
+            }
+
+            const hasDelivered = (message.deliveredTo || []).some(
+                (d) => String(d.userId) === String(userId)
+            );
+            if (!hasDelivered) {
+                message.deliveredTo = message.deliveredTo || [];
+                message.deliveredTo.push({ userId, deliveredAt: readAt });
+            }
+
+            const nextStatus = applyComputedStatus(message, memberIds);
+            if (canUpgradeStatus(message.status, nextStatus) || !message.status) {
+                message.status = nextStatus;
+            }
+            await message.save();
+            statusUpdates.push({
+                messageId: String(message._id),
+                status: message.status,
             });
         }
+
+        io.to(String(groupId)).emit("group:messagesRead", {
+            groupId: String(groupId),
+            messageIds: unreadMsgs.map((m) => String(m._id)),
+            readBy: {
+                _id: userId,
+                fullName: reader?.fullName,
+                profilePic: reader?.profilePic || "",
+            },
+            readAt,
+            statusUpdates,
+        });
 
         res.status(200).json({ success: true });
     } catch (error) {
