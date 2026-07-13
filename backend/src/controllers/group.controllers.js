@@ -133,6 +133,10 @@ export const getMyGroups = async (req, res) => {
                 path: "pinnedMessage",
                 populate: { path: "senderId", select: "fullName profilePic" }
             })
+            .populate({
+                path: "pinnedMessages",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            })
             .sort({ updatedAt: -1 });
 
         // Get unread count for each group
@@ -191,6 +195,10 @@ export const getGroupDetails = async (req, res) => {
             .populate("members", "fullName profilePic email")
             .populate({
                 path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            })
+            .populate({
+                path: "pinnedMessages",
                 populate: { path: "senderId", select: "fullName profilePic" }
             });
 
@@ -1181,6 +1189,11 @@ export const pinMessage = async (req, res) => {
         const message = await GroupMessage.findById(messageId);
         if (!message) return res.status(404).json({ error: "Message not found" });
 
+        if (!group.pinnedMessages) {
+            group.pinnedMessages = [];
+        }
+        group.pinnedMessages = group.pinnedMessages.filter(id => id.toString() !== messageId.toString());
+        group.pinnedMessages.push(messageId);
         group.pinnedMessage = messageId;
         await group.save();
 
@@ -1192,6 +1205,10 @@ export const pinMessage = async (req, res) => {
             .populate("members.user", "fullName profilePic")
             .populate({
                 path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            })
+            .populate({
+                path: "pinnedMessages",
                 populate: { path: "senderId", select: "fullName profilePic" }
             });
 
@@ -1215,6 +1232,7 @@ export const pinMessage = async (req, res) => {
 export const unpinMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
+        const { messageId } = req.body;
         const userId = req.user._id;
 
         const group = await Group.findById(groupId);
@@ -1226,12 +1244,32 @@ export const unpinMessage = async (req, res) => {
 
         if (!isAdmin) return res.status(403).json({ error: "Only admins can unpin messages" });
 
-        group.pinnedMessage = null;
+        if (messageId) {
+            if (group.pinnedMessages) {
+                group.pinnedMessages = group.pinnedMessages.filter(id => id.toString() !== messageId.toString());
+            }
+            if (group.pinnedMessage && group.pinnedMessage.toString() === messageId.toString()) {
+                group.pinnedMessage = group.pinnedMessages && group.pinnedMessages.length > 0
+                    ? group.pinnedMessages[group.pinnedMessages.length - 1]
+                    : null;
+            }
+        } else {
+            group.pinnedMessage = null;
+            group.pinnedMessages = [];
+        }
         await group.save();
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
-            .populate("members.user", "fullName profilePic");
+            .populate("members.user", "fullName profilePic")
+            .populate({
+                path: "pinnedMessage",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            })
+            .populate({
+                path: "pinnedMessages",
+                populate: { path: "senderId", select: "fullName profilePic" }
+            });
 
         // Notify all members
         updatedGroup.members.forEach(member => {

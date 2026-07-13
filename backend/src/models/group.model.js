@@ -53,6 +53,12 @@ const groupSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "GroupMessage"
         },
+        pinnedMessages: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "GroupMessage"
+            }
+        ],
         announcementOnly: {
             type: Boolean,
             default: false

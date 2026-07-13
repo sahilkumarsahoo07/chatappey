@@ -51,6 +51,9 @@ const GroupChatContainer = () => {
         typingUsers,
         recordingUsers,
         markGroupMessagesAsRead,
+        scrollTargetIndex,
+        scrollTargetKey,
+        setScrollTarget,
     } = useGroupStore(useShallow((s) => ({
         selectedGroup: s.selectedGroup,
         groupMessages: s.groupMessages,
@@ -69,6 +72,9 @@ const GroupChatContainer = () => {
         typingUsers: s.typingUsers,
         recordingUsers: s.recordingUsers,
         markGroupMessagesAsRead: s.markGroupMessagesAsRead,
+        scrollTargetIndex: s.scrollTargetIndex,
+        scrollTargetKey: s.scrollTargetKey,
+        setScrollTarget: s.setScrollTarget,
     })));
     const { users, setSelectedUser, setReplyingToMessage } = useChatStore(useShallow((s) => ({
         users: s.users,
@@ -119,13 +125,27 @@ const GroupChatContainer = () => {
     const isAtBottomRef = useRef(true);
     const prevLastMsgIdRef = useRef(null);
     const prevMsgLenRef = useRef(0);
-    const [pendingNewCount, setPendingNewCount] = useState(0);
+        const [pendingNewCount, setPendingNewCount] = useState(0);
     const [scrollEpoch, setScrollEpoch] = useState(0);
+    const [showScrollDown, setShowScrollDown] = useState(false);
 
     const sortedGroupMessages = useMemo(
         () => sortMessages(groupMessages),
         [groupMessages]
     );
+
+    const firstUnreadIndex = useMemo(() => {
+        if (!authUser?._id || !sortedGroupMessages?.length) return -1;
+        const myId = String(authUser._id);
+        return sortedGroupMessages.findIndex((msg) => {
+            const senderId = msg.senderId?._id || msg.senderId;
+            if (String(senderId) === myId) return false;
+            if (msg.messageType === "system") return false;
+            const readers = msg.readBy || [];
+            const alreadyRead = readers.some((r) => String(r?._id || r?.userId || r) === myId);
+            return !alreadyRead;
+        });
+    }, [sortedGroupMessages, authUser?._id]);
 
     // Menu state
     const [anchorEl, setAnchorEl] = useState(null);
@@ -147,6 +167,7 @@ const GroupChatContainer = () => {
             getGroupMessages(selectedGroup._id);
             isAtBottomRef.current = true;
             setPendingNewCount(0);
+            setShowScrollDown(false);
             setScrollEpoch((n) => n + 1);
             prevLastMsgIdRef.current = null;
             prevMsgLenRef.current = 0;
@@ -163,6 +184,8 @@ const GroupChatContainer = () => {
     const handleScroll = () => {
         if (!containerRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+        const isFar = scrollHeight - scrollTop - clientHeight > 300;
+        setShowScrollDown(isFar);
         const atBottom = scrollHeight - scrollTop - clientHeight < 100;
         isAtBottomRef.current = atBottom;
         if (atBottom) setPendingNewCount(0);
@@ -170,12 +193,21 @@ const GroupChatContainer = () => {
 
     const handleAtBottomChange = useCallback((atBottom) => {
         isAtBottomRef.current = atBottom;
-        if (atBottom) setPendingNewCount(0);
+        if (atBottom) {
+            setPendingNewCount(0);
+            setShowScrollDown(false);
+        } else {
+            if (containerRef.current) {
+                const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+                setShowScrollDown(scrollHeight - scrollTop - clientHeight > 300);
+            }
+        }
     }, []);
 
     const jumpToLatest = useCallback(() => {
         setPendingNewCount(0);
         isAtBottomRef.current = true;
+        setShowScrollDown(false);
         setScrollEpoch((n) => n + 1);
         if (containerRef.current) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -419,10 +451,21 @@ const GroupChatContainer = () => {
             </div>
         ) : null;
 
+        const UnreadDivider = index === firstUnreadIndex ? (
+            <div className="flex items-center justify-center my-4">
+                <div className="flex-grow border-t border-red-500/30"></div>
+                <span className="mx-4 text-xs font-semibold uppercase tracking-wider text-red-500 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
+                    Unread Messages
+                </span>
+                <div className="flex-grow border-t border-red-500/30"></div>
+            </div>
+        ) : null;
+
         if (message.messageType === "system") {
             return (
                 <div className="mb-2">
                     {DateSeparator}
+                    {UnreadDivider}
                     <div className="flex justify-center my-2">
                         <div className="bg-base-300/30 text-base-content/60 px-4 py-1.5 rounded-lg text-[11px] font-medium backdrop-blur-sm border border-base-content/5 shadow-sm">
                             {message.text}
@@ -435,6 +478,7 @@ const GroupChatContainer = () => {
         return (
             <div className="mb-4">
                 {DateSeparator}
+                {UnreadDivider}
                 <div
                     id={`msg-${message.realId || message._id}`}
                     data-message-id={message.realId || message._id}
@@ -491,11 +535,17 @@ const GroupChatContainer = () => {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 const replyId = message.replyTo;
-                                                const element = document.getElementById(`msg-${replyId}`);
-                                                if (element) {
-                                                    element.scrollIntoView({ behavior: "smooth", block: "center" });
-                                                    element.classList.add("highlight-message");
-                                                    setTimeout(() => element.classList.remove("highlight-message"), 2000);
+                                                const idx = sortedGroupMessages.findIndex(m => String(m.realId || m._id) === String(replyId));
+                                                if (idx !== -1) {
+                                                    setScrollTarget(idx);
+                                                    setTimeout(() => {
+                                                        const el = document.getElementById(`msg-${replyId}`);
+                                                        if (el) {
+                                                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                                            el.classList.add("highlight-message");
+                                                            setTimeout(() => el.classList.remove("highlight-message"), 2000);
+                                                        }
+                                                    }, 500);
                                                 } else {
                                                     toast("Original message not loaded", { icon: "🔍" });
                                                 }
@@ -664,6 +714,9 @@ const GroupChatContainer = () => {
                     className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 custom-scrollbar messages-container relative z-10"
                     getItemKey={(message) => message.optimisticId || message._id}
                     renderItem={renderGroupMessage}
+                    initialScrollIndex={firstUnreadIndex}
+                    scrollTargetIndex={scrollTargetIndex}
+                    scrollTargetKey={scrollTargetKey}
                     header={
                         groupMessages.length === 0 && isGroupMessagesLoading ? (
                             <MessageSkeleton />
@@ -711,14 +764,19 @@ const GroupChatContainer = () => {
                         </>
                     }
                 />
-                {pendingNewCount > 0 && (
+                {showScrollDown && (
                     <button
                         type="button"
                         onClick={jumpToLatest}
-                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-content shadow-lg text-sm font-semibold hover:brightness-110 active:scale-95 transition"
+                        className="absolute bottom-20 right-4 z-30 flex items-center justify-center w-10 h-10 rounded-full bg-base-100 text-base-content border border-base-content/10 shadow-lg hover:bg-base-200 active:scale-95 transition-all"
+                        aria-label="Scroll to bottom"
                     >
-                        <ChevronDown className="w-4 h-4" />
-                        {pendingNewCount} new message{pendingNewCount === 1 ? "" : "s"}
+                        <ChevronDown className="w-5 h-5" />
+                        {pendingNewCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-green-500 px-1.5 text-[10px] font-bold text-white ring-2 ring-base-100 animate-pulse">
+                                {pendingNewCount}
+                            </span>
+                        )}
                     </button>
                 )}
             </div>

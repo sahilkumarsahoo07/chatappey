@@ -104,6 +104,9 @@ export const useGroupStore = create((set, get) => ({
     isGroupMessagesLoading: false,
     typingUsers: [], // Array of {userId, userName}
     recordingUsers: [], // Array of {userId, userName}
+    scrollTargetIndex: -1,
+    scrollTargetKey: null,
+    setScrollTarget: (index) => set({ scrollTargetIndex: index, scrollTargetKey: Date.now() }),
     _typingTimers: {},
     _recordingTimers: {},
     _isSubscribedToGroupEvents: false,
@@ -262,9 +265,9 @@ export const useGroupStore = create((set, get) => ({
     },
 
     // Unpin message
-    unpinMessage: async (groupId) => {
+    unpinMessage: async (groupId, messageId = null) => {
         try {
-            const res = await axiosInstance.post(`/groups/${groupId}/unpin`);
+            const res = await axiosInstance.post(`/groups/${groupId}/unpin`, { messageId });
             const updatedGroup = res.data;
             set({
                 groups: get().groups.map(g => g._id === groupId ? updatedGroup : g),

@@ -5,6 +5,8 @@ import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import defaultAvatar from "../public/avatar.png";
+import { createPortal } from "react-dom";
+import toast from "react-hot-toast";
 
 const GroupInfoPanel = ({ isOpen, onClose }) => {
     const { selectedGroup, updateGroup, deleteGroup, addMembers, removeMember, leaveGroup, updateMemberRole } = useGroupStore();
@@ -160,7 +162,7 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
 
     if (!isOpen || !selectedGroup) return null;
 
-    return (
+    return createPortal(
         <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-end z-50"
             onClick={onClose}
@@ -465,7 +467,8 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

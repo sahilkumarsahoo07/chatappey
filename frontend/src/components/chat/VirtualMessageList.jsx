@@ -31,6 +31,9 @@ function VirtualMessageList({
   isLoadingOlder,
   scrollToBottomKey,
   onAtBottomChange,
+  initialScrollIndex = -1,
+  scrollTargetIndex = -1,
+  scrollTargetKey = null,
 }) {
   const reachTopLock = useRef(false);
   const prevScrollHeightRef = useRef(0);
@@ -71,12 +74,31 @@ function VirtualMessageList({
 
   // Chat open / explicit jump — never tied to message count
   useLayoutEffect(() => {
-    pinBottomRef.current = true;
-    onAtBottomChange?.(true);
+    if (initialScrollIndex !== undefined && initialScrollIndex !== -1) {
+      pinBottomRef.current = false;
+      onAtBottomChange?.(false);
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(initialScrollIndex, { align: "start", behavior: "auto" });
+      });
+    } else {
+      pinBottomRef.current = true;
+      onAtBottomChange?.(true);
+      scrollToBottomInstant();
+    }
     lastTailKeyRef.current = tailKey;
-    scrollToBottomInstant();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToBottomKey]);
+
+  // Jump to specific index when triggered
+  useLayoutEffect(() => {
+    if (scrollTargetIndex !== undefined && scrollTargetIndex !== -1) {
+      pinBottomRef.current = false;
+      onAtBottomChange?.(false);
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(scrollTargetIndex, { align: "center", behavior: "smooth" });
+      });
+    }
+  }, [scrollTargetIndex, scrollTargetKey, virtualizer]);
 
   // Auto-scroll only when a NEW last message arrives and user is pinned to bottom
   useLayoutEffect(() => {
