@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useCallStore } from '../store/useCallStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { generateRoomID } from '../config/zegoConfig';
+import { generateRoomID, isZegoConfigured } from '../config/zegoConfig';
 import toast from 'react-hot-toast';
 
 export const useWebRTC = () => {
@@ -10,6 +10,14 @@ export const useWebRTC = () => {
 
     const initiateCall = async (receiverId, receiverData, callType) => {
         try {
+            if (!isZegoConfigured()) {
+                toast.error(
+                    'Voice/video calls need Zego credentials. Add VITE_ZEGO_APP_ID and VITE_ZEGO_SERVER_SECRET to frontend/.env, then restart the app.',
+                    { duration: 7000 }
+                );
+                return;
+            }
+
             console.log('=== INITIATING CALL ===');
             console.log('Caller:', authUser.fullName, '(', authUser._id, ')');
             console.log('Receiver:', receiverData.fullName, '(', receiverId, ')');
@@ -27,6 +35,7 @@ export const useWebRTC = () => {
 
             // Start the call in the store
             startCall(receiverData, callType, roomID);
+            setCallStatus('calling');
 
             // Prepare call data
             const callData = {
@@ -76,7 +85,6 @@ export const useWebRTC = () => {
     const rejectCall = (callerId, roomID) => {
         socket.emit('call:reject', { to: callerId, roomID });
         useCallStore.getState().clearIncomingCall();
-        toast.info('Call declined');
     };
 
     const endCallWithNotification = () => {
@@ -101,15 +109,12 @@ export const useWebRTC = () => {
 
         const handleCallEnded = () => {
             console.log('Call ended by other user');
-            endCall();
+            endCall('ended');
         };
 
         const handleCallRejected = () => {
             console.log('Call was rejected');
-            toast.error('Call was not answered', {
-                icon: '📵'
-            });
-            endCall();
+            endCall('declined');
         };
 
         socket.on('call:answered', handleCallAnswered);

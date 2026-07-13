@@ -1,75 +1,65 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { ZegoUIKitPrebuilt } from '@zegocloud/zego-uikit-prebuilt';
+import { Minimize2 } from 'lucide-react';
 import { useCallStore } from '../store/useCallStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { ZEGO_CONFIG, getCallConfig } from '../config/zegoConfig';
-import { Minimize, Maximize, X } from 'lucide-react';
+import { ZEGO_CONFIG, getCallConfig, isZegoConfigured } from '../config/zegoConfig';
+import VoiceCallScreen from './call/VoiceCallScreen';
+import MinimizedCallBubble from './call/MinimizedCallBubble';
+import {
+  formatCallDuration,
+} from './call/CallPrimitives';
+import './call/call-ui.css';
+import toast from 'react-hot-toast';
 
 const CallWindow = () => {
-    const {
-        isInCall,
-        callType,
-        roomID,
-        endCall,
-        setZegoInstance,
-        setCallStatus,
-        isMinimized,
-        toggleMinimize
-    } = useCallStore();
+    const isInCall = useCallStore((s) => s.isInCall);
+    const callType = useCallStore((s) => s.callType);
+    const roomID = useCallStore((s) => s.roomID);
+    const endCall = useCallStore((s) => s.endCall);
+    const setZegoInstance = useCallStore((s) => s.setZegoInstance);
+    const setCallStatus = useCallStore((s) => s.setCallStatus);
+    const isMinimized = useCallStore((s) => s.isMinimized);
+    const toggleMinimize = useCallStore((s) => s.toggleMinimize);
+    const callStatus = useCallStore((s) => s.callStatus);
+    const toggleMute = useCallStore((s) => s.toggleMute);
+    const toggleSpeaker = useCallStore((s) => s.toggleSpeaker);
+    const receiver = useCallStore((s) => s.receiver);
+    const caller = useCallStore((s) => s.caller);
+    const callStartTime = useCallStore((s) => s.callStartTime);
 
     const { authUser } = useAuthStore();
     const containerRef = useRef(null);
     const zegoInstanceRef = useRef(null);
+    const [chromeVisible, setChromeVisible] = useState(true);
+    const hideTimerRef = useRef(null);
+
+    const participant = receiver || caller;
+    const isVideoConnected = callType === 'video' && callStatus === 'connected';
 
     useEffect(() => {
         if (!isInCall || !roomID || !containerRef.current || !authUser) {
             return;
         }
 
+        let cancelled = false;
+
         const initializeCall = async () => {
             try {
-                console.log('Initializing ZegoCloud call...', { roomID, callType });
+                if (!isZegoConfigured()) {
+                    toast.error(
+                        'Calls are not configured. Add VITE_ZEGO_APP_ID and VITE_ZEGO_SERVER_SECRET to frontend/.env',
+                        { duration: 6000 }
+                    );
+                    endCall('unavailable');
+                    return;
+                }
 
-                // Get configuration
                 const appID = ZEGO_CONFIG.appID;
                 const serverSecret = ZEGO_CONFIG.serverSecret;
                 const userID = authUser._id.toString();
                 const userName = authUser.fullName || 'User';
 
-                console.log('ZegoCloud config:', {
-                    appID,
-                    appIDType: typeof appID,
-                    serverSecretLength: serverSecret?.length,
-                    serverSecretType: typeof serverSecret,
-                    userID,
-                    userName,
-                    roomID
-                });
-
-                // Validate credentials with detailed checks
-                if (!appID) {
-                    throw new Error('ZegoCloud AppID is missing. Please check your .env file.');
-                }
-
-                if (typeof appID !== 'number') {
-                    throw new Error(`ZegoCloud AppID must be a number, got ${typeof appID}`);
-                }
-
-                if (!serverSecret) {
-                    throw new Error('ZegoCloud ServerSecret is missing. Please check your .env file.');
-                }
-
-                if (typeof serverSecret !== 'string') {
-                    throw new Error(`ZegoCloud ServerSecret must be a string, got ${typeof serverSecret}`);
-                }
-
-                if (serverSecret.length < 32) {
-                    throw new Error('ZegoCloud ServerSecret appears to be invalid (too short)');
-                }
-
-                console.log('Generating kit token with validated config...');
-
-                // Create ZegoCloud instance with token
                 const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
                     appID,
                     serverSecret,
@@ -78,258 +68,184 @@ const CallWindow = () => {
                     userName
                 );
 
-                if (!kitToken) {
-                    throw new Error('Failed to generate kit token');
-                }
+                if (!kitToken) throw new Error('Failed to generate kit token');
+                if (cancelled) return;
 
-                console.log('✅ Kit token generated successfully');
-
-                // Create instance
                 const zp = ZegoUIKitPrebuilt.create(kitToken);
                 zegoInstanceRef.current = zp;
                 setZegoInstance(zp);
 
-                // Get call configuration with proper callType
                 const callConfig = getCallConfig(userID, userName, callType);
 
-                console.log('Call config for', callType, 'call:', {
-                    turnOnCameraWhenJoining: callConfig.turnOnCameraWhenJoining,
-                    showMyCameraToggleButton: callConfig.showMyCameraToggleButton
-                });
-
-                // Add event listeners
                 callConfig.onJoinRoom = () => {
-                    console.log('✅ Successfully joined ZegoCloud room:', roomID);
                     setCallStatus('connected');
                 };
 
                 callConfig.onLeaveRoom = () => {
-                    console.log('Left ZegoCloud room');
-                    endCall();
+                    endCall('ended');
                 };
 
                 callConfig.onUserLeave = (users) => {
-                    console.log('User left:', users);
                     if (users && users.length > 0) {
-                        endCall();
+                        endCall('ended');
                     }
                 };
 
-                // Pass the container element to joinRoom
                 callConfig.container = containerRef.current;
-
-                console.log('Joining room with config...');
-
-                // Join the room
                 await zp.joinRoom(callConfig);
-
-                console.log('✅ Room join initiated successfully');
-
             } catch (error) {
-                console.error('❌ Error initializing ZegoCloud call:', error);
-                console.error('Error details:', {
-                    message: error.message,
-                    code: error.code,
-                    stack: error.stack
-                });
-                endCall();
+                console.error('Error initializing ZegoCloud call:', error);
+                const msg = String(error?.msg || error?.message || '');
+                if (msg.toLowerCase().includes('appid') || error?.code === 1001004) {
+                    toast.error(
+                        'Zego AppID invalid. Check VITE_ZEGO_APP_ID / ServerSecret in console.zegocloud.com',
+                        { duration: 7000 }
+                    );
+                } else {
+                    toast.error('Could not start call. Check Zego credentials.');
+                }
+                if (!cancelled) endCall('unavailable');
             }
         };
 
         initializeCall();
 
-        // Cleanup on unmount
         return () => {
+            cancelled = true;
             if (zegoInstanceRef.current) {
                 try {
-                    console.log('Cleaning up ZegoCloud instance on unmount...');
-
-                    // Stop all media tracks
-                    const mediaElements = document.querySelectorAll('video, audio');
-                    mediaElements.forEach(element => {
+                    document.querySelectorAll('video, audio').forEach((element) => {
                         if (element.srcObject) {
-                            const tracks = element.srcObject.getTracks();
-                            tracks.forEach(track => {
-                                console.log('Stopping track on unmount:', track.kind);
-                                track.stop();
-                            });
+                            element.srcObject.getTracks().forEach((t) => t.stop());
                             element.srcObject = null;
                         }
                     });
-
                     zegoInstanceRef.current.destroy();
-                    console.log('✅ Cleanup on unmount complete');
-                } catch (error) {
-                    console.error('Error destroying Zego instance:', error);
+                } catch (_) {
+                    /* ignore */
                 }
                 zegoInstanceRef.current = null;
             }
         };
     }, [isInCall, roomID, authUser, callType, endCall, setZegoInstance, setCallStatus]);
 
-    const handleCancel = () => {
-        console.log('User cancelled call');
-        endCall();
-    };
+    const bumpChrome = useCallback(() => {
+        setChromeVisible(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => setChromeVisible(false), 4000);
+    }, []);
 
-    if (!isInCall) {
-        return null;
-    }
+    useEffect(() => {
+        if (!isVideoConnected || isMinimized) return;
+        bumpChrome();
+        return () => {
+            if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        };
+    }, [isVideoConnected, isMinimized, bumpChrome]);
+
+    const handleEnd = useCallback(() => {
+        endCall('ended');
+    }, [endCall]);
+
+    if (!isInCall) return null;
+
+    const hideZegoChrome = callType === 'audio' || callStatus !== 'connected';
 
     return (
         <>
-            {/* Minimized Floating Window - Teams Style */}
-            {isMinimized && <MinimizedCallWindow />}
+            {isMinimized && <MinimizedCallBubble onEnd={handleEnd} />}
 
-            {/* Minimize Button Overlay - Top Right (only visible when not minimized) */}
-            {!isMinimized && (
-                <button
-                    onClick={toggleMinimize}
-                    className="fixed top-4 right-4 z-[10000] bg-gray-800 hover:bg-gray-700 text-white p-3 rounded-lg shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                    title="Minimize call"
-                >
-                    <Minimize size={20} />
-                    <span className="text-sm font-medium">Minimize</span>
-                </button>
-            )}
-
-            {/* Full Screen Call Window - Always mounted, but hidden when minimized */}
+            {/* Zego media surface — kept mounted for audio even when custom UI covers it */}
             <div
                 ref={containerRef}
+                onClick={isVideoConnected ? bumpChrome : undefined}
                 style={{
                     position: 'fixed',
                     top: 0,
                     left: 0,
                     width: '100vw',
                     height: '100vh',
-                    zIndex: 9999,
-                    backgroundColor: '#000',
-                    display: isMinimized ? 'none' : 'block'
+                    zIndex: 9998,
+                    backgroundColor: '#0b141a',
+                    display: isMinimized ? 'none' : 'block',
+                    // Hide Zego's default chrome for voice / pre-connect; keep streams alive
+                    opacity: hideZegoChrome ? 0 : 1,
+                    pointerEvents: hideZegoChrome ? 'none' : 'auto',
                 }}
             />
+
+            {/* WhatsApp voice / outgoing overlay */}
+            {!isMinimized && (
+                <VoiceCallScreen
+                    onEnd={handleEnd}
+                    onToggleMute={toggleMute}
+                    onToggleSpeaker={toggleSpeaker}
+                />
+            )}
+
+            {/* Video in-call chrome (minimize + status) */}
+            {!isMinimized && isVideoConnected && (
+                <VideoCallChrome
+                    visible={chromeVisible}
+                    participant={participant}
+                    callStartTime={callStartTime}
+                    onToggleMinimize={toggleMinimize}
+                    onReveal={bumpChrome}
+                />
+            )}
         </>
     );
 };
 
-// Minimized Call Window Component (Teams Style)
-const MinimizedCallWindow = () => {
-    const { receiver, caller, callType, toggleMinimize, endCall } = useCallStore();
-    const [position, setPosition] = useState({ x: window.innerWidth - 360, y: window.innerHeight - 200 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
-    const participant = receiver || caller;
-
-    const handleMouseDown = (e) => {
-        setIsDragging(true);
-        setDragStart({
-            x: e.clientX - position.x,
-            y: e.clientY - position.y
-        });
-    };
-
-    const handleMouseMove = (e) => {
-        if (isDragging) {
-            setPosition({
-                x: e.clientX - dragStart.x,
-                y: e.clientY - dragStart.y
-            });
-        }
-    };
-
-    const handleMouseUp = () => {
-        setIsDragging(false);
-    };
+const VideoCallChrome = memo(function VideoCallChrome({
+    visible,
+    participant,
+    callStartTime,
+    onToggleMinimize,
+    onReveal,
+}) {
+    const [elapsed, setElapsed] = useState(0);
 
     useEffect(() => {
-        if (isDragging) {
-            window.addEventListener('mousemove', handleMouseMove);
-            window.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                window.removeEventListener('mousemove', handleMouseMove);
-                window.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isDragging, dragStart]);
+        if (!callStartTime) return;
+        const tick = () => setElapsed(Math.floor((Date.now() - callStartTime) / 1000));
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, [callStartTime]);
 
     return (
         <div
-            style={{
-                position: 'fixed',
-                left: `${position.x}px`,
-                top: `${position.y}px`,
-                width: '320px',
-                zIndex: 9999,
-                cursor: isDragging ? 'grabbing' : 'grab'
-            }}
-            className="select-none"
+            className={`call-wa-video-chrome${visible ? '' : ' call-wa-video-chrome--hidden'}`}
+            onClick={onReveal}
         >
-            {/* Main minimized window */}
-            <div className="bg-[#292929] rounded-lg shadow-2xl overflow-hidden border border-gray-700">
-                {/* Header - Draggable */}
-                <div
-                    onMouseDown={handleMouseDown}
-                    className="bg-[#1f1f1f] px-4 py-3 flex items-center justify-between"
+            <div className="call-wa-video-top">
+                <div className="call-wa-video-chip">
+                    <img
+                        src={participant?.profilePic || '/avatar.png'}
+                        alt=""
+                    />
+                    <span>
+                        {participant?.fullName || 'User'}
+                        {' · '}
+                        {formatCallDuration(elapsed)}
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    className="call-wa-icon-btn"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleMinimize();
+                    }}
+                    aria-label="Minimize call"
+                    title="Minimize"
                 >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-                            {participant?.fullName?.charAt(0)?.toUpperCase() || 'U'}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="text-white text-sm font-medium truncate">
-                                {participant?.fullName || 'User'}
-                            </div>
-                            <div className="text-gray-400 text-xs">
-                                {callType === 'video' ? 'Video call' : 'Audio call'}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Window controls */}
-                    <div className="flex items-center gap-1">
-                        <button
-                            onClick={toggleMinimize}
-                            className="p-2 hover:bg-gray-700 rounded transition-colors"
-                            title="Maximize"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-gray-300">
-                                <rect x="2" y="2" width="8" height="8" stroke="currentColor" strokeWidth="1.5" />
-                            </svg>
-                        </button>
-                        <button
-                            onClick={endCall}
-                            className="p-2 hover:bg-red-600 rounded transition-colors"
-                            title="End call"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-gray-300">
-                                <path d="M2 2L10 10M2 10L10 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Preview area */}
-                <div className="bg-[#1a1a1a] h-32 flex items-center justify-center">
-                    <div className="text-gray-400 text-center">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-semibold mx-auto mb-2">
-                            {participant?.fullName?.charAt(0)?.toUpperCase() || 'U'}
-                        </div>
-                        <div className="text-xs">Call in progress...</div>
-                    </div>
-                </div>
-
-                {/* Controls footer */}
-                <div className="bg-[#1f1f1f] px-4 py-2 flex items-center justify-center gap-2">
-                    <button
-                        onClick={toggleMinimize}
-                        className="flex-1 bg-[#464646] hover:bg-[#5a5a5a] text-white px-4 py-2 rounded text-sm font-medium transition-colors"
-                    >
-                        Return to call
-                    </button>
-                </div>
+                    <Minimize2 size={18} />
+                </button>
             </div>
         </div>
     );
-};
+});
 
 export default CallWindow;

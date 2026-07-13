@@ -8,6 +8,7 @@ import callRoutes from './routes/call.routes.js'
 import groupRoutes from './routes/group.route.js'
 import adminRoutes from './routes/admin.route.js'
 import statusRoutes from './routes/status.route.js'
+import musicRoutes from './routes/music.route.js'
 import chatFeaturesRoutes from './routes/chatFeatures.route.js'
 import insightsRoutes from './routes/insights.route.js'
 
@@ -72,6 +73,7 @@ app.use("/api/call", callRoutes)
 app.use("/api/groups", groupRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/status", statusRoutes);
+app.use("/api/music", musicRoutes);
 app.use("/api/chat", chatFeaturesRoutes);
 app.use("/api/insights", insightsRoutes);
 

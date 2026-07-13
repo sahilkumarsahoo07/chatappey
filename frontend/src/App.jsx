@@ -34,6 +34,7 @@ import {
 } from './lib/openFromNotification';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
+import CallEndedScreen from './components/call/CallEndedScreen';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 import { CreateStatusModal } from './components/status';
 import { useStatusStore } from './store/useStatusStore';
@@ -203,6 +204,7 @@ function App() {
       {/* Call Components */}
       <IncomingCallNotification />
       <CallWindow />
+      <CallEndedScreen />
       {authUser && <NotificationPermissionBanner />}
 
       {/* WhatsApp-style Status */}

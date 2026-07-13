@@ -96,6 +96,27 @@ function formatStatus(doc, viewerId) {
     thumbnailUrl: obj.thumbnailUrl || "",
     duration: obj.duration,
     caption: obj.caption || "",
+    music: obj.music?.audioUrl
+      ? {
+          id: obj.music.id || "",
+          title: obj.music.title || "",
+          artist: obj.music.artist || "",
+          thumbnail: obj.music.thumbnail || "",
+          audioUrl: obj.music.audioUrl,
+          duration: obj.music.duration || 0,
+          quality: obj.music.quality || "",
+          sourceUrl: obj.music.sourceUrl || "",
+          startOffset: Number(obj.music.startOffset) || 0,
+          clipDuration: Number(obj.music.clipDuration) || 15,
+          sticker: {
+            x: obj.music.sticker?.x ?? 0.5,
+            y: obj.music.sticker?.y ?? 0.72,
+            scale: obj.music.sticker?.scale ?? 1,
+            rotation: obj.music.sticker?.rotation ?? 0,
+            theme: obj.music.sticker?.theme || "classic",
+          },
+        }
+      : null,
     privacy: obj.privacy,
     createdAt: obj.createdAt,
     expiresAt: obj.expiresAt,
@@ -210,6 +231,46 @@ export const uploadStatus = async (req, res) => {
     const excludedUserIds = privacy === "contacts_except" ? parseIdList(req.body.excludedUserIds) : [];
     const includedUserIds = privacy === "only_share_with" ? parseIdList(req.body.includedUserIds) : [];
 
+    let music = undefined;
+    if (req.body.music) {
+      try {
+        const raw =
+          typeof req.body.music === "string"
+            ? JSON.parse(req.body.music)
+            : req.body.music;
+        if (raw?.audioUrl && raw?.title) {
+          const startOffset = Math.max(0, Number(raw.startOffset) || 0);
+          const clipDuration = Math.min(
+            30,
+            Math.max(5, Number(raw.clipDuration) || 15)
+          );
+          music = {
+            id: String(raw.id || "").slice(0, 80),
+            title: String(raw.title || "").slice(0, 200),
+            artist: String(raw.artist || "").slice(0, 200),
+            thumbnail: String(raw.thumbnail || "").slice(0, 500),
+            audioUrl: String(raw.audioUrl).slice(0, 2000),
+            duration: Math.max(0, Number(raw.duration) || 0),
+            quality: String(raw.quality || "").slice(0, 40),
+            sourceUrl: String(raw.sourceUrl || "").slice(0, 500),
+            startOffset,
+            clipDuration,
+            sticker: {
+              x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
+              y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
+              scale: Math.min(2.5, Math.max(0.6, Number(raw.sticker?.scale) ?? 1)),
+              rotation: Number(raw.sticker?.rotation) || 0,
+              theme: ["classic", "dark", "neon", "minimal"].includes(raw.sticker?.theme)
+                ? raw.sticker.theme
+                : "classic",
+            },
+          };
+        }
+      } catch (e) {
+        console.warn("Invalid music payload on status upload:", e.message);
+      }
+    }
+
     if (privacy === "only_share_with" && includedUserIds.length === 0) {
       return res.status(400).json({ error: "Select at least one contact to share with" });
     }
@@ -240,6 +301,11 @@ export const uploadStatus = async (req, res) => {
     }
 
     const now = new Date();
+    // Image stories with music use the selected clip length (Instagram-like)
+    if (isImage && music?.clipDuration) {
+      duration = Math.min(MAX_DURATION, Math.max(5, Number(music.clipDuration) || IMAGE_DURATION));
+    }
+
     const status = await Status.create({
       userId: req.user._id,
       mediaType: isVideo ? "video" : "image",
@@ -253,6 +319,7 @@ export const uploadStatus = async (req, res) => {
       includedUserIds,
       viewers: [],
       expiresAt: new Date(now.getTime() + DAY_MS),
+      ...(music ? { music } : {}),
     });
 
     const populated = await Status.findById(status._id).populate(

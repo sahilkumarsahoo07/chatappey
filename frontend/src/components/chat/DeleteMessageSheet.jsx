@@ -1,11 +1,10 @@
 import { memo, useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, Trash2, UserRoundX, UsersRound, X } from "lucide-react";
 import { axiosInstance } from "../../lib/axios";
 import "./DeleteMessageSheet.css";
 
 /**
- * WhatsApp-style delete confirmation sheet.
- * Fetches canDeleteForEveryone from the backend (source of truth).
+ * Modern bottom-sheet delete dialog with icon option rows.
  */
 function DeleteMessageSheet({
   open,
@@ -18,7 +17,7 @@ function DeleteMessageSheet({
   onDeleteForMe,
 }) {
   const [loading, setLoading] = useState(false);
-  const [acting, setActing] = useState(null); // "everyone" | "me"
+  const [acting, setActing] = useState(null);
   const [options, setOptions] = useState(null);
   const [error, setError] = useState(null);
 
@@ -47,7 +46,6 @@ function DeleteMessageSheet({
       .catch((err) => {
         if (!cancelled) {
           setError(err.response?.data?.error || "Could not load delete options");
-          // Safe fallback: only Delete for Me
           setOptions({
             canDeleteForMe: true,
             canDeleteForEveryone: false,
@@ -97,54 +95,121 @@ function DeleteMessageSheet({
   if (!open) return null;
 
   return (
-    <div className="delete-sheet-root" role="dialog" aria-modal="true" aria-labelledby="delete-sheet-title">
-      <button type="button" className="delete-sheet-backdrop" aria-label="Close" onClick={acting ? undefined : onClose} />
-      <div className="delete-sheet-panel">
-        <div className="delete-sheet-handle" />
-        <h3 id="delete-sheet-title" className="delete-sheet-title">
-          Delete message?
-        </h3>
+    <div
+      className="delete-sheet-root"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-sheet-title"
+      aria-describedby="delete-sheet-subtitle"
+    >
+      <button
+        type="button"
+        className="delete-sheet-backdrop"
+        aria-label="Close"
+        onClick={acting ? undefined : onClose}
+      />
+
+      <div className="delete-sheet-panel bg-base-100 text-base-content border border-base-300/60">
+        <div className="delete-sheet-handle bg-base-content" />
+
+        <div className="delete-sheet-header">
+          <div className="delete-sheet-header-text">
+            <h3 id="delete-sheet-title" className="delete-sheet-title">
+              Delete message
+            </h3>
+            <p id="delete-sheet-subtitle" className="delete-sheet-subtitle">
+              {loading
+                ? "Loading options…"
+                : "This action can’t be undone for the selected option."}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="delete-sheet-close bg-base-200 text-base-content"
+            aria-label="Close"
+            disabled={!!acting}
+            onClick={onClose}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
         {loading && (
           <div className="delete-sheet-loading">
-            <Loader2 className="w-5 h-5 animate-spin opacity-60" />
+            <Loader2 className="w-5 h-5 animate-spin text-base-content/45" />
           </div>
         )}
 
-        {error && !loading && <p className="delete-sheet-error">{error}</p>}
+        {error && !loading && (
+          <p className="delete-sheet-error text-error">{error}</p>
+        )}
 
         {!loading && options && (
-          <div className="delete-sheet-actions">
-            {options.canDeleteForEveryone && (
-              <button
-                type="button"
-                className="delete-sheet-btn delete-sheet-btn--danger"
-                disabled={!!acting}
-                onClick={runEveryone}
-              >
-                {acting === "everyone" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Delete for Everyone
-              </button>
-            )}
-            {options.canDeleteForMe && (
-              <button
-                type="button"
-                className="delete-sheet-btn delete-sheet-btn--muted"
-                disabled={!!acting}
-                onClick={runMe}
-              >
-                {acting === "me" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Delete for Me
-              </button>
-            )}
+          <>
+            <div className="delete-sheet-options">
+              {options.canDeleteForEveryone && (
+                <button
+                  type="button"
+                  className="delete-sheet-option delete-sheet-option--danger bg-error/10 text-error"
+                  disabled={!!acting}
+                  onClick={runEveryone}
+                >
+                  <span className="delete-sheet-option-icon bg-error/15">
+                    {acting === "everyone" ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <UsersRound className="w-5 h-5" />
+                    )}
+                  </span>
+                  <span className="delete-sheet-option-copy">
+                    <span className="delete-sheet-option-title">Delete for everyone</span>
+                    <span className="delete-sheet-option-desc">
+                      Remove this message for you and the other person
+                    </span>
+                  </span>
+                  <ChevronRight className="delete-sheet-option-chevron w-4 h-4" />
+                </button>
+              )}
+
+              {options.canDeleteForMe && (
+                <button
+                  type="button"
+                  className="delete-sheet-option delete-sheet-option--neutral bg-base-200 text-base-content"
+                  disabled={!!acting}
+                  onClick={runMe}
+                >
+                  <span className="delete-sheet-option-icon bg-base-300/70">
+                    {acting === "me" ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <UserRoundX className="w-5 h-5 opacity-80" />
+                    )}
+                  </span>
+                  <span className="delete-sheet-option-copy">
+                    <span className="delete-sheet-option-title">Delete for me</span>
+                    <span className="delete-sheet-option-desc">
+                      Only remove it from your chat history
+                    </span>
+                  </span>
+                  <ChevronRight className="delete-sheet-option-chevron w-4 h-4" />
+                </button>
+              )}
+            </div>
+
             <button
               type="button"
-              className="delete-sheet-btn delete-sheet-btn--cancel"
+              className="delete-sheet-cancel bg-base-200 text-base-content/80"
               disabled={!!acting}
               onClick={onClose}
             >
               Cancel
             </button>
+          </>
+        )}
+
+        {!loading && !options && (
+          <div className="delete-sheet-loading">
+            <Trash2 className="w-5 h-5 text-base-content/35" />
           </div>
         )}
       </div>

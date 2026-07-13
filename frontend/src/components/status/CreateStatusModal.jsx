@@ -8,9 +8,11 @@ import {
   Globe,
   UserX,
   UserCheck,
+  Music2,
 } from "lucide-react";
 import { useStatusStore } from "../../store/useStatusStore";
 import { useChatStore } from "../../store/useChatStore";
+import { useStoryMusicStore } from "../../store/useStoryMusicStore";
 import {
   MAX_VIDEO_SECONDS,
   MAX_IMAGE_BYTES,
@@ -20,6 +22,9 @@ import {
   isVideoFile,
 } from "../../lib/statusMedia";
 import defaultImg from "../../public/avatar.png";
+import StoryMusicPicker from "./StoryMusicPicker";
+import MusicSticker from "./MusicSticker";
+import "./storyMusic.css";
 
 const PRIVACY_OPTIONS = [
   { id: "contacts", label: "My contacts", icon: Users, hint: "Friends only" },
@@ -64,7 +69,13 @@ export default function CreateStatusModal() {
   const [videoMeta, setVideoMeta] = useState(null); // { duration }
   const [validating, setValidating] = useState(false);
   const inputRef = useRef(null);
+  const previewStageRef = useRef(null);
   const submitLock = useRef(false);
+
+  const selectedMusic = useStoryMusicStore((s) => s.selectedSong);
+  const openMusicPicker = useStoryMusicStore((s) => s.openPicker);
+  const clearSelectedMusic = useStoryMusicStore((s) => s.clearSelected);
+  const updateSelectedSticker = useStoryMusicStore((s) => s.updateSelectedSticker);
 
   const friends = useMemo(
     () => (users || []).filter((u) => u.isFriend),
@@ -96,8 +107,9 @@ export default function CreateStatusModal() {
       setVideoMeta(null);
       setValidating(false);
       submitLock.current = false;
+      clearSelectedMusic();
     }
-  }, [isCreateOpen]);
+  }, [isCreateOpen, clearSelectedMusic]);
 
   const clearFile = useCallback(() => {
     setFile(null);
@@ -162,7 +174,9 @@ export default function CreateStatusModal() {
           privacy === "contacts_except" ? excluded : undefined,
         includedUserIds:
           privacy === "only_share_with" ? included : undefined,
+        music: selectedMusic || undefined,
       });
+      clearSelectedMusic();
     } catch {
       // store already toasts / sets uploadError
     } finally {
@@ -228,7 +242,10 @@ export default function CreateStatusModal() {
               )}
             </button>
           ) : (
-            <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/12] max-h-[320px] flex items-center justify-center">
+            <div
+              ref={previewStageRef}
+              className="relative rounded-2xl overflow-hidden bg-black aspect-[9/12] max-h-[320px] flex items-center justify-center"
+            >
               {isVideo ? (
                 <video
                   src={previewUrl}
@@ -242,6 +259,15 @@ export default function CreateStatusModal() {
                   src={previewUrl}
                   alt="Preview"
                   className="max-w-full max-h-full object-contain"
+                />
+              )}
+              {selectedMusic && (
+                <MusicSticker
+                  music={selectedMusic}
+                  playing
+                  editable
+                  containerRef={previewStageRef}
+                  onChange={updateSelectedSticker}
                 />
               )}
               <div className="absolute top-3 right-3 flex gap-2">
@@ -277,6 +303,34 @@ export default function CreateStatusModal() {
             className="hidden"
             onChange={onPick}
           />
+
+          {file && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isUploading}
+                onClick={openMusicPicker}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                  selectedMusic
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-base-300 hover:bg-base-200/60"
+                }`}
+              >
+                <Music2 className="w-4 h-4" />
+                {selectedMusic ? selectedMusic.title : "Add music"}
+              </button>
+              {selectedMusic && (
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={clearSelectedMusic}
+                  className="px-3 py-2.5 rounded-xl border border-base-300 text-xs font-semibold hover:bg-base-200"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-base-content/60 uppercase tracking-wide">
@@ -406,6 +460,7 @@ export default function CreateStatusModal() {
           </button>
         </div>
       </div>
+      <StoryMusicPicker />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { CHAT_WALLPAPERS, FONT_SIZES, BUBBLE_STYLES } from "../constants/appeara
 import { useNetworkStore } from "../store/useNetworkStore";
 import { VIDEO_QUALITIES } from "../lib/mediaDelivery";
 import { NetworkTier } from "../lib/network";
+import "./SettingsPage.css";
 
 const PREVIEW_MESSAGES = [
     { id: 1, content: "Hey! How's it going?", isSent: false },
@@ -22,12 +23,12 @@ const PREVIEW_MESSAGES = [
 ];
 
 const SETTINGS_TABS = [
-    { id: 'profile', label: 'Profile', icon: User, color: 'text-blue-500' },
-    { id: 'appearance', label: 'Appearance', icon: Palette, color: 'text-purple-500' },
-    { id: 'privacy', label: 'Privacy', icon: Eye, color: 'text-green-500' },
-    { id: 'security', label: 'Security', icon: Lock, color: 'text-orange-500' },
-    { id: 'notifications', label: 'Notifications', icon: Bell, color: 'text-red-500' },
-    { id: 'account', label: 'Account', icon: Shield, color: 'text-gray-500' },
+    { id: 'profile', label: 'Profile', icon: User, bg: '#00a884' },
+    { id: 'appearance', label: 'Appearance', icon: Palette, bg: '#53bdeb' },
+    { id: 'privacy', label: 'Privacy', icon: Eye, bg: '#25d366' },
+    { id: 'security', label: 'Security', icon: Lock, bg: '#f7a931' },
+    { id: 'notifications', label: 'Notifications', icon: Bell, bg: '#ff3b5c' },
+    { id: 'account', label: 'Account', icon: Shield, bg: '#8696a0' },
 ];
 
 const THEME_GROUPS = {
@@ -132,170 +133,177 @@ const SettingsPage = () => {
     }, [searchTheme]);
 
     const renderSidebar = () => (
-        <div className="w-full md:w-64 flex flex-col gap-2 p-4 bg-base-100 rounded-3xl border border-base-300 shadow-sm h-fit sticky top-8">
-            <div className="px-2 mb-4 mt-1">
-                <h1 className="text-lg font-black bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Settings</h1>
-            </div>
+        <aside className="settings-wa-sidebar">
+            <div className="settings-wa-sidebar-title">Settings</div>
             {SETTINGS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
                     <button
                         key={tab.id}
+                        type="button"
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-300 ${activeTab === tab.id
-                            ? "bg-primary text-primary-content shadow-md shadow-primary/20 translate-x-1"
-                            : "hover:bg-base-200 text-base-content/70 hover:text-base-content"
-                            }`}
+                        className={`settings-wa-nav-item${activeTab === tab.id ? " is-active" : ""}`}
                     >
-                        <Icon className={`w-5 h-5 ${activeTab === tab.id ? "text-primary-content" : tab.color}`} />
-                        <span className="font-bold text-sm tracking-tight">{tab.label}</span>
-                        {activeTab === tab.id && <ChevronRight className="w-4 h-4 ml-auto" />}
+                        <span className="settings-wa-nav-icon" style={{ background: tab.bg }}>
+                            <Icon className="w-[18px] h-[18px]" strokeWidth={2.25} />
+                        </span>
+                        <span>{tab.label}</span>
+                        <ChevronRight className="chev w-4 h-4" />
                     </button>
                 );
             })}
-        </div>
+        </aside>
+    );
+
+    const renderMobileTabs = () => (
+        <nav className="settings-wa-tabs" aria-label="Settings sections">
+            {SETTINGS_TABS.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`settings-wa-tab${activeTab === tab.id ? " is-active" : ""}`}
+                    >
+                        <Icon className="w-3.5 h-3.5" strokeWidth={2.4} />
+                        {tab.label}
+                    </button>
+                );
+            })}
+        </nav>
     );
 
     const renderProfile = () => (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex flex-col gap-0.5 px-1">
-                <h2 className="text-lg font-black tracking-tighter">Profile</h2>
-                <p className="text-[10px] text-base-content/60 font-medium">Manage how other users see you in the app</p>
+        <div className="animate-in fade-in duration-300">
+            <div className="settings-wa-section-head md:block hidden">
+                <h2>Profile</h2>
+                <p>Manage how others see you</p>
             </div>
 
-            <div className="card bg-base-100 shadow-xl border border-base-300 overflow-hidden rounded-[2.5rem]">
-                <div className="h-32 bg-gradient-to-br from-primary/40 via-secondary/40 to-accent/40 relative">
-                    <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
+            <div className="settings-wa-profile-hero">
+                <div className="settings-wa-avatar group">
+                    <img src={authUser?.profilePic || defaultImg} alt={authUser?.fullName} />
+                    <label htmlFor="avatar-upload" className="settings-wa-avatar-cam" title="Change photo">
+                        {isUpdatingProfile ? (
+                            <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                            <Camera className="w-4 h-4" />
+                        )}
+                        <input
+                            type="file"
+                            id="avatar-upload"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            disabled={isUpdatingProfile}
+                        />
+                    </label>
                 </div>
-                <div className="px-8 pb-10 -mt-16 relative">
-                    <div className="flex flex-col sm:flex-row items-end gap-6 mb-10">
-                        <div className="relative group">
-                            <div className="avatar">
-                                <div className="w-40 h-40 rounded-[2rem] ring-[12px] ring-base-100 shadow-2xl overflow-hidden transition-transform group-hover:scale-95 duration-500">
-                                    <img src={authUser?.profilePic || defaultImg} alt={authUser?.fullName} className="object-cover w-full h-full" />
-                                </div>
-                            </div>
-                            <label
-                                htmlFor="avatar-upload"
-                                className={`absolute inset-0 flex items-center justify-center bg-black/60 rounded-[2rem] opacity-0 group-hover:opacity-100 transition-all duration-500 cursor-pointer overflow-hidden backdrop-blur-sm
-                                ${isUpdatingProfile ? "opacity-100" : ""}`}
-                            >
-                                <div className="p-4 bg-white/20 backdrop-blur-xl rounded-2xl border border-white/30 shadow-2xl scale-75 group-hover:scale-100 transition-transform duration-500">
-                                    <Camera className="w-8 h-8 text-white" />
-                                </div>
-                                <input type="file" id="avatar-upload" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isUpdatingProfile} />
-                            </label>
-                            {isUpdatingProfile && (
-                                <div className="absolute -bottom-2 -right-2 bg-primary text-primary-content p-2 rounded-xl shadow-xl animate-bounce">
-                                    <span className="loading loading-spinner loading-xs"></span>
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex-1 pb-2 text-center sm:text-left">
-                            <h3 className="text-xl font-black tracking-tight mb-0.5">{authUser?.fullName}</h3>
-                            <div className="flex items-center justify-center sm:justify-start gap-1.5">
-                                <span className="badge badge-primary font-bold px-2 py-1 rounded-md text-[9px] h-fit">Online</span>
-                                <p className="text-base-content/50 font-bold text-[10px] tracking-wide">{authUser?.email}</p>
-                            </div>
-                        </div>
-                    </div>
+                <h3>{authUser?.fullName}</h3>
+                <p className="about">{authUser?.about || "Hey there! I am using ChatAppey"}</p>
+            </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="p-4 bg-base-200/50 rounded-2xl space-y-2 group border border-transparent hover:border-primary/20 transition-all duration-300">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1.5 bg-blue-500/10 rounded-lg"><User className="w-3.5 h-3.5 text-blue-500" /></div>
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-base-content/40">Full Name</span>
-                                </div>
-                                <button onClick={() => { setEditedName(authUser?.fullName || ''); setIsEditPopupOpen(true); }} className="btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10 hover:text-primary">
-                                    <Edit className="w-3 h-3" />
-                                </button>
-                            </div>
-                            <p className="text-sm font-black tracking-tight pl-1">{authUser?.fullName}</p>
-                        </div>
-                        <div className="p-4 bg-base-200/50 rounded-2xl space-y-2 group border border-transparent hover:border-orange-500/20 transition-all duration-300">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1.5 bg-orange-500/10 rounded-lg"><Mail className="w-3.5 h-3.5 text-orange-500" /></div>
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-base-content/40">Email Address</span>
-                                </div>
-                                <Lock className="w-3.5 h-3.5 text-base-content/20" />
-                            </div>
-                            <p className="text-sm font-black tracking-tight text-base-content/50 pl-1">{authUser?.email}</p>
-                        </div>
-                        <div className="p-4 bg-base-200/50 rounded-2xl space-y-2 group md:col-span-2 border border-transparent hover:border-purple-500/20 transition-all duration-300">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1.5 bg-purple-500/10 rounded-lg"><Info className="w-3.5 h-3.5 text-purple-500" /></div>
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-base-content/40">About Me</span>
-                                </div>
-                                <button onClick={() => { setEditedAbout(authUser?.about || ''); setIsEditAboutPopupOpen(true); }} className="btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-100 transition-all hover:bg-primary/10 hover:text-primary">
-                                    <Edit className="w-3 h-3" />
-                                </button>
-                            </div>
-                            <p className="text-[11px] text-base-content/70 font-medium leading-relaxed pl-1 italic">
-                                {authUser?.about || "Describe who you are..."}
-                            </p>
-                        </div>
-                    </div>
+            <p className="settings-wa-group-label">Your info</p>
+            <div className="settings-wa-rows">
+                <button
+                    type="button"
+                    className="settings-wa-row"
+                    onClick={() => {
+                        setEditedName(authUser?.fullName || "");
+                        setIsEditPopupOpen(true);
+                    }}
+                >
+                    <span className="settings-wa-row-icon" style={{ background: "#00a884" }}>
+                        <User className="w-4 h-4" />
+                    </span>
+                    <span className="settings-wa-row-body">
+                        <span className="title block">Name</span>
+                        <span className="sub block">{authUser?.fullName}</span>
+                    </span>
+                    <Edit className="chev w-4 h-4" />
+                </button>
+
+                <div className="settings-wa-row" role="group">
+                    <span className="settings-wa-row-icon" style={{ background: "#53bdeb" }}>
+                        <Mail className="w-4 h-4" />
+                    </span>
+                    <span className="settings-wa-row-body">
+                        <span className="title block">Email</span>
+                        <span className="sub block">{authUser?.email}</span>
+                    </span>
+                    <Lock className="chev w-4 h-4" />
                 </div>
+
+                <button
+                    type="button"
+                    className="settings-wa-row"
+                    onClick={() => {
+                        setEditedAbout(authUser?.about || "");
+                        setIsEditAboutPopupOpen(true);
+                    }}
+                >
+                    <span className="settings-wa-row-icon" style={{ background: "#8696a0" }}>
+                        <Info className="w-4 h-4" />
+                    </span>
+                    <span className="settings-wa-row-body">
+                        <span className="title block">About</span>
+                        <span className="sub block">
+                            {authUser?.about || "Hey there! I am using ChatAppey"}
+                        </span>
+                    </span>
+                    <Edit className="chev w-4 h-4" />
+                </button>
             </div>
         </div>
     );
 
     const renderAppearance = () => (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex flex-col gap-0.5 px-1">
-                <h2 className="text-lg font-black tracking-tighter">Appearance</h2>
-                <p className="text-[10px] text-base-content/60 font-medium">Personalize your chat experience with vibrant themes</p>
+        <div className="space-y-4 animate-in fade-in duration-300 px-1">
+            <div className="settings-wa-section-head !px-0">
+                <h2>Appearance</h2>
+                <p>Themes, wallpaper, and chat look</p>
             </div>
 
             <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30 group-focus-within:text-primary transition-colors" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30" />
                 <input
                     type="text"
-                    placeholder="Search for themes..."
+                    placeholder="Search themes"
                     value={searchTheme}
                     onChange={(e) => setSearchTheme(e.target.value)}
-                    className="input input-bordered w-full pl-11 h-10 rounded-xl bg-base-100 border-base-300 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-xs font-bold"
+                    className="input input-bordered w-full pl-11 h-11 rounded-xl bg-base-200/60 border-base-300 focus:border-[#008069] focus:outline-none text-sm"
                 />
             </div>
 
-            <div className="space-y-12 pb-10">
+            <div className="space-y-10 pb-6">
                 {Object.entries(THEME_GROUPS).map(([category, members]) => {
                     const filteredMembers = members.filter(m => filteredThemes.includes(m));
                     if (filteredMembers.length === 0) return null;
 
                     return (
-                        <div key={category} className="space-y-5">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-base-content/40 pl-2">{category}</h3>
-                            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                        <div key={category} className="space-y-3">
+                            <h3 className="settings-wa-group-label !px-0 !pt-0">{category}</h3>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2.5">
                                 {filteredMembers.map((t) => (
                                     <button
                                         key={t}
                                         onClick={() => setTheme(t)}
-                                        className={`group relative flex flex-col gap-1.5 p-1.5 rounded-xl transition-all duration-500 border-2 ${theme === t
-                                            ? "border-primary bg-primary/10 shadow-md scale-102"
-                                            : "border-transparent bg-base-100 hover:bg-base-200 shadow-sm hover:shadow-md hover:-translate-y-0.5"
+                                        className={`group relative flex flex-col gap-1.5 p-1.5 rounded-xl transition-all border-2 ${theme === t
+                                            ? "border-[#008069] bg-[#008069]/10"
+                                            : "border-transparent bg-base-200/40 hover:bg-base-200"
                                             }`}
                                     >
-                                        <div className="relative aspect-[1/1] w-full rounded-lg overflow-hidden shadow-inner" data-theme={t}>
+                                        <div className="relative aspect-square w-full rounded-lg overflow-hidden" data-theme={t}>
                                             <div className="absolute inset-0 bg-base-100"></div>
                                             <div className="absolute inset-0 grid grid-cols-2 gap-0.5 p-1.5">
-                                                <div className="rounded-md bg-primary shadow-sm"></div>
-                                                <div className="rounded-md bg-secondary shadow-sm"></div>
-                                                <div className="rounded-md bg-accent shadow-sm"></div>
-                                                <div className="rounded-md bg-neutral shadow-sm"></div>
+                                                <div className="rounded-md bg-primary"></div>
+                                                <div className="rounded-md bg-secondary"></div>
+                                                <div className="rounded-md bg-accent"></div>
+                                                <div className="rounded-md bg-neutral"></div>
                                             </div>
-                                            {theme === t && (
-                                                <div className="absolute inset-0 bg-primary/20 backdrop-blur-[1px] flex items-center justify-center animate-in fade-in zoom-in duration-300">
-                                                    <div className="bg-primary text-primary-content p-1 rounded-full shadow-lg ring-1 ring-white/20">
-                                                        <ChevronRight className="w-3 h-3 rotate-90" />
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
-                                        <span className={`text-[9px] font-black truncate text-center px-0.5 tracking-tight ${theme === t ? "text-primary" : "text-base-content/70"}`}>
+                                        <span className={`text-[10px] font-semibold truncate text-center ${theme === t ? "text-[#008069]" : "text-base-content/70"}`}>
                                             {t.charAt(0).toUpperCase() + t.slice(1)}
                                         </span>
                                     </button>
@@ -499,9 +507,9 @@ const SettingsPage = () => {
 
     const renderPrivacy = () => (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex flex-col gap-0.5 px-1">
-                <h2 className="text-lg font-black tracking-tighter">Privacy</h2>
-                <p className="text-[10px] text-base-content/60 font-medium">Take full control over your digital footprint</p>
+            <div className="settings-wa-section-head !px-0">
+                <h2>Privacy</h2>
+                <p>Control who can see your info</p>
             </div>
 
             <div className="card bg-base-100 border border-base-300 shadow-md rounded-[1.5rem] overflow-hidden">
@@ -629,9 +637,9 @@ const SettingsPage = () => {
 
     const renderSecurity = () => (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex flex-col gap-0.5 px-1">
-                <h2 className="text-lg font-black tracking-tighter">Security</h2>
-                <p className="text-[10px] text-base-content/60 font-medium">Advanced protection for your personal account</p>
+            <div className="settings-wa-section-head !px-0">
+                <h2>Security</h2>
+                <p>Password and account protection</p>
             </div>
 
             <div className={`card bg-base-100 border border-base-300 shadow-md p-5 rounded-[1.5rem] transition-all duration-500 ${showChangePass ? 'ring-2 ring-primary/10 border-primary/30' : ''}`}>
@@ -716,9 +724,9 @@ const SettingsPage = () => {
 
     const renderNotifications = () => (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="flex flex-col gap-0.5 px-1">
-                <h2 className="text-lg font-black tracking-tighter">Notifications</h2>
-                <p className="text-[10px] text-base-content/60 font-medium">Don't miss a single beat of the conversation</p>
+            <div className="settings-wa-section-head !px-0">
+                <h2>Notifications</h2>
+                <p>Message alerts and sounds</p>
             </div>
 
             <div className="card bg-base-100 border border-base-300 shadow-md rounded-[1.5rem] overflow-hidden">
@@ -788,37 +796,19 @@ const SettingsPage = () => {
     );
 
     return (
-        <div className="min-h-screen pl-0 md:pl-20 pb-navbar md:pb-10 bg-base-200/40 selection:bg-primary selection:text-primary-content">
-            <div className="container mx-auto px-4 py-8 max-w-6xl">
-                <div className="flex flex-col md:flex-row gap-8 items-start">
-                    {/* Desktop Sidebar */}
-                    <div className="hidden md:block">
-                        {renderSidebar()}
-                    </div>
+        <div className="settings-wa pl-0 md:pl-20">
+            <div className="settings-wa-shell">
+                <header className="settings-wa-topbar">
+                    <h1>Settings</h1>
+                </header>
 
-                    {/* Mobile Navigation */}
-                    <div className="md:hidden w-full flex overflow-x-auto gap-2 pb-4 scrollbar-none snap-x mask-fade-right">
-                        {SETTINGS_TABS.map((tab) => {
-                            const Icon = tab.icon;
-                            return (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl snap-center whitespace-nowrap transition-all duration-300 ${activeTab === tab.id
-                                        ? "bg-primary text-primary-content shadow-lg shadow-primary/30 font-black scale-102"
-                                        : "bg-base-100 text-base-content/50 border border-base-300 text-xs font-bold"
-                                        }`}
-                                >
-                                    <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
-                                    <span className="text-xs">{tab.label}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                {renderMobileTabs()}
 
-                    {/* Content Area */}
-                    <div className="flex-1 min-w-0 w-full mb-12">
-                        <div className="max-w-4xl">
+                <div className="settings-wa-layout">
+                    {renderSidebar()}
+
+                    <div className="settings-wa-main">
+                        <div className="settings-wa-panel">
                             {activeTab === 'profile' && renderProfile()}
                             {activeTab === 'appearance' && renderAppearance()}
                             {activeTab === 'privacy' && renderPrivacy()}
@@ -830,49 +820,78 @@ const SettingsPage = () => {
                 </div>
             </div>
 
-            {/* Modals with ultra-modern design */}
             {isEditPopupOpen && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200] p-6 animate-in fade-in duration-300">
-                    <div className="bg-base-100 rounded-[3rem] p-8 w-full max-w-md shadow-[0_48px_96px_-16px_rgba(0,0,0,0.5)] border border-primary/20 animate-in zoom-in-95 duration-500">
-                        <h3 className="text-2xl font-black tracking-tighter mb-8 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Update Status Name</h3>
-                        <div className="relative mb-8 group">
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-[200] p-0 sm:p-6">
+                    <div className="bg-base-100 rounded-t-3xl sm:rounded-2xl p-6 w-full max-w-md shadow-2xl border border-base-300">
+                        <h3 className="text-lg font-bold tracking-tight mb-4 text-[#008069]">Edit name</h3>
+                        <div className="relative mb-5">
                             <input
                                 type="text"
                                 value={editedName}
                                 autoFocus
                                 onChange={(e) => setEditedName(e.target.value)}
-                                className="input input-bordered w-full h-14 rounded-2xl pr-16 text-lg font-bold bg-base-200 border-none focus:ring-8 focus:ring-primary/10 transition-all"
-                                placeholder="Your vibrant name..."
+                                className="input input-bordered w-full h-12 rounded-xl pr-14 bg-base-200 border-none focus:outline-none focus:ring-2 focus:ring-[#008069]/30"
+                                placeholder="Your name"
                             />
-                            <button onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)} className="absolute right-4 top-1/2 -translate-y-1/2 btn btn-ghost btn-md btn-circle text-2xl hover:bg-primary/20 hover:scale-125 transition-all">😊</button>
+                            <button
+                                type="button"
+                                onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-circle text-xl"
+                            >
+                                😊
+                            </button>
                         </div>
                         {isEmojiPickerOpen && (
-                            <div className="mb-8 rounded-[2rem] overflow-hidden shadow-2xl animate-in slide-in-from-top-4 duration-500 ring-4 ring-primary/5">
-                                <EmojiPicker onEmojiClick={(e) => setEditedName(p => p + e.emoji)} width="100%" height={350} searchDisabled />
+                            <div className="mb-5 rounded-2xl overflow-hidden border border-base-300">
+                                <EmojiPicker onEmojiClick={(e) => setEditedName(p => p + e.emoji)} width="100%" height={300} searchDisabled />
                             </div>
                         )}
-                        <div className="flex gap-3">
-                            <button onClick={() => { setIsEditPopupOpen(false); setIsEmojiPickerOpen(false); }} className="btn btn-ghost btn-sm flex-1 h-11 rounded-xl font-black tracking-tight">Cancel</button>
-                            <button onClick={async () => { await updateName(editedName); setIsEditPopupOpen(false); }} className="btn btn-primary btn-sm flex-[2] h-11 rounded-xl font-black tracking-tight shadow-lg shadow-primary/20">Save Identity</button>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => { setIsEditPopupOpen(false); setIsEmojiPickerOpen(false); }}
+                                className="btn btn-ghost flex-1 rounded-xl font-semibold"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => { await updateName(editedName); setIsEditPopupOpen(false); }}
+                                className="btn flex-[1.4] rounded-xl font-semibold text-white border-none bg-[#008069] hover:bg-[#006e5a]"
+                            >
+                                Save
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
 
             {isEditAboutPopupOpen && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200] p-6 animate-in fade-in duration-300">
-                    <div className="bg-base-100 rounded-[3rem] p-8 w-full max-w-md shadow-[0_48px_96px_-16px_rgba(0,0,0,0.5)] border border-purple-500/20 animate-in zoom-in-95 duration-500">
-                        <h3 className="text-2xl font-black tracking-tighter mb-8 bg-gradient-to-r from-purple-500 to-primary bg-clip-text text-transparent">Tell Your Story</h3>
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-[200] p-0 sm:p-6">
+                    <div className="bg-base-100 rounded-t-3xl sm:rounded-2xl p-6 w-full max-w-md shadow-2xl border border-base-300">
+                        <h3 className="text-lg font-bold tracking-tight mb-4 text-[#008069]">About</h3>
                         <textarea
                             value={editedAbout}
                             autoFocus
                             onChange={(e) => setEditedAbout(e.target.value)}
-                            className="textarea textarea-bordered w-full h-40 rounded-[2rem] mb-8 text-sm font-medium bg-base-200 border-none focus:ring-8 focus:ring-purple-500/10 transition-all p-6 leading-relaxed resize-none"
-                            placeholder="Share a thought, a quote, or just a vibe..."
+                            className="textarea textarea-bordered w-full h-32 rounded-xl mb-5 text-sm bg-base-200 border-none focus:outline-none focus:ring-2 focus:ring-[#008069]/30 resize-none"
+                            placeholder="Hey there! I am using ChatAppey"
                         />
-                        <div className="flex gap-3">
-                            <button onClick={() => setIsEditAboutPopupOpen(false)} className="btn btn-ghost btn-sm flex-1 h-11 rounded-xl font-black tracking-tight">Cancel</button>
-                            <button onClick={async () => { await updateAbout(editedAbout); setIsEditAboutPopupOpen(false); }} className="btn btn-primary btn-sm bg-purple-500 hover:bg-purple-600 border-none flex-[2] h-11 rounded-xl font-black tracking-tight shadow-lg shadow-purple-500/20">Update Bio</button>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditAboutPopupOpen(false)}
+                                className="btn btn-ghost flex-1 rounded-xl font-semibold"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => { await updateAbout(editedAbout); setIsEditAboutPopupOpen(false); }}
+                                className="btn flex-[1.4] rounded-xl font-semibold text-white border-none bg-[#008069] hover:bg-[#006e5a]"
+                            >
+                                Save
+                            </button>
                         </div>
                     </div>
                 </div>

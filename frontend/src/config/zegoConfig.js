@@ -1,93 +1,80 @@
 // ZegoCloud Configuration
-// Documentation: https://www.zegocloud.com/docs/uikit/callkit-react/quick-start
+// Docs: https://www.zegocloud.com/docs/uikit/callkit-react/quick-start
+// Get AppID + ServerSecret from: https://console.zegocloud.com → Project → AppID / ServerSecret
 
-// Get configuration from environment or use defaults
 const getAppID = () => {
-    const envAppID = import.meta.env.VITE_ZEGO_APP_ID;
-    if (envAppID) {
-        return typeof envAppID === 'string' ? parseInt(envAppID, 10) : envAppID;
-    }
-    return 1225819675; // Default AppID
+  const raw = import.meta.env.VITE_ZEGO_APP_ID;
+  if (raw == null || String(raw).trim() === "") return null;
+  const n = typeof raw === "string" ? parseInt(raw, 10) : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 };
 
 const getServerSecret = () => {
-    const envSecret = import.meta.env.VITE_ZEGO_SERVER_SECRET;
-    return envSecret || "1ea02fb5bb02030b33c9810b061704c5"; // Default ServerSecret
+  const raw = import.meta.env.VITE_ZEGO_SERVER_SECRET;
+  if (!raw || typeof raw !== "string") return null;
+  const secret = raw.trim();
+  return secret.length >= 32 ? secret : null;
 };
 
 export const ZEGO_CONFIG = {
-    appID: getAppID(),
-    serverSecret: getServerSecret(),
+  appID: getAppID(),
+  serverSecret: getServerSecret(),
 };
 
-// Validate configuration
+/** True when both credentials are present and look valid */
+export const isZegoConfigured = () =>
+  typeof ZEGO_CONFIG.appID === "number" &&
+  typeof ZEGO_CONFIG.serverSecret === "string";
+
 export const validateZegoConfig = () => {
-    const { appID, serverSecret } = ZEGO_CONFIG;
+  if (!isZegoConfigured()) {
+    console.error(
+      "[Zego] Missing credentials. Set VITE_ZEGO_APP_ID and VITE_ZEGO_SERVER_SECRET in frontend/.env then restart Vite."
+    );
+    return false;
+  }
 
-    if (!appID || typeof appID !== 'number') {
-        console.error('Invalid ZegoCloud AppID:', appID);
-        return false;
-    }
-
-    if (!serverSecret || typeof serverSecret !== 'string' || serverSecret.length === 0) {
-        console.error('Invalid ZegoCloud ServerSecret');
-        return false;
-    }
-
-    console.log('✅ ZegoCloud configuration valid:', {
-        appID,
-        serverSecretLength: serverSecret.length,
-        serverSecretPreview: serverSecret.substring(0, 8) + '...'
-    });
-
-    return true;
+  console.log("✅ ZegoCloud configuration loaded:", {
+    appID: ZEGO_CONFIG.appID,
+    serverSecretLength: ZEGO_CONFIG.serverSecret.length,
+  });
+  return true;
 };
 
-// Default call configuration matching user requirements
-export const getCallConfig = (userID, userName, callType = 'video') => {
-    const isAudioOnly = callType === 'audio';
+export const getCallConfig = (userID, userName, callType = "video") => {
+  const isAudioOnly = callType === "audio";
+  const isMobile =
+    /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+    window.innerWidth < 768;
 
-    // Detect if mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
-
-    return {
-        turnOnMicrophoneWhenJoining: true,
-        turnOnCameraWhenJoining: !isAudioOnly, // Turn off camera for audio calls
-        showMyCameraToggleButton: !isAudioOnly, // Hide camera button for audio calls
-        showMyMicrophoneToggleButton: true,
-        showAudioVideoSettingsButton: !isMobile, // Hide on mobile for cleaner UI
-        showScreenSharingButton: !isMobile && !isAudioOnly, // Hide screen sharing on mobile and for audio calls
-        showTextChat: false, // Disable chat for cleaner UI
-        showUserList: false, // Hide user list
-        maxUsers: 2,
-        layout: isMobile ? "Sidebar" : "Auto", // Better layout for mobile
-        showLayoutButton: false,
-        showNonVideoUser: true,
-        showOnlyAudioUser: true,
-        showPinButton: !isMobile,
-        showRoomTimer: !isMobile,
-
-        // Mobile video optimization
-        videoResolutionDefault: isMobile ? "360p" : "720p",
-
-        scenario: {
-            mode: "OneONoneCall",
-            config: {
-                role: "Host",
-            },
-        },
-
-        // Responsive styling
-        branding: {
-            logoURL: ""
-        },
-        showLeavingView: true,
-    };
+  return {
+    turnOnMicrophoneWhenJoining: true,
+    turnOnCameraWhenJoining: !isAudioOnly,
+    showMyCameraToggleButton: !isAudioOnly,
+    showMyMicrophoneToggleButton: !isAudioOnly,
+    showAudioVideoSettingsButton: false,
+    showScreenSharingButton: false,
+    showTextChat: false,
+    showUserList: false,
+    maxUsers: 2,
+    layout: "Auto",
+    showLayoutButton: false,
+    showNonVideoUser: true,
+    showOnlyAudioUser: true,
+    showPinButton: false,
+    showRoomTimer: !isAudioOnly,
+    showLeavingView: false,
+    showPreJoinView: false,
+    videoResolutionDefault: isMobile ? "360p" : "720p",
+    scenario: {
+      mode: "OneONoneCall",
+      config: { role: "Host" },
+    },
+    branding: { logoURL: "" },
+  };
 };
 
-// Generate a unique room ID for each call
 export const generateRoomID = (user1Id, user2Id) => {
-    // Sort IDs to ensure same room ID regardless of who initiates
-    const ids = [user1Id, user2Id].sort();
-    return `call_${ids[0]}_${ids[1]}_${Date.now()}`;
+  const ids = [user1Id, user2Id].sort();
+  return `call_${ids[0]}_${ids[1]}_${Date.now()}`;
 };

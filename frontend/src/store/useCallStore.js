@@ -10,17 +10,19 @@ export const useCallStore = create((set, get) => ({
     caller: null,
     receiver: null,
     incomingCall: null,
-    callStatus: 'idle', // 'idle', 'ringing', 'connecting', 'connected'
+    callStatus: 'idle', // idle | calling | ringing | connecting | connected | reconnecting
     isMuted: false,
     isVideoOff: false,
+    isSpeakerOn: false,
     callStartTime: null,
-    roomID: null, // ZegoCloud room ID
-    zegoInstance: null, // ZegoCloud instance reference
-    isMinimized: false, // Track if call window is minimized
-    callHistory: [], // Array of call records
-    isLoadingHistory: false, // Loading state for call history
+    roomID: null,
+    zegoInstance: null,
+    isMinimized: false,
+    callHistory: [],
+    isLoadingHistory: false,
+    /** Summary shown on WhatsApp-style end screen */
+    endedCall: null,
 
-    // Actions
     setIncomingCall: (callData) => set({ incomingCall: callData, callStatus: 'ringing' }),
 
     clearIncomingCall: () => set({ incomingCall: null, callStatus: 'idle' }),
@@ -31,7 +33,6 @@ export const useCallStore = create((set, get) => ({
 
     setCallStatus: (status) => {
         set({ callStatus: status });
-        // Track when call actually connected
         if (status === 'connected' && !get().callStartTime) {
             set({ callStartTime: Date.now() });
         }
@@ -41,27 +42,75 @@ export const useCallStore = create((set, get) => ({
         isInCall: true,
         callType,
         receiver: user,
-        callStatus: 'connecting',
-        roomID
+        caller: null,
+        callStatus: 'calling',
+        roomID,
+        endedCall: null,
+        isMinimized: false,
     }),
 
     acceptCall: (caller, callType, roomID) => set({
         isInCall: true,
         callType,
         caller,
+        receiver: null,
         callStatus: 'connecting',
         incomingCall: null,
-        roomID
+        roomID,
+        endedCall: null,
+        isMinimized: false,
     }),
 
     toggleMute: () => {
-        const { isMuted } = get();
-        set({ isMuted: !isMuted });
+        const { isMuted, zegoInstance } = get();
+        const next = !isMuted;
+        set({ isMuted: next });
+        try {
+            const authUser = useAuthStore.getState().authUser;
+            const userID = authUser?._id?.toString?.();
+            if (!zegoInstance || !userID) return;
+            if (typeof zegoInstance.turnMicrophoneOn === 'function') {
+                zegoInstance.turnMicrophoneOn(userID, !next);
+            } else if (typeof zegoInstance.muteMicrophone === 'function') {
+                zegoInstance.muteMicrophone(next);
+            }
+        } catch (e) {
+            console.warn('Mute toggle via Zego failed:', e);
+        }
+    },
+
+    toggleSpeaker: () => {
+        const { isSpeakerOn } = get();
+        const next = !isSpeakerOn;
+        set({ isSpeakerOn: next });
+        try {
+            const media = document.querySelectorAll('audio, video');
+            media.forEach((el) => {
+                if (typeof el.setSinkId === 'function') {
+                    // Best-effort: default device when speaker on
+                    el.setSinkId('').catch(() => {});
+                }
+                el.muted = false;
+                el.volume = next ? 1 : 0.85;
+            });
+        } catch (_) {
+            /* ignore */
+        }
     },
 
     toggleVideo: () => {
-        const { isVideoOff } = get();
-        set({ isVideoOff: !isVideoOff });
+        const { isVideoOff, zegoInstance } = get();
+        const next = !isVideoOff;
+        set({ isVideoOff: next });
+        try {
+            const authUser = useAuthStore.getState().authUser;
+            const userID = authUser?._id?.toString?.();
+            if (zegoInstance && userID && typeof zegoInstance.turnCameraOn === 'function') {
+                zegoInstance.turnCameraOn(userID, !next);
+            }
+        } catch (e) {
+            console.warn('Video toggle via Zego failed:', e);
+        }
     },
 
     toggleMinimize: () => {
@@ -69,94 +118,94 @@ export const useCallStore = create((set, get) => ({
         set({ isMinimized: !isMinimized });
     },
 
-    endCall: async () => {
-        const { zegoInstance, roomID, callStartTime, receiver, caller } = get();
+    dismissEndedCall: () => set({ endedCall: null }),
 
-        console.log('=== ENDING CALL ===');
+    /**
+     * @param {string} [reason] ended | declined | rejected | missed | busy | unavailable
+     */
+    endCall: async (reason = 'ended') => {
+        const {
+            zegoInstance,
+            roomID,
+            callStartTime,
+            receiver,
+            caller,
+            callType,
+            incomingCall,
+        } = get();
 
-        // Calculate call duration
         let duration = 0;
         if (callStartTime) {
             duration = Math.floor((Date.now() - callStartTime) / 1000);
         }
 
-        // Emit call end event to backend with duration
-        const { socket, authUser } = useAuthStore.getState();
+        const participant =
+            receiver ||
+            caller ||
+            incomingCall?.fromData ||
+            null;
+
+        const endedCall = participant
+            ? {
+                participant,
+                callType: callType || incomingCall?.callType || 'audio',
+                duration,
+                status: reason,
+                endedAt: Date.now(),
+            }
+            : null;
+
+        const { socket } = useAuthStore.getState();
         const targetId = receiver?._id || caller?._id;
 
         if (socket && targetId && roomID) {
             socket.emit('call:end', {
                 to: targetId,
                 roomID,
-                duration
+                duration,
             });
         }
 
-        // CRITICAL: Stop all media tracks IMMEDIATELY
         if (zegoInstance) {
             try {
-                console.log('🛑 Stopping all media tracks...');
-
-                // Method 1: Stop all getUserMedia streams via browser API
                 navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-                    .then(stream => {
-                        stream.getTracks().forEach(track => {
-                            console.log('Stopping getUserMedia track:', track.kind, track.label);
-                            track.stop();
-                        });
+                    .then((stream) => {
+                        stream.getTracks().forEach((track) => track.stop());
                     })
-                    .catch(() => {
-                        // Ignore errors, streams might already be stopped
-                    });
+                    .catch(() => {});
 
-                // Method 2: Query and stop all media elements
-                const stopAllMediaTracks = () => {
-                    return new Promise((resolve) => {
-                        // Use setTimeout to ensure DOM has updated
-                        setTimeout(() => {
-                            const mediaElements = document.querySelectorAll('video, audio');
-                            console.log(`Found ${mediaElements.length} media elements`);
+                await new Promise((resolve) => {
+                    setTimeout(() => {
+                        document.querySelectorAll('video, audio').forEach((element) => {
+                            if (element.srcObject) {
+                                element.srcObject.getTracks().forEach((track) => track.stop());
+                                element.srcObject = null;
+                            }
+                            try {
+                                element.pause();
+                                element.removeAttribute('src');
+                                element.load();
+                            } catch (_) {
+                                /* ignore */
+                            }
+                        });
+                        resolve();
+                    }, 80);
+                });
 
-                            mediaElements.forEach(element => {
-                                if (element.srcObject) {
-                                    const tracks = element.srcObject.getTracks();
-                                    tracks.forEach(track => {
-                                        console.log('Stopping track:', track.kind, track.label);
-                                        track.stop();
-                                    });
-                                    element.srcObject = null;
-                                }
-                                // Remove the element to force cleanup
-                                if (element.parentNode) {
-                                    element.pause();
-                                    element.removeAttribute('src');
-                                    element.load();
-                                }
-                            });
-                            resolve();
-                        }, 100);
-                    });
-                };
-
-                await stopAllMediaTracks();
-
-                // Method 3: Destroy the ZegoCloud instance (this should release all resources)
-                console.log('Destroying ZegoCloud instance...');
                 try {
-                    await zegoInstance.destroy();
-                } catch (error) {
-                    console.log('ZegoCloud destroy error (might be already destroyed):', error);
+                    if (typeof zegoInstance.hangUp === 'function') {
+                        zegoInstance.hangUp();
+                    }
+                } catch (_) {
+                    /* ignore */
                 }
 
-                // Additional cleanup: Stop all active media stream tracks globally
-                setTimeout(() => {
-                    navigator.mediaDevices.enumerateDevices().then(() => {
-                        // This refreshes the device list and helps release locked devices
-                        console.log('✅ Media devices refreshed');
-                    });
-                }, 200);
-
-                console.log('✅ All media cleanup complete');
+                try {
+                    await zegoInstance.destroy();
+                } catch (_) {
+                    /* ignore */
+                }
             } catch (error) {
                 console.error('Error during media cleanup:', error);
             }
@@ -170,15 +219,16 @@ export const useCallStore = create((set, get) => ({
             callStatus: 'idle',
             isMuted: false,
             isVideoOff: false,
+            isSpeakerOn: false,
             incomingCall: null,
             callStartTime: null,
             roomID: null,
             zegoInstance: null,
-            isMinimized: false
+            isMinimized: false,
+            endedCall,
         });
     },
 
-    // Fetch call history from backend
     fetchCallHistory: async (filter = 'all') => {
         set({ isLoadingHistory: true });
         try {
@@ -190,5 +240,5 @@ export const useCallStore = create((set, get) => ({
         } finally {
             set({ isLoadingHistory: false });
         }
-    }
+    },
 }));

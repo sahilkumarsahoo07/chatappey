@@ -107,6 +107,32 @@ const statusSchema = new mongoose.Schema(
       default: "",
       maxlength: 500,
     },
+    /** Optional Instagram-style story soundtrack */
+    music: {
+      id: { type: String, default: "" },
+      title: { type: String, default: "" },
+      artist: { type: String, default: "" },
+      thumbnail: { type: String, default: "" },
+      audioUrl: { type: String, default: "" },
+      duration: { type: Number, default: 0 },
+      quality: { type: String, default: "" },
+      sourceUrl: { type: String, default: "" },
+      /** Clip selection (seconds) */
+      startOffset: { type: Number, default: 0 },
+      clipDuration: { type: Number, default: 15 },
+      /** Sticker layout */
+      sticker: {
+        x: { type: Number, default: 0.5 },
+        y: { type: Number, default: 0.72 },
+        scale: { type: Number, default: 1 },
+        rotation: { type: Number, default: 0 },
+        theme: {
+          type: String,
+          enum: ["classic", "dark", "neon", "minimal"],
+          default: "classic",
+        },
+      },
+    },
     viewers: {
       type: [viewerSchema],
       default: [],

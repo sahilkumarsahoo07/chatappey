@@ -228,7 +228,7 @@ export const useStatusStore = create((set, get) => ({
     });
   },
 
-  uploadStatus: async ({ file, caption = "", privacy = "contacts", excludedUserIds, includedUserIds }) => {
+  uploadStatus: async ({ file, caption = "", privacy = "contacts", excludedUserIds, includedUserIds, music }) => {
     if (get().isUploading) {
       toast.error("An upload is already in progress");
       return;
@@ -247,6 +247,7 @@ export const useStatusStore = create((set, get) => ({
           privacy,
           excludedUserIds,
           includedUserIds,
+          music: music?.audioUrl ? music : undefined,
         },
         (p) => set({ uploadProgress: Math.max(5, Math.min(99, p)) })
       );

@@ -1,0 +1,683 @@
+/* Instagram-style Add music sheet */
+
+.story-music-sheet {
+  --ig-pink: #ff2d55;
+  --ig-bg: #121212;
+  --ig-panel: #121212;
+  --ig-elev: #1a1a1a;
+  --ig-chip: #262626;
+  --ig-muted: #8e8e8e;
+  --ig-line: rgba(255, 255, 255, 0.08);
+
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.65);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  animation: smFade 0.18s ease;
+}
+
+@keyframes smFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.story-music-panel {
+  position: relative;
+  z-index: 10;
+  background: var(--ig-panel);
+  color: #fff;
+  border-radius: 18px 18px 0 0;
+  max-height: min(94dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  animation: smUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  overflow: hidden;
+}
+
+@keyframes smUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 640px) {
+  .story-music-sheet {
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .story-music-panel {
+    width: min(420px, 100%);
+    border-radius: 18px;
+    max-height: 88vh;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  }
+}
+
+.story-music-handle {
+  display: none;
+}
+
+.story-music-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 10px;
+}
+
+.story-music-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.story-music-header-left h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.story-music-header-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--ig-pink);
+}
+
+.story-music-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.story-music-close:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.story-music-search {
+  margin: 0 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--ig-chip);
+  border-radius: 999px;
+  padding: 0 14px;
+  height: 40px;
+}
+
+.story-music-search svg {
+  color: var(--ig-muted);
+  flex-shrink: 0;
+}
+
+.story-music-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 400;
+}
+
+.story-music-search input::placeholder {
+  color: var(--ig-muted);
+}
+
+.story-music-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--ig-muted);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.story-music-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.story-music-section {
+  padding: 8px 0 4px;
+}
+
+.story-music-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 8px;
+}
+
+.story-music-section h4,
+.story-music-section-title {
+  margin: 0;
+  padding: 0 16px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ig-muted);
+}
+
+.story-music-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.story-music-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.story-music-row.is-selected {
+  background: rgba(255, 45, 85, 0.08);
+}
+
+.story-music-cover {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #2a2a2a;
+  flex-shrink: 0;
+}
+
+.story-music-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.story-music-meta .title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fafafa;
+}
+
+.story-music-meta .sub {
+  font-size: 0.8125rem;
+  color: var(--ig-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+
+.story-music-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ig-chip);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.story-music-play:active {
+  transform: scale(0.94);
+}
+
+.story-music-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--ig-chip);
+  border: none;
+  color: #fafafa;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin: 0 8px 8px 0;
+  cursor: pointer;
+}
+
+.story-music-chip:active {
+  opacity: 0.85;
+}
+
+.story-music-clear-link {
+  border: none;
+  background: transparent;
+  color: var(--ig-muted);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* —— Clip editor (Instagram bottom panel) —— */
+.story-music-preview {
+  flex-shrink: 0;
+  border-top: 1px solid var(--ig-line);
+  padding: 10px 16px 16px;
+  background: var(--ig-elev);
+}
+
+.story-music-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.story-music-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -6px;
+  border: none;
+  background: transparent;
+  color: #fafafa;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.story-music-back:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.story-music-preview-dismiss {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--ig-chip);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.story-music-preview-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.story-music-preview-top .story-music-cover {
+  width: 48px;
+  height: 48px;
+}
+
+/* Dense Instagram-style waveform */
+.story-music-wave {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2px;
+  height: 36px;
+  margin: 14px 0 6px;
+  padding: 0 2px;
+}
+
+.story-music-wave span {
+  flex: 1;
+  max-width: 4px;
+  min-width: 2px;
+  border-radius: 1px;
+  background: var(--ig-pink);
+  transform-origin: bottom center;
+  animation: smEq 0.85s ease-in-out infinite alternate;
+}
+
+.story-music-wave span:nth-child(odd) {
+  animation-duration: 0.7s;
+}
+.story-music-wave span:nth-child(3n) {
+  animation-delay: 0.12s;
+}
+.story-music-wave span:nth-child(4n) {
+  animation-delay: 0.22s;
+}
+.story-music-wave span:nth-child(5n) {
+  animation-delay: 0.08s;
+}
+
+.story-music-wave.is-paused span {
+  animation: none;
+  opacity: 0.4;
+}
+
+@keyframes smEq {
+  from {
+    transform: scaleY(0.35);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.story-music-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--ig-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+}
+
+.story-music-clips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 10px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.story-music-clips::-webkit-scrollbar {
+  display: none;
+}
+
+.story-music-clips button {
+  flex: 0 0 auto;
+  border: none;
+  background: var(--ig-chip);
+  color: #fafafa;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.story-music-clips button.is-active {
+  background: var(--ig-pink);
+  color: #fff;
+}
+
+.story-music-trim {
+  margin: 2px 0 12px;
+}
+
+.story-music-trim-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--ig-muted);
+  margin-bottom: 8px;
+}
+
+.story-music-trim-label strong {
+  color: #fafafa;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Instagram pink range */
+.story-music-progress {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+}
+
+.story-music-progress::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--ig-pink) 0%,
+    var(--ig-pink) var(--progress, 0%),
+    #fff var(--progress, 0%),
+    #fff 100%
+  );
+}
+
+.story-music-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ig-pink);
+  border: 2px solid #fff;
+  margin-top: -7.5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+
+.story-music-progress::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.story-music-progress::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--ig-pink);
+}
+
+.story-music-progress::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ig-pink);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+
+.story-music-use {
+  width: 100%;
+  margin-top: 4px;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: var(--ig-pink);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+.story-music-use:active {
+  filter: brightness(0.95);
+  transform: scale(0.995);
+}
+
+.story-music-skel {
+  display: flex;
+  gap: 12px;
+  padding: 10px 16px;
+  align-items: center;
+}
+
+.story-music-skel .box {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  background: var(--ig-chip);
+  animation: smPulse 1.1s ease-in-out infinite;
+}
+
+.story-music-skel .lines {
+  flex: 1;
+}
+
+.story-music-skel .line {
+  height: 10px;
+  border-radius: 4px;
+  background: var(--ig-chip);
+  margin-bottom: 8px;
+  animation: smPulse 1.1s ease-in-out infinite;
+}
+
+.story-music-skel .line.short {
+  width: 42%;
+}
+
+@keyframes smPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.story-music-empty {
+  padding: 8px 16px 16px;
+  font-size: 0.875rem;
+  color: var(--ig-muted);
+}
+
+/* Music sticker (on story canvas) */
+.music-sticker {
+  position: absolute;
+  z-index: 20;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  transform-origin: center center;
+}
+
+.music-sticker:active {
+  cursor: grabbing;
+}
+
+.music-sticker-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 999px;
+  min-width: 160px;
+  max-width: 240px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.music-sticker-inner.theme-classic {
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+}
+
+.music-sticker-inner.theme-dark {
+  background: rgba(18, 18, 18, 0.92);
+  color: #fff;
+}
+
+.music-sticker-inner.theme-neon {
+  background: linear-gradient(135deg, #ff2d55, #ff6b35);
+  color: #fff;
+}
+
+.music-sticker-inner.theme-minimal {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.music-sticker-cover {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.music-sticker-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.music-sticker-text .t {
+  font-size: 0.78rem;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.music-sticker-text .a {
+  font-size: 0.68rem;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.music-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.music-eq i {
+  width: 2.5px;
+  border-radius: 1px;
+  background: currentColor;
+  animation: smEq 0.7s ease-in-out infinite alternate;
+}
+
+.music-eq i:nth-child(1) {
+  height: 40%;
+}
+.music-eq i:nth-child(2) {
+  height: 80%;
+  animation-delay: 0.1s;
+}
+.music-eq i:nth-child(3) {
+  height: 55%;
+  animation-delay: 0.2s;
+}
+.music-eq.is-paused i {
+  animation: none;
+  opacity: 0.4;
+}

@@ -22,6 +22,8 @@ import { useStoryReactionFx } from "../../hooks/useStoryReactionFx";
 import { haptic } from "../../lib/haptics";
 import { buildQualityUrl, selectFastestMediaUrl } from "../../lib/mediaDelivery";
 import DoubleTapLike from "../DoubleTapLike";
+import MusicSticker from "./MusicSticker";
+import "./storyMusic.css";
 
 const IMAGE_MS = 5000;
 const HOLD_MS = 180; // distinguish tap vs hold
@@ -69,6 +71,8 @@ function StatusViewer() {
   const [mediaSrc, setMediaSrc] = useState("");
 
   const videoRef = useRef(null);
+  const musicRef = useRef(null);
+  const mediaStageRef = useRef(null);
   const holdingRef = useRef(false);
   const holdTimerRef = useRef(null);
   const pausedRef = useRef(false);
@@ -85,6 +89,7 @@ function StatusViewer() {
   const status = group?.statuses?.[viewerStatusIndex];
   const isOwn = !!(group?.isOwn || group?.user?._id === authUser?._id);
   const isVideo = status?.mediaType === "video";
+  const hasMusic = !!(status?.music?.audioUrl);
 
   const { particles, centerHeart, removeParticle } = useStoryReactionFx({
     enabled: isOwn && isViewerOpen && !!status?._id,
@@ -94,7 +99,13 @@ function StatusViewer() {
   const reactionSummary = status?.reactionSummary || {};
   const durationMs = isVideo
     ? Math.min(30000, Math.max(500, (status?.duration || 5) * 1000))
-    : IMAGE_MS;
+    : Math.min(
+        30000,
+        Math.max(
+          IMAGE_MS,
+          (status?.music?.clipDuration || status?.duration || 5) * 1000
+        )
+      );
 
   const totalGroups = viewerGroups.length;
   const totalInGroup = group?.statuses?.length || 0;
@@ -269,6 +280,63 @@ function StatusViewer() {
     mediaReady,
   ]);
 
+  // Story soundtrack — autoplay, pause with hold/sheet, respect mute
+  useEffect(() => {
+    const music = status?.music;
+    const audio = musicRef.current;
+    if (!audio) return;
+
+    audio.pause();
+    audio.removeAttribute("src");
+
+    if (!isViewerOpen || !music?.audioUrl) {
+      audio.load();
+      return;
+    }
+
+    const start = Math.max(0, Number(music.startOffset) || 0);
+    const clip = Math.max(5, Number(music.clipDuration) || 15);
+    audio.src = music.audioUrl;
+    audio.loop = false;
+    audio.muted = muted;
+    audio.currentTime = start;
+
+    const onTime = () => {
+      if (audio.currentTime >= start + clip - 0.05) {
+        audio.pause();
+      }
+    };
+    audio.addEventListener("timeupdate", onTime);
+
+    const tryPlay = () => {
+      if (pausedRef.current || holdingRef.current || document.hidden || muted) return;
+      audio.play().catch(() => {});
+    };
+
+    audio.addEventListener("canplay", tryPlay, { once: true });
+    tryPlay();
+
+    return () => {
+      audio.removeEventListener("timeupdate", onTime);
+      audio.pause();
+    };
+  }, [isViewerOpen, status?._id, status?.music?.audioUrl, muted]);
+
+  useEffect(() => {
+    const audio = musicRef.current;
+    if (!audio || !hasMusic) return;
+    audio.muted = muted;
+    if (muted) {
+      audio.pause();
+      return;
+    }
+    if (!paused && isViewerOpen && !holdingRef.current && !document.hidden) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [muted, paused, isViewerOpen, hasMusic, showViewersPanel]);
+
   // Keep timer/video in sync with React `paused` (comments/reaction focus/viewers)
   useEffect(() => {
     pausedRef.current = paused;
@@ -277,11 +345,13 @@ function StatusViewer() {
         // freeze image progress
       }
       videoRef.current?.pause();
+      musicRef.current?.pause();
     } else if (isViewerOpen && !holdingRef.current && !document.hidden) {
       startRef.current = performance.now();
       videoRef.current?.play().catch(() => {});
+      if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
     }
-  }, [paused, isViewerOpen, isVideo]);
+  }, [paused, isViewerOpen, isVideo, hasMusic, muted]);
 
   // Pause when viewers sheet opens
   useEffect(() => {
@@ -292,13 +362,15 @@ function StatusViewer() {
       pausedRef.current = true;
       setPaused(true);
       videoRef.current?.pause();
+      musicRef.current?.pause();
     } else if (isViewerOpen && !holdingRef.current && !document.hidden) {
       startRef.current = performance.now();
       pausedRef.current = false;
       setPaused(false);
       videoRef.current?.play().catch(() => {});
+      if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
     }
-  }, [showViewersPanel, isViewerOpen, isVideo]);
+  }, [showViewersPanel, isViewerOpen, isVideo, hasMusic, muted]);
 
   // Tab visibility
   useEffect(() => {
@@ -311,16 +383,18 @@ function StatusViewer() {
         pausedRef.current = true;
         setPaused(true);
         videoRef.current?.pause();
+        musicRef.current?.pause();
       } else if (!holdingRef.current && !showViewersPanel) {
         startRef.current = performance.now();
         pausedRef.current = false;
         setPaused(false);
         videoRef.current?.play().catch(() => {});
+        if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
       }
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, [isViewerOpen, isVideo, showViewersPanel]);
+  }, [isViewerOpen, isVideo, showViewersPanel, hasMusic, muted]);
 
   // Keyboard
   useEffect(() => {
@@ -378,6 +452,7 @@ function StatusViewer() {
       pausedRef.current = true;
       setPaused(true);
       videoRef.current?.pause();
+      musicRef.current?.pause();
     }, HOLD_MS);
   }, [isVideo]);
 
@@ -393,7 +468,8 @@ function StatusViewer() {
     pausedRef.current = false;
     setPaused(false);
     videoRef.current?.play().catch(() => {});
-  }, [showViewersPanel]);
+    if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
+  }, [showViewersPanel, hasMusic, muted]);
 
   const onTouchStart = (e) => {
     touchStartX.current = e.touches[0]?.clientX || 0;
@@ -476,7 +552,7 @@ function StatusViewer() {
             <Pause className="w-4 h-4" />
           </span>
         )}
-        {isVideo && (
+        {(isVideo || hasMusic) && (
           <button
             type="button"
             className="p-2 rounded-full hover:bg-white/10"
@@ -529,12 +605,14 @@ function StatusViewer() {
 
       {/* Media stage */}
       <div
+        ref={mediaStageRef}
         className="absolute inset-0 flex items-center justify-center bg-black"
         onPointerDown={beginHold}
         onPointerUp={endHold}
         onPointerLeave={endHold}
         onPointerCancel={endHold}
       >
+        <audio ref={musicRef} preload="auto" playsInline />
         {mediaLoading && !mediaError && (
           <span className="absolute z-10 loading loading-spinner loading-lg text-white/70" />
         )}
@@ -624,6 +702,15 @@ function StatusViewer() {
               draggable={false}
             />
           </DoubleTapLike>
+        )}
+
+        {hasMusic && (
+          <MusicSticker
+            music={status.music}
+            playing={!muted && !paused}
+            editable={false}
+            containerRef={mediaStageRef}
+          />
         )}
 
         {/* Tap zones — leave center + bottom free for double-tap / engagement */}

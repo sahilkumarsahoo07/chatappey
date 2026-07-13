@@ -5,7 +5,7 @@ import { axiosInstance } from "./axios";
  * Uses multipart FormData — media never goes to Mongo as Base64.
  */
 export async function uploadStatusApi(
-  { media, thumbnail, duration, caption, privacy, excludedUserIds, includedUserIds },
+  { media, thumbnail, duration, caption, privacy, excludedUserIds, includedUserIds, music },
   onProgress
 ) {
   const form = new FormData();
@@ -19,6 +19,9 @@ export async function uploadStatusApi(
   }
   if (includedUserIds?.length) {
     form.append("includedUserIds", JSON.stringify(includedUserIds));
+  }
+  if (music?.audioUrl) {
+    form.append("music", JSON.stringify(music));
   }
 
   const res = await axiosInstance.post("/status/upload", form, {
