@@ -144,10 +144,11 @@ export const useChatStore = create((set, get) => ({
   getMessages: async (userId, options = {}) => {
     if (!userId) return;
 
-    const { before, after, background = false } = options;
-    const isInitial = !before && !after;
+    const { before, after, background = false, reconcile = false } = options;
+    const isInitial = !before && !after && !reconcile;
     const isOlder = Boolean(before);
     const isDelta = Boolean(after);
+    const isReconcile = Boolean(reconcile);
     const requestUserId = String(userId);
 
     const stillOnThisChat = () =>
@@ -175,6 +176,10 @@ export const useChatStore = create((set, get) => ({
         if (newest) {
           await get().getMessages(userId, { after: newest, background: true });
         }
+        // Cache can be stale on ticks — refresh recent page for sent/delivered/read
+        if (stillOnThisChat()) {
+          await get().getMessages(userId, { reconcile: true, background: true });
+        }
         if (stillOnThisChat()) get().markMessagesAsRead(userId);
         return;
       }
@@ -189,6 +194,7 @@ export const useChatStore = create((set, get) => ({
       const params = { limit: PAGE_SIZE };
       if (before) params.before = before;
       if (after) params.after = after;
+      // reconcile: latest page with no cursor — merge statuses into cache
 
       const res = await axiosInstance.get(`/messages/${userId}`, { params });
 
@@ -202,7 +208,7 @@ export const useChatStore = create((set, get) => ({
         parseMessagesResponse(res.data);
 
       let nextMessages;
-      if (isOlder || isDelta) {
+      if (isOlder || isDelta || isReconcile) {
         nextMessages = mergeMessages(get().messages, incoming);
       } else {
         nextMessages = incoming;
@@ -214,7 +220,7 @@ export const useChatStore = create((set, get) => ({
         // API hasMore = more messages older than this page
         hasMoreOlder = Boolean(hasMore);
       }
-      // Delta (after) must NEVER clear hasMoreOlder
+      // Delta / reconcile must NEVER clear hasMoreOlder
 
       const meta = {
         hasMoreOlder,
@@ -675,6 +681,8 @@ export const useChatStore = create((set, get) => ({
         isActivelyViewingConversation(selectedUser._id, selectedUser._id)
       ) {
         get().markMessagesAsRead(selectedUser._id);
+        // Re-sync ticks in case we missed a read receipt while backgrounded
+        get().getMessages(selectedUser._id, { reconcile: true, background: true });
       }
     };
     window.addEventListener("focus", handleActiveState);
@@ -813,36 +821,71 @@ export const useChatStore = create((set, get) => ({
     socket.on("messagesRead", ({ readBy, chatWith, messageIds, readAt }) => {
       const { selectedUser, messages, users } = get();
       const authUser = useAuthStore.getState().authUser;
+      if (!authUser || !readBy) return;
 
       // readBy = who read (the other user); chatWith = me (the sender of those messages)
-      if (!sameId(readBy, selectedUser?._id) || !sameId(chatWith, authUser?._id)) {
-        // Still update if we have the chat open with readBy even if chatWith format differs
-        if (!sameId(readBy, selectedUser?._id)) return;
-      }
+      const iAmSender =
+        chatWith == null || sameId(chatWith, authUser._id);
+      if (!iAmSender) return;
 
       const idSet =
         Array.isArray(messageIds) && messageIds.length > 0
           ? new Set(messageIds.map(String))
           : null;
 
-      const updatedMessages = messages.map((msg) => {
-        if (!sameId(msg.senderId, authUser._id)) return msg;
-        if (idSet && !idSet.has(String(msg._id)) && !idSet.has(String(msg.realId))) {
-          return msg;
+      const applyRead = (list) =>
+        list.map((msg) => {
+          if (!sameId(msg.senderId, authUser._id)) return msg;
+          // Only messages in this peer conversation
+          if (
+            !sameId(msg.receiverId, readBy) &&
+            !(selectedUser && sameId(selectedUser._id, readBy))
+          ) {
+            return msg;
+          }
+
+          const matchesId =
+            !idSet ||
+            idSet.has(String(msg._id)) ||
+            idSet.has(String(msg.realId || "")) ||
+            (msg.clientMessageId && idSet.has(String(msg.clientMessageId)));
+
+          // Peer opened the chat — also upgrade in-flight optimistic msgs (id race)
+          const pendingToPeer =
+            Boolean(idSet) &&
+            (msg.isOptimistic ||
+              msg.pending ||
+              String(msg._id || "").startsWith("temp-")) &&
+            sameId(msg.receiverId, readBy);
+
+          if (idSet && !matchesId && !pendingToPeer) return msg;
+          if (msg.status === "read") return msg;
+          return {
+            ...msg,
+            status: upgradeStatus(msg.status, "read"),
+            readAt: readAt || new Date().toISOString(),
+          };
+        });
+
+      const chatOpen = sameId(selectedUser?._id, readBy);
+      const nextMessages = chatOpen ? applyRead(messages) : messages;
+
+      if (!chatOpen) {
+        const mem = readMemoryThread("dm", readBy);
+        if (mem?.messages?.length) {
+          writeMemoryThread("dm", readBy, {
+            ...mem,
+            messages: applyRead(mem.messages),
+          });
         }
-        if (msg.status === "read") return msg;
-        return {
-          ...msg,
-          status: "read",
-          readAt: readAt || new Date().toISOString(),
-        };
-      });
+      } else {
+        persistDmThread(readBy, nextMessages, get().messagesMeta);
+      }
 
       const updatedUsers = users.map((user) => {
         if (!sameId(user._id, readBy)) return user;
         const lm = user.lastMessage;
         if (!lm) return user;
-        // Only upgrade ticks on OUR last preview message
         if (!sameId(lm.senderId, authUser._id)) return user;
         if (
           idSet &&
@@ -861,7 +904,10 @@ export const useChatStore = create((set, get) => ({
         };
       });
 
-      set({ messages: updatedMessages, users: updatedUsers });
+      set({
+        ...(chatOpen ? { messages: nextMessages } : {}),
+        users: updatedUsers,
+      });
     });
 
     const requestDeliveryUpgrade = (peerId) => {
@@ -1101,24 +1147,20 @@ export const useChatStore = create((set, get) => ({
 
   markMessagesAsRead: async (userId) => {
     const socket = useAuthStore.getState().socket;
-    if (!socket) {
-      console.error("Socket not available for marking messages as read");
-      return;
-    }
 
     // INSTANTLY update unreadCount to 0 before sending to server (optimistic update)
     const { users } = get();
-    const updatedUsers = users.map(user =>
-      user._id === userId
-        ? { ...user, unreadCount: 0 }  // Remove badge immediately
-        : user
+    const updatedUsers = users.map((user) =>
+      sameId(user._id, userId) ? { ...user, unreadCount: 0 } : user
     );
     set({ users: updatedUsers });
 
     try {
-      // Emit via WebSocket - server will confirm and update message statuses
-      socket.emit("markMessagesAsRead", { userId });
-      // No need to refreshUsers() - WebSocket will handle message status updates
+      if (socket?.connected) {
+        socket.emit("markMessagesAsRead", { userId });
+      }
+      // HTTP backup so read receipts persist even if the socket event drops
+      await axiosInstance.put(`/messages/read/${userId}`);
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }

@@ -77,6 +77,13 @@ const GroupChatContainer = () => {
     })));
     const authUser = useAuthStore((s) => s.authUser);
     const setSelectedGroup = useGroupStore((s) => s.setSelectedGroup);
+    const fetchGroupMessageInfo = useGroupStore((s) => s.fetchGroupMessageInfo);
+    const refreshMessageInfo = useCallback(
+        (gid, mid) => {
+            if (gid && mid) fetchGroupMessageInfo(gid, mid);
+        },
+        [fetchGroupMessageInfo]
+    );
     const toggleStar = useChatFeaturesStore((s) => s.toggleStar);
     const isStarred = useChatFeaturesStore((s) => s.isStarred);
     const loadStarredIds = useChatFeaturesStore((s) => s.loadStarredIds);
@@ -722,6 +729,8 @@ const GroupChatContainer = () => {
                 messages={groupMessages}
                 members={selectedGroup?.members || EMPTY_MEMBERS}
                 authUser={authUser}
+                groupId={selectedGroup?._id}
+                onRefreshInfo={refreshMessageInfo}
                 onClose={() => setInfoDialogMessageId(null)}
             />
 

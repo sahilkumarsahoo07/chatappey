@@ -3,7 +3,7 @@ import GroupMessage from "../models/groupMessage.model.js";
 import User from "../models/user.model.js";
 import mongoose from "mongoose";
 import cloudinary from "../lib/cloudinary.js";
-import { io, getReceiverSocketId, joinUsersToGroupRoom } from "../lib/socket.js";
+import { io, getReceiverSocketId, joinUsersToGroupRoom, userSocketMap } from "../lib/socket.js";
 import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
 import {
     annotateDeleteFlags,
@@ -13,7 +13,8 @@ import {
     DELETED_TEXT_EVERYONE,
 } from "../utils/messageDelete.utils.js";
 import { applyComputedStatus } from "../utils/groupMessageStatus.utils.js";
-import { canUpgradeStatus } from "../utils/messageStatus.utils.js";
+import { canUpgradeStatus, emitToUser } from "../utils/messageStatus.utils.js";
+import { ackGroupMessagesDelivered } from "../utils/groupDelivery.utils.js";
 
 // Helper to send system messages to groups
 const sendSystemMessage = async (groupId, text) => {
@@ -770,8 +771,74 @@ export const sendGroupMessage = async (req, res) => {
         }
 
         res.status(201).json(payload);
+
+        // Sender is active — deliver any pending messages addressed to them
+        ackGroupMessagesDelivered({
+            io,
+            userSocketMap,
+            groupId,
+            userId: senderId,
+        }).catch((e) => console.error("auto ack delivered (http):", e.message));
     } catch (error) {
         console.error("Error in sendGroupMessage:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Mark group messages as read
+export const getGroupMessageInfo = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const userId = req.user._id;
+
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            return res.status(400).json({ error: "Invalid message id" });
+        }
+
+        const group = await Group.findById(groupId).select("members");
+        if (!group) {
+            return res.status(404).json({ error: "Group not found" });
+        }
+        if (
+            !group.members.some(
+                (m) => String(m.user?._id || m.user || m) === String(userId)
+            )
+        ) {
+            return res.status(403).json({ error: "You are not a member of this group" });
+        }
+
+        const message = await GroupMessage.findOne({ _id: messageId, groupId })
+            .populate("senderId", "fullName profilePic")
+            .populate("readBy", "fullName profilePic")
+            .populate("deliveredTo.userId", "fullName profilePic")
+            .populate("readReceipts.userId", "fullName profilePic");
+
+        if (!message) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+
+        const memberIds = group.members.map((m) => m.user?._id || m.user || m);
+        const status = applyComputedStatus(message, memberIds);
+
+        res.status(200).json({
+            _id: message._id,
+            groupId: message.groupId,
+            senderId: message.senderId,
+            text: message.text,
+            image: message.image,
+            video: message.video,
+            audio: message.audio,
+            createdAt: message.createdAt,
+            status: message.status || status,
+            deliveredTo: message.deliveredTo || [],
+            readReceipts: message.readReceipts || [],
+            readBy: message.readBy || [],
+            isEdited: message.isEdited,
+            deleted: message.deleted,
+            deletedForEveryone: message.deletedForEveryone,
+        });
+    } catch (error) {
+        console.error("Error in getGroupMessageInfo:", error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 };
@@ -782,10 +849,8 @@ export const markGroupMessagesAsRead = async (req, res) => {
         const { groupId } = req.params;
         const userId = req.user._id;
 
-        // Respect privacy / incognito like DMs
-        if (req.user.privacyReadReceipts === false) {
-            return res.status(200).json({ success: true, skipped: true });
-        }
+        // Respect privacy: still mark delivered, but skip read receipts if disabled
+        const skipReadReceipts = req.user.privacyReadReceipts === false;
 
         const group = await Group.findById(groupId);
 
@@ -800,6 +865,18 @@ export const markGroupMessagesAsRead = async (req, res) => {
         const memberInfo = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
         const joinedAt = memberInfo?.joinedAt || new Date(0);
         const memberIds = group.members.map((m) => m.user?._id || m.user || m);
+
+        // Always deliver pending messages while the chat is open
+        await ackGroupMessagesDelivered({
+            io,
+            userSocketMap,
+            groupId,
+            userId,
+        });
+
+        if (skipReadReceipts) {
+            return res.status(200).json({ success: true, skipped: true, delivered: true });
+        }
 
         const unreadFilter = {
             groupId,
@@ -861,6 +938,24 @@ export const markGroupMessagesAsRead = async (req, res) => {
             readAt,
             statusUpdates,
         });
+
+        // Also notify each sender's user room for multi-device reliability
+        for (const message of unreadMsgs) {
+            const update = statusUpdates.find(
+                (s) => s.messageId === String(message._id)
+            );
+            emitToUser(io, userSocketMap, message.senderId, "group:messagesRead", {
+                groupId: String(groupId),
+                messageIds: [String(message._id)],
+                readBy: {
+                    _id: userId,
+                    fullName: reader?.fullName,
+                    profilePic: reader?.profilePic || "",
+                },
+                readAt,
+                statusUpdates: update ? [update] : [],
+            });
+        }
 
         res.status(200).json({ success: true });
     } catch (error) {

@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useEffect } from "react";
 import { Dialog, DialogTitle, DialogContent } from "@mui/material";
 import { Check, CheckCheck, Clock, Info, X } from "lucide-react";
 import { formatMessageTime } from "../../lib/utils";
@@ -74,9 +74,21 @@ function GroupMessageInfoDialog({
   messages = [],
   members = [],
   authUser,
+  groupId,
+  onRefreshInfo,
   onClose,
 }) {
   const myId = String(authUser?._id || "");
+
+  // Pull latest receipts from server whenever Message Info opens
+  useEffect(() => {
+    if (!open || !groupId || !messageId || !onRefreshInfo) return;
+    onRefreshInfo(groupId, messageId);
+    const t = setInterval(() => {
+      onRefreshInfo(groupId, messageId);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [open, groupId, messageId, onRefreshInfo]);
 
   const msg = useMemo(() => {
     if (!messageId) return null;

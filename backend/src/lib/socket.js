@@ -80,6 +80,7 @@ import cloudinary from "./cloudinary.js";
 import { unarchiveDmChat } from "../utils/chatPreference.utils.js";
 import { emitToUser, canUpgradeStatus } from "../utils/messageStatus.utils.js";
 import { applyComputedStatus } from "../utils/groupMessageStatus.utils.js";
+import { ackGroupMessagesDelivered, isValidObjectId } from "../utils/groupDelivery.utils.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -129,7 +130,7 @@ export function joinUsersToGroupRoom(userIds, groupId) {
 }
 
 // Used to store online users
-const userSocketMap = {}; // { userId: socketId }
+export const userSocketMap = {}; // { userId: socketId }
 
 // Track incognito users
 const incognitoUsers = new Set();
@@ -624,7 +625,7 @@ io.on("connection", async (socket) => {
       emitToUser(io, userSocketMap, targetSender, "messageDelivered", {
         messageId: message._id,
         clientMessageId: message.clientMessageId || clientMessageId,
-        status: "delivered",
+        status: message.status, // may already be "read" — never downgrade on client
         deliveredAt: message.deliveredAt,
       });
     } catch (err) {
@@ -763,14 +764,23 @@ io.on("connection", async (socket) => {
       payload.serverCreatedAt = payload.createdAt;
       payload.status = "sent";
 
-      // Update group's lastMessage and updatedAt
+      // Update group's lastMessage and updatedAt (senderName required for sidebar)
       group.lastMessage = {
         text: text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : poll ? "📊 Poll" : "📷 Photo"),
         senderId: userId,
-        createdAt: newMessage.createdAt
+        senderName: newMessage.senderId?.fullName || "Member",
+        createdAt: newMessage.createdAt,
       };
       group.updatedAt = new Date();
       await group.save();
+
+      // Sender is active in this group — deliver any pending messages to them
+      ackGroupMessagesDelivered({
+        io,
+        userSocketMap,
+        groupId,
+        userId,
+      }).catch((e) => console.error("auto ack delivered:", e.message));
 
       // Broadcast to all group members
       io.to(String(groupId)).emit("group:newMessage", {
@@ -788,57 +798,60 @@ io.on("connection", async (socket) => {
 
   /**
    * Recipient device ACK — WhatsApp grey ✓✓ when all members delivered.
+   * Supports single message or bulk pending ack for a group.
    */
   socket.on("group:messageReceived", async ({ groupId, messageId, clientMessageId }) => {
     try {
-      if (!groupId || (!messageId && !clientMessageId)) return;
+      if (!groupId) return;
       if (incognitoUsers.has(String(userId))) return;
 
-      const query = messageId
-        ? { _id: messageId, groupId }
-        : { clientMessageId, groupId };
-      const message = await GroupMessage.findOne(query);
-      if (!message || message.messageType === "system") return;
+      if (messageId || clientMessageId) {
+        let query = null;
+        if (messageId && isValidObjectId(messageId) && !String(messageId).startsWith("temp-")) {
+          query = { _id: messageId, groupId };
+        } else if (clientMessageId) {
+          query = { clientMessageId, groupId };
+        }
+        if (!query) return;
 
-      const senderId = String(message.senderId || "");
-      if (senderId === String(userId)) return;
+        const message = await GroupMessage.findOne(query).select("_id");
+        if (!message) return;
 
-      const group = await Group.findById(groupId).select("members");
-      if (!group) return;
-      const isMember = group.members.some(
-        (m) => String(m.user?._id || m.user) === String(userId)
-      );
-      if (!isMember) return;
-
-      const now = new Date();
-      const already = (message.deliveredTo || []).some(
-        (d) => String(d.userId) === String(userId)
-      );
-      if (!already) {
-        message.deliveredTo = message.deliveredTo || [];
-        message.deliveredTo.push({ userId, deliveredAt: now });
+        await ackGroupMessagesDelivered({
+          io,
+          userSocketMap,
+          groupId,
+          userId,
+          messageIds: [message._id],
+        });
+        return;
       }
 
-      const memberIds = group.members.map((m) => m.user?._id || m.user);
-      const nextStatus = applyComputedStatus(message, memberIds);
-      if (canUpgradeStatus(message.status, nextStatus) || !message.status) {
-        message.status = nextStatus;
-      }
-      await message.save();
-
-      io.to(String(groupId)).emit("group:messageDelivered", {
-        groupId: String(groupId),
-        messageId: String(message._id),
-        clientMessageId: message.clientMessageId || clientMessageId || null,
-        deliveredBy: {
-          _id: userId,
-          deliveredAt: now,
-        },
-        status: message.status,
-        deliveredAt: now,
+      // No messageId → bulk-ack pending deliveries in this group
+      await ackGroupMessagesDelivered({
+        io,
+        userSocketMap,
+        groupId,
+        userId,
       });
     } catch (err) {
       console.error("group:messageReceived error:", err.message);
+    }
+  });
+
+  /** Explicit bulk delivery ACK when opening / syncing a group */
+  socket.on("group:ackDelivered", async ({ groupId }) => {
+    try {
+      if (!groupId) return;
+      if (incognitoUsers.has(String(userId))) return;
+      await ackGroupMessagesDelivered({
+        io,
+        userSocketMap,
+        groupId,
+        userId,
+      });
+    } catch (err) {
+      console.error("group:ackDelivered error:", err.message);
     }
   });
 

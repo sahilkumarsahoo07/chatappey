@@ -3,7 +3,8 @@ import Message from "../models/message.model.js";
 import FriendRequest from "../models/friendRequest.model.js";
 
 import cloudinary from "../lib/cloudinary.js";
-import { getReceiverSocketId, io } from "../lib/socket.js";
+import { getReceiverSocketId, io, userSocketMap } from "../lib/socket.js";
+import { emitToUser } from "../utils/messageStatus.utils.js";
 import mongoose from "mongoose";
 import { getPreferencesMap, isChatMuted, unarchiveDmChat } from "../utils/chatPreference.utils.js";
 import {
@@ -714,6 +715,8 @@ export const markMessagesAsRead = async (req, res) => {
             status: { $ne: "read" }
         }).select('_id');
 
+        const now = new Date();
+
         // Mark all messages from the other user as read
         const result = await Message.updateMany(
             {
@@ -722,17 +725,17 @@ export const markMessagesAsRead = async (req, res) => {
                 status: { $ne: "read" }
             },
             {
-                $set: { status: "read" }
+                $set: { status: "read", readAt: now }
             }
         );
 
-        // Notify sender via socket that messages were read (if privacy allows)
-        const senderSocketId = getReceiverSocketId(otherUserId);
-        if (senderSocketId && messagesToUpdate.length > 0 && req.user.privacyReadReceipts !== false) {
-            io.to(senderSocketId).emit("messagesRead", {
-                readBy: myId,
-                chatWith: otherUserId,
-                messageIds: messagesToUpdate.map(msg => msg._id.toString())
+        // Notify sender on all devices (user room) when privacy allows
+        if (messagesToUpdate.length > 0 && req.user.privacyReadReceipts !== false) {
+            emitToUser(io, userSocketMap, otherUserId, "messagesRead", {
+                readBy: String(myId),
+                chatWith: String(otherUserId),
+                messageIds: messagesToUpdate.map((msg) => msg._id.toString()),
+                readAt: now,
             });
         }
 

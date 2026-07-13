@@ -33,12 +33,20 @@ const sameGroupId = (a, b) => a != null && b != null && String(a) === String(b);
 const ackGroupDelivery = (groupId, messages) => {
   const socket = useAuthStore.getState().socket;
   const authUser = useAuthStore.getState().authUser;
-  if (!socket?.connected || !authUser || !groupId || !messages?.length) return;
+  if (!socket?.connected || !authUser || !groupId) return;
+
+  // Bulk ack covers older pending messages even if not in the current page
+  socket.emit("group:ackDelivered", { groupId });
+
+  if (!messages?.length) return;
 
   for (const message of messages) {
     if (!message || message.messageType === "system") continue;
     const senderId = message.senderId?._id || message.senderId;
     if (String(senderId) === String(authUser._id)) continue;
+
+    const mid = String(message.realId || message._id || "");
+    if (!mid || mid.startsWith("temp-")) continue;
 
     const delivered = (message.deliveredTo || []).some(
       (d) => String(d.userId?._id || d.userId || d._id || d) === String(authUser._id)
@@ -50,7 +58,7 @@ const ackGroupDelivery = (groupId, messages) => {
 
     socket.emit("group:messageReceived", {
       groupId,
-      messageId: message.realId || message._id,
+      messageId: mid,
       clientMessageId: message.clientMessageId,
     });
   }
@@ -563,9 +571,56 @@ export const useGroupStore = create((set, get) => ({
         }
     },
 
+    // Refresh a single message's delivery/read receipts (Message Info)
+    fetchGroupMessageInfo: async (groupId, messageId) => {
+        try {
+            if (!groupId || !messageId || String(messageId).startsWith("temp-")) {
+                return null;
+            }
+            const res = await axiosInstance.get(
+                `/groups/${groupId}/messages/${messageId}/info`
+            );
+            const info = res.data;
+            if (!info?._id) return null;
+
+            if (sameGroupId(get().selectedGroup?._id, groupId)) {
+                const next = get().groupMessages.map((msg) => {
+                    if (
+                        !messageMatchesIds(msg, {
+                            messageId: info._id,
+                            clientMessageId: info.clientMessageId,
+                        })
+                    ) {
+                        return msg;
+                    }
+                    return {
+                        ...msg,
+                        status: upgradeStatus(msg.status, info.status || msg.status),
+                        deliveredTo: info.deliveredTo || msg.deliveredTo || [],
+                        readReceipts: info.readReceipts || msg.readReceipts || [],
+                        readBy: info.readBy || msg.readBy || [],
+                        isEdited: info.isEdited ?? msg.isEdited,
+                        deleted: info.deleted ?? msg.deleted,
+                        deletedForEveryone:
+                            info.deletedForEveryone ?? msg.deletedForEveryone,
+                    };
+                });
+                set({ groupMessages: next });
+                persistGroupThread(groupId, next, get().groupMessagesMeta);
+            }
+            return info;
+        } catch (error) {
+            console.error("fetchGroupMessageInfo:", error.message);
+            return null;
+        }
+    },
+
     // Mark group messages as read
     markGroupMessagesAsRead: async (groupId) => {
         try {
+            // Ensure delivery ACKs fire even before HTTP returns
+            ackGroupDelivery(groupId, get().groupMessages);
+
             await axiosInstance.put(`/groups/${groupId}/messages/read`);
 
             const authUser = useAuthStore.getState().authUser;
@@ -859,7 +914,7 @@ export const useGroupStore = create((set, get) => ({
                 persistGroupThread(groupId, next, get().groupMessagesMeta);
             }
 
-            // Delivery ACK to sender (WhatsApp grey ticks)
+            // Delivery ACK to sender (WhatsApp grey ticks) + bulk pending
             if (isFromOther && !isSystem) {
                 const socketRef = useAuthStore.getState().socket;
                 socketRef?.emit("group:messageReceived", {
@@ -867,6 +922,8 @@ export const useGroupStore = create((set, get) => ({
                     messageId: message._id,
                     clientMessageId: message.clientMessageId,
                 });
+                // Catch up any older undelivered messages while we're online
+                ackGroupDelivery(groupId, get().groupMessages);
             }
 
             // WhatsApp: notify only when NOT actively viewing this group
@@ -937,10 +994,13 @@ export const useGroupStore = create((set, get) => ({
                         ...g,
                         lastMessage: {
                             text: message.text || "📷 Photo",
-                            senderId: message.senderId?._id || null,
+                            senderId: message.senderId?._id || message.senderId || null,
                             senderName:
                                 message.senderId?.fullName ||
-                                (isSystem ? "System" : "Unknown"),
+                                (String(senderIdStr) === String(authUser._id)
+                                    ? authUser.fullName
+                                    : null) ||
+                                (isSystem ? "System" : "Member"),
                             createdAt: message.createdAt,
                         },
                         updatedAt: message.createdAt,
@@ -1081,10 +1141,9 @@ export const useGroupStore = create((set, get) => ({
         socket.on(
             "group:messageDelivered",
             ({ groupId, messageId, clientMessageId, deliveredBy, status, deliveredAt }) => {
-                if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
                 const did = String(deliveredBy?._id || deliveredBy || "");
-                set({
-                    groupMessages: get().groupMessages.map((msg) => {
+                const applyToList = (list) =>
+                    list.map((msg) => {
                         if (
                             !messageMatchesIds(msg, {
                                 messageId,
@@ -1105,15 +1164,30 @@ export const useGroupStore = create((set, get) => ({
                                     ...deliveredTo,
                                     {
                                         userId: deliveredBy?._id || deliveredBy,
-                                        deliveredAt: deliveredAt || deliveredBy?.deliveredAt,
+                                        deliveredAt:
+                                            deliveredAt || deliveredBy?.deliveredAt,
                                     },
                                   ],
                             status: status
                                 ? upgradeStatus(msg.status, status)
                                 : upgradeStatus(msg.status, "delivered"),
                         };
-                    }),
-                });
+                    });
+
+                // Always patch open thread; also patch memory cache for this group
+                if (sameGroupId(get().selectedGroup?._id, groupId)) {
+                    const next = applyToList(get().groupMessages);
+                    set({ groupMessages: next });
+                    persistGroupThread(groupId, next, get().groupMessagesMeta);
+                } else {
+                    const mem = readMemoryThread("group", groupId);
+                    if (mem?.messages?.length) {
+                        writeMemoryThread("group", groupId, {
+                            ...mem,
+                            messages: applyToList(mem.messages),
+                        });
+                    }
+                }
             }
         );
 

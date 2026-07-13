@@ -718,7 +718,36 @@ const Sidebar = () => {
                                                     }`}>
                                                     {lastMsg ? (
                                                         <>
-                                                            <span className="font-medium">{lastMsg.senderName?.split(" ")[0]}: </span>
+                                                            <span className="font-medium">
+                                                                {(() => {
+                                                                    const senderId = String(
+                                                                        lastMsg.senderId?._id ||
+                                                                            lastMsg.senderId ||
+                                                                            ""
+                                                                    );
+                                                                    const isMine =
+                                                                        senderId &&
+                                                                        String(authUser?._id) === senderId;
+                                                                    if (isMine) return "You";
+                                                                    const fromField = lastMsg.senderName?.trim();
+                                                                    if (fromField) {
+                                                                        return fromField.split(" ")[0];
+                                                                    }
+                                                                    const member = (group.members || []).find(
+                                                                        (m) =>
+                                                                            String(m.user?._id || m.user || m) ===
+                                                                            senderId
+                                                                    );
+                                                                    const name =
+                                                                        member?.user?.fullName ||
+                                                                        member?.fullName ||
+                                                                        "";
+                                                                    return name
+                                                                        ? name.split(" ")[0]
+                                                                        : "Member";
+                                                                })()}
+                                                                :{" "}
+                                                            </span>
                                                             {lastMsg.text || "📷 Photo"}
                                                         </>
                                                     ) : (
