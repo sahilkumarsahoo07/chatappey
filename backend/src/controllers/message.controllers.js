@@ -477,6 +477,7 @@ export const sendMessage = async (req, res) => {
                     : newMessage),
                 senderName: sender.fullName,
                 senderProfilePic: sender.profilePic || "",
+                serverCreatedAt: newMessage.createdAt,
             };
 
             if (receiverSocketId) {
@@ -492,7 +493,11 @@ export const sendMessage = async (req, res) => {
             }
         }
 
-        res.status(201).json(newMessage);
+        const responsePayload =
+            typeof newMessage.toObject === "function"
+                ? { ...newMessage.toObject(), serverCreatedAt: newMessage.createdAt }
+                : newMessage;
+        res.status(201).json(responsePayload);
     } catch (error) {
         console.log("Error in sendMessage controller: ", error.message);
         res.status(500).json({ error: "Internal server error" });

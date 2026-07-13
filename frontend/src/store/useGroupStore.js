@@ -17,13 +17,17 @@ import {
   mergeMessages,
   removeThread,
 } from "../lib/messageCache";
+import { upsertMessage, applyServerAck, nextClientSeq, withServerOrdering } from "../lib/messageSync";
 import {
   applyOptimisticDeleteForEveryone,
   deletedSidebarPreview,
   DELETED_TEXT_EVERYONE,
 } from "../lib/messageDelete";
+import { makeClientMessageId, messageMatchesIds } from "../lib/messageStatus";
 
 const PAGE_SIZE = 40;
+
+const sameGroupId = (a, b) => a != null && b != null && String(a) === String(b);
 
 const persistGroupThread = (groupId, messages, meta = {}) => {
   if (!groupId || !messages?.length) return;
@@ -244,10 +248,13 @@ export const useGroupStore = create((set, get) => ({
         const isInitial = !before && !after;
         const isOlder = Boolean(before);
         const isDelta = Boolean(after);
+        const requestGroupId = String(groupId);
 
         if (isInitial && !background) {
             const hydrated = await hydrateThread("group", groupId);
             if (hydrated?.messages?.length) {
+                // Ignore if user switched groups while hydrating
+                if (!sameGroupId(get().selectedGroup?._id, requestGroupId)) return;
                 set({
                     groupMessages: hydrated.messages,
                     groupMessagesMeta: {
@@ -280,6 +287,13 @@ export const useGroupStore = create((set, get) => ({
             if (after) params.after = after;
 
             const res = await axiosInstance.get(`/groups/${groupId}/messages`, { params });
+
+            // Stale response — user already opened another group
+            if (!sameGroupId(get().selectedGroup?._id, requestGroupId)) {
+                set({ isGroupMessagesLoading: false, isLoadingOlderGroup: false });
+                return;
+            }
+
             const { messages: incoming, hasMore, oldestCursor, newestCursor } =
                 parseMessagesResponse(res.data);
 
@@ -317,10 +331,24 @@ export const useGroupStore = create((set, get) => ({
 
             persistGroupThread(groupId, nextMessages, { hasMoreOlder });
 
+            // Delta sync can return only one page — keep fetching until caught up
+            if (isDelta && hasMore && incoming.length > 0) {
+                const newest =
+                    nextMessages[nextMessages.length - 1]?.createdAt || newestCursor;
+                if (newest) {
+                    await get().getGroupMessages(groupId, { after: newest, background: true });
+                    return;
+                }
+            }
+
             if (isInitial && !background) {
                 get().markGroupMessagesAsRead(groupId);
             }
         } catch (error) {
+            if (!sameGroupId(get().selectedGroup?._id, requestGroupId)) {
+                set({ isGroupMessagesLoading: false, isLoadingOlderGroup: false });
+                return;
+            }
             set({
                 isGroupMessagesLoading: false,
                 isLoadingOlderGroup: false,
@@ -335,32 +363,37 @@ export const useGroupStore = create((set, get) => ({
     loadOlderGroupMessages: async () => {
         const { selectedGroup, groupMessages, groupMessagesMeta, isLoadingOlderGroup } = get();
         if (!selectedGroup || isLoadingOlderGroup || !groupMessagesMeta?.hasMoreOlder) return;
-        const oldest = groupMessages[0]?.createdAt || groupMessagesMeta.oldestCursor;
+        // Use chronological oldest (store may be unsorted after appends)
+        const oldest =
+            [...groupMessages].sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            )[0]?.createdAt || groupMessagesMeta.oldestCursor;
         if (!oldest) return;
         await get().getGroupMessages(selectedGroup._id, { before: oldest, background: true });
     },
 
     // Send message to group (optionally to a different group for forwarding)
     sendGroupMessage: async (messageData, targetGroupId = null) => {
-        const { selectedGroup, groupMessages, groups } = get();
+        const { selectedGroup, groups } = get();
         const authUser = useAuthStore.getState().authUser;
         const socket = useAuthStore.getState().socket;
-
-        if (!socket) {
-            toast.error("Connection error. Please refresh the page.");
-            return;
-        }
 
         const groupId = targetGroupId || selectedGroup?._id;
         if (!groupId) return;
 
         // Only add optimistic message if sending to currently selected group
-        const isForwarding = targetGroupId && targetGroupId !== selectedGroup?._id;
+        const isForwarding = targetGroupId && !sameGroupId(targetGroupId, selectedGroup?._id);
+        const clientMessageId = makeClientMessageId();
+        const clientSeq = nextClientSeq();
+        const clientCreatedAt = new Date().toISOString();
 
-        // Create optimistic message
+        // Create optimistic message — pending sorts after all confirmed
         const optimisticMessage = {
-            _id: `temp-${Date.now()}`,
-            optimisticId: `temp-${Date.now()}`,
+            _id: clientMessageId,
+            optimisticId: clientMessageId,
+            clientMessageId,
+            clientSeq,
+            clientCreatedAt,
             groupId: groupId,
             senderId: {
                 _id: authUser._id,
@@ -371,92 +404,125 @@ export const useGroupStore = create((set, get) => ({
             image: messageData.image,
             audio: messageData.audio,
             video: messageData.video,
-            createdAt: new Date().toISOString(),
+            videoThumbnail: messageData.videoThumbnail,
+            videoDuration: messageData.videoDuration,
+            file: messageData.file,
+            fileName: messageData.fileName,
+            replyTo: messageData.replyTo || null,
+            replyToMessage: messageData.replyToMessage || null,
+            mentions: messageData.mentions || [],
+            poll: messageData.poll,
+            createdAt: clientCreatedAt,
+            serverCreatedAt: null,
             readBy: [authUser._id],
             isForwarded: messageData.isForwarded || false,
-            isOptimistic: true
+            isOptimistic: true,
+            pending: true,
         };
 
-        // Add message to UI instantly (only if not forwarding to another group)
-        if (!isForwarding) {
-            set({ groupMessages: [...groupMessages, optimisticMessage] });
+        const applyOptimistic = () => {
+            if (isForwarding) return;
+            const next = upsertMessage(get().groupMessages, optimisticMessage);
+            set({ groupMessages: next });
+            persistGroupThread(groupId, next, get().groupMessagesMeta);
+        };
+
+        const replaceWithServerMessage = (newMessage) => {
+            if (isForwarding) return;
+            if (!sameGroupId(get().selectedGroup?._id, groupId)) return;
+            const next = applyServerAck(
+                get().groupMessages,
+                clientMessageId,
+                newMessage
+            );
+            set({ groupMessages: next });
+            persistGroupThread(groupId, next, get().groupMessagesMeta);
+        };
+
+        const removeOptimistic = () => {
+            if (isForwarding) return;
+            set({
+                groupMessages: get().groupMessages.filter(
+                    (msg) => !messageMatchesIds(msg, { clientMessageId })
+                ),
+            });
+        };
+
+        const updateSidebar = (newMessage) => {
+            set({
+                groups: get()
+                    .groups.map((g) => {
+                        if (!sameGroupId(g._id, groupId)) return g;
+                        return {
+                            ...g,
+                            lastMessage: {
+                                text:
+                                    newMessage.text ||
+                                    (newMessage.image
+                                        ? "📷 Photo"
+                                        : newMessage.video
+                                          ? "🎬 Video"
+                                          : "📷 Photo"),
+                                senderId: authUser._id,
+                                senderName: authUser.fullName,
+                                createdAt: newMessage.createdAt,
+                            },
+                            updatedAt: newMessage.createdAt,
+                        };
+                    })
+                    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)),
+            });
+        };
+
+        applyOptimistic();
+
+        const sendViaHttp = async () => {
+            const res = await axiosInstance.post(`/groups/${groupId}/messages`, {
+                ...messageData,
+                clientMessageId,
+            });
+            replaceWithServerMessage(res.data);
+            updateSidebar(res.data);
+            return res.data;
+        };
+
+        // Prefer socket; fall back to HTTP if disconnected
+        if (socket?.connected) {
+            try {
+                socket.emit(
+                    "sendGroupMessage",
+                    {
+                        groupId,
+                        ...messageData,
+                        clientMessageId,
+                    },
+                    async (response) => {
+                        if (response?.error) {
+                            try {
+                                await sendViaHttp();
+                            } catch (err) {
+                                removeOptimistic();
+                                toast.error(response.error || "Failed to send message");
+                            }
+                            return;
+                        }
+                        if (response?.message) {
+                            replaceWithServerMessage(response.message);
+                            updateSidebar(response.message);
+                        }
+                    }
+                );
+                return;
+            } catch (error) {
+                /* fall through to HTTP */
+            }
         }
 
         try {
-            // Send via WebSocket instead of HTTP
-            socket.emit("sendGroupMessage", {
-                groupId,
-                ...messageData
-            }, (response) => {
-                if (response.error) {
-                    // Handle error
-                    if (!isForwarding) {
-                        set({
-                            groupMessages: get().groupMessages.filter(msg => msg._id !== optimisticMessage._id)
-                        });
-                    }
-                    toast.error(response.error);
-                    return;
-                }
-
-                const newMessage = response.message;
-
-                // Replace optimistic message with real one (only if not forwarding)
-                if (!isForwarding) {
-                    const currentMessages = get().groupMessages;
-                    const alreadyAddedBySocket = currentMessages.some(m => m._id === newMessage._id);
-
-                    if (alreadyAddedBySocket) {
-                        // Remove the optimistic one since socket already added the real one
-                        set({
-                            groupMessages: currentMessages.filter(msg =>
-                                msg._id !== optimisticMessage._id
-                            )
-                        });
-                    } else {
-                        // Standard replacement - KEEP optimistic ID to prevent shake
-                        set({
-                            groupMessages: currentMessages.map(msg =>
-                                msg._id === optimisticMessage._id ? {
-                                    ...msg, // Keep optimistic as base
-                                    ...newMessage, // Overlay real data (will have the real _id!)
-                                    optimisticId: optimisticMessage.optimisticId, // Keep temp ID for stable React key
-                                    realId: newMessage._id // Store real ID for reference
-                                } : msg
-                            )
-                        });
-                    }
-                }
-
-                // Update group's lastMessage in the list
-                set({
-                    groups: groups.map(g => {
-                        if (g._id === groupId) {
-                            return {
-                                ...g,
-                                lastMessage: {
-                                    text: newMessage.text || "📷 Photo",
-                                    senderId: authUser._id,
-                                    senderName: authUser.fullName,
-                                    createdAt: newMessage.createdAt
-                                },
-                                updatedAt: newMessage.createdAt
-                            };
-                        }
-                        return g;
-                    }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-                });
-            });
+            await sendViaHttp();
         } catch (error) {
-            // Remove optimistic message on error (only if not forwarding)
-            if (!isForwarding) {
-                set({
-                    groupMessages: get().groupMessages.filter(msg => msg._id !== optimisticMessage._id)
-                });
-            }
-            // This catch block will only catch synchronous errors from socket.emit itself,
-            // not errors returned in the callback.
-            toast.error(error.message || "Failed to send message via WebSocket");
+            removeOptimistic();
+            toast.error(error.response?.data?.error || error.message || "Failed to send message");
             throw error;
         }
     },
@@ -466,10 +532,38 @@ export const useGroupStore = create((set, get) => ({
         try {
             await axiosInstance.put(`/groups/${groupId}/messages/read`);
 
+            const authUser = useAuthStore.getState().authUser;
+            // Optimistically stamp me into readBy so Message Info is accurate on this device
+            if (authUser && sameGroupId(get().selectedGroup?._id, groupId)) {
+                const myId = String(authUser._id);
+                set({
+                    groupMessages: get().groupMessages.map((msg) => {
+                        const senderId = msg.senderId?._id || msg.senderId;
+                        if (String(senderId) === myId) return msg;
+                        const readers = msg.readBy || [];
+                        const already = readers.some(
+                            (r) => String(r?._id || r) === myId
+                        );
+                        if (already) return msg;
+                        return {
+                            ...msg,
+                            readBy: [
+                                ...readers,
+                                {
+                                    _id: authUser._id,
+                                    fullName: authUser.fullName,
+                                    profilePic: authUser.profilePic,
+                                },
+                            ],
+                        };
+                    }),
+                });
+            }
+
             // Clear unread count locally for immediate UI feedback
             set({
                 groups: get().groups.map(g =>
-                    g._id === groupId ? { ...g, unreadCount: 0 } : g
+                    sameGroupId(g._id, groupId) ? { ...g, unreadCount: 0 } : g
                 )
             });
         } catch (error) {
@@ -688,33 +782,14 @@ export const useGroupStore = create((set, get) => ({
               senderIdStr && String(senderIdStr) !== String(authUser._id);
             const isSystem = message.messageType === "system";
 
-            // If this is in the currently selected group, add the message
-            if (selectedGroup?._id === groupId) {
-                const alreadyExists = groupMessages.some(m => m._id === message._id);
-                if (!alreadyExists) {
-                // If it's my message, try to match it with an optimistic one to prevent flickering/duplicates
-                if (!isFromOther && !isSystem) {
-                    const optimisticMsg = groupMessages.find(m =>
-                        m.isOptimistic &&
-                        m.text === message.text &&
-                        m.image === message.image
-                    );
-
-                    if (optimisticMsg) {
-                        const next = groupMessages.map(m => m._id === optimisticMsg._id ? message : m);
-                        set({ groupMessages: next });
-                        persistGroupThread(groupId, next, get().groupMessagesMeta);
-                    } else {
-                        const next = [...groupMessages, message];
-                        set({ groupMessages: next });
-                        persistGroupThread(groupId, next, get().groupMessagesMeta);
-                    }
-                } else {
-                    const next = [...groupMessages, message];
-                    set({ groupMessages: next });
-                    persistGroupThread(groupId, next, get().groupMessagesMeta);
-                }
-                }
+            // If this is in the currently selected group, upsert (identity-aware — no dups / flicker)
+            if (sameGroupId(selectedGroup?._id, groupId)) {
+                const next = upsertMessage(
+                    groupMessages,
+                    withServerOrdering(message)
+                );
+                set({ groupMessages: next });
+                persistGroupThread(groupId, next, get().groupMessagesMeta);
             }
 
             // WhatsApp: notify only when NOT actively viewing this group
@@ -742,9 +817,9 @@ export const useGroupStore = create((set, get) => ({
                                 requireInteraction: false,
                                 silent: false,
                                 url: `/?group=${groupId}`,
-                                groupId,
+                                groupId: String(groupId),
                                 group: {
-                                    _id: g._id || groupId,
+                                    _id: String(g._id || groupId),
                                     name: g.name,
                                     image: g.image,
                                     members: g.members,
@@ -755,7 +830,17 @@ export const useGroupStore = create((set, get) => ({
                                 { text: body },
                                 { fullName: g.name, profilePic: g.image || "/avatar.png" },
                                 () => {
-                                    get().setSelectedGroup(g);
+                                    import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
+                                        openConversationFromNotification({
+                                            groupId: String(groupId),
+                                            group: {
+                                                _id: String(g._id || groupId),
+                                                name: g.name,
+                                                image: g.image,
+                                                members: g.members,
+                                            },
+                                        });
+                                    });
                                 }
                             );
                         }
@@ -843,6 +928,56 @@ export const useGroupStore = create((set, get) => ({
             }
         });
 
+        // Someone read group messages — update Message Info live
+        socket.on("group:messagesRead", ({ groupId, messageIds, readBy, readAt }) => {
+            if (!sameGroupId(get().selectedGroup?._id, groupId) || !readBy) return;
+            const readerId = String(readBy._id || readBy);
+            const idSet = messageIds?.length
+                ? new Set(messageIds.map(String))
+                : null;
+
+            set({
+                groupMessages: get().groupMessages.map((msg) => {
+                    if (idSet && !idSet.has(String(msg._id)) && !idSet.has(String(msg.realId))) {
+                        return msg;
+                    }
+                    const senderId = String(msg.senderId?._id || msg.senderId || "");
+                    if (senderId === readerId) return msg;
+
+                    const readers = msg.readBy || [];
+                    const already = readers.some((r) => String(r?._id || r) === readerId);
+                    if (already) {
+                        // Upgrade bare ids to populated reader objects
+                        return {
+                            ...msg,
+                            readBy: readers.map((r) =>
+                                String(r?._id || r) === readerId
+                                    ? {
+                                        _id: readBy._id || readBy,
+                                        fullName: readBy.fullName,
+                                        profilePic: readBy.profilePic,
+                                        readAt: readAt || r.readAt,
+                                      }
+                                    : r
+                            ),
+                        };
+                    }
+                    return {
+                        ...msg,
+                        readBy: [
+                            ...readers,
+                            {
+                                _id: readBy._id || readBy,
+                                fullName: readBy.fullName,
+                                profilePic: readBy.profilePic,
+                                readAt,
+                            },
+                        ],
+                    };
+                }),
+            });
+        });
+
         // Poll updated in group
         socket.on("group:pollUpdated", ({ groupId, messageId, poll }) => {
             const { selectedGroup, groupMessages } = get();
@@ -894,6 +1029,7 @@ export const useGroupStore = create((set, get) => ({
             socket.off("group:memberLeft");
             socket.off("group:newMessage");
             socket.off("group:messageDeleted");
+            socket.off("group:messagesRead");
             socket.off("group:pollUpdated");
             socket.off("group:typing");
             socket.off("group:stopTyping");
@@ -915,25 +1051,44 @@ export const useGroupStore = create((set, get) => ({
             });
         }
 
-        if (group && (!current || current._id !== group._id)) {
-            const mem = readMemoryThread("group", group._id);
+        if (!group) {
             set({
-                selectedGroup: group,
+                selectedGroup: null,
+                groupMessages: [],
                 typingUsers: [],
-                groupMessages: mem?.messages || [],
-                groupMessagesMeta: mem
-                    ? {
-                          hasMoreOlder: mem.hasMoreOlder ?? true,
-                          isSyncing: false,
-                          oldestCursor: mem.oldestCachedAt,
-                          newestCursor: mem.newestAt,
-                      }
-                    : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
-                isGroupMessagesLoading: !mem?.messages?.length,
+                isGroupMessagesLoading: false,
+                groupMessagesMeta: {
+                    hasMoreOlder: true,
+                    isSyncing: false,
+                    oldestCursor: null,
+                    newestCursor: null,
+                },
             });
-        } else {
-            set({ selectedGroup: group });
+            return;
         }
+
+        const sameGroup = current && String(current._id) === String(group._id);
+
+        if (sameGroup) {
+            set({ selectedGroup: group });
+            return;
+        }
+
+        const mem = readMemoryThread("group", group._id);
+        set({
+            selectedGroup: group,
+            typingUsers: [],
+            groupMessages: mem?.messages || [],
+            groupMessagesMeta: mem
+                ? {
+                      hasMoreOlder: mem.hasMoreOlder ?? true,
+                      isSyncing: false,
+                      oldestCursor: mem.oldestCachedAt,
+                      newestCursor: mem.newestAt,
+                  }
+                : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
+            isGroupMessagesLoading: !mem?.messages?.length,
+        });
     },
 
     // Clear selected group

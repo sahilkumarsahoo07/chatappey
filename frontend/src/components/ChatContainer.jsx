@@ -10,6 +10,7 @@ import MessageEditField from "./MessageEditField";
 import { useAuthStore } from "../store/useAuthStore";
 import { useThemeStore } from "../store/useThemeStore";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
+import { sortMessages } from "../lib/messageSync";
 import defaultImg from "../public/avatar.png";
 import { Ban, Check, CheckCheck, ChevronDown, Download, Forward, Search, UserPlus, Reply, FileText, Pin, Clock, X, ZoomIn, ZoomOut } from "lucide-react";
 import "./ChatContainer.css";
@@ -111,8 +112,8 @@ const ChatContainer = () => {
 
   const pinnedMessage = messages.find(m => m.isPinned);
   const sortedMessages = useMemo(() => {
-    // Avoid resorting on every render to keep typing smooth
-    return [...messages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    // Server-authoritative order; pending/optimistic always at end
+    return sortMessages(messages);
   }, [messages]);
 
   // Swipe back hook for mobile navigation
@@ -187,9 +188,9 @@ const ChatContainer = () => {
     }
   }, []);
 
-  // Auto-scroll only on chat open, own send, or when already at bottom — never on older-page prepend
+  // Track new messages for "N new messages" chip — VirtualMessageList owns scroll
   useLayoutEffect(() => {
-    if (!containerRef.current || isLoadingOlder) return;
+    if (isLoadingOlder) return;
 
     const lastMessage = sortedMessages[sortedMessages.length - 1];
     const lastId = lastMessage?.optimisticId || lastMessage?._id || null;
@@ -202,16 +203,20 @@ const ChatContainer = () => {
       isAtBottomRef.current = true;
       prevSelectedUserIdRef.current = selectedUser?._id;
       setPendingNewCount(0);
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     } else if (prepended) {
-      // Older messages inserted — VirtualMessageList preserves viewport
+      // Older messages — viewport preserved by VirtualMessageList
     } else if (lastChanged) {
-      const isMine = lastMessage?.senderId === authUser?._id;
-      if (isAtBottomRef.current || isMine) {
+      const isMine =
+        lastMessage?.senderId === authUser?._id ||
+        lastMessage?.senderId?._id === authUser?._id;
+      if (isMine) {
+        // WhatsApp: own send always jumps to bottom
         isAtBottomRef.current = true;
         setPendingNewCount(0);
-        containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      } else if (!isMine) {
+        setScrollEpoch((n) => n + 1);
+      } else if (isAtBottomRef.current) {
+        setPendingNewCount(0);
+      } else {
         setPendingNewCount((c) => c + 1);
       }
     }

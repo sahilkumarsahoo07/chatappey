@@ -19,6 +19,7 @@ import {
   mergeMessages,
   removeThread,
 } from "../lib/messageCache";
+import { upsertMessage, applyServerAck, nextClientSeq, withServerOrdering, sortMessages } from "../lib/messageSync";
 import {
   applyOptimisticDeleteForEveryone,
   deletedSidebarPreview,
@@ -147,10 +148,16 @@ export const useChatStore = create((set, get) => ({
     const isInitial = !before && !after;
     const isOlder = Boolean(before);
     const isDelta = Boolean(after);
+    const requestUserId = String(userId);
+
+    const stillOnThisChat = () =>
+      sameId(get().selectedUser?._id, requestUserId);
 
     if (isInitial && !background) {
       const hydrated = await hydrateThread("dm", userId);
       if (hydrated?.messages?.length) {
+        // Stale hydrate — user already switched chats
+        if (!stillOnThisChat()) return;
         set({
           messages: hydrated.messages,
           messagesMeta: {
@@ -168,10 +175,10 @@ export const useChatStore = create((set, get) => ({
         if (newest) {
           await get().getMessages(userId, { after: newest, background: true });
         }
-        get().markMessagesAsRead(userId);
+        if (stillOnThisChat()) get().markMessagesAsRead(userId);
         return;
       }
-      if (!get().messages.length) {
+      if (!get().messages.length && stillOnThisChat()) {
         set({ isMessagesLoading: true });
       }
     }
@@ -184,6 +191,13 @@ export const useChatStore = create((set, get) => ({
       if (after) params.after = after;
 
       const res = await axiosInstance.get(`/messages/${userId}`, { params });
+
+      // Critical: never apply chat A's response onto chat B
+      if (!stillOnThisChat()) {
+        set({ isMessagesLoading: false, isLoadingOlder: false });
+        return;
+      }
+
       const { messages: incoming, hasMore, oldestCursor, newestCursor } =
         parseMessagesResponse(res.data);
 
@@ -244,10 +258,23 @@ export const useChatStore = create((set, get) => ({
         });
       }
 
-      if (isInitial && !background) {
+      if (isInitial && !background && stillOnThisChat()) {
         get().markMessagesAsRead(userId);
       }
+
+      // Delta can return one page — keep catching up while still on this chat
+      if (isDelta && hasMore && incoming.length > 0 && stillOnThisChat()) {
+        const newest =
+          nextMessages[nextMessages.length - 1]?.createdAt || newestCursor;
+        if (newest) {
+          await get().getMessages(userId, { after: newest, background: true });
+        }
+      }
     } catch (error) {
+      if (!stillOnThisChat()) {
+        set({ isMessagesLoading: false, isLoadingOlder: false });
+        return;
+      }
       set({
         isMessagesLoading: false,
         isLoadingOlder: false,
@@ -302,10 +329,14 @@ export const useChatStore = create((set, get) => ({
       });
       if (queued.queued) {
         const pendingId = makeClientMessageId();
+        const clientSeq = nextClientSeq();
+        const clientCreatedAt = new Date().toISOString();
         const pendingMsg = {
           _id: pendingId,
           optimisticId: pendingId,
           clientMessageId: pendingId,
+          clientSeq,
+          clientCreatedAt,
           text: messageData.text,
           image: messageData.image,
           video: messageData.video,
@@ -313,10 +344,14 @@ export const useChatStore = create((set, get) => ({
           file: messageData.file,
           senderId: authUser._id,
           receiverId: selectedUser._id,
-          createdAt: new Date().toISOString(),
+          // Display only — NOT used for ordering vs confirmed messages
+          createdAt: clientCreatedAt,
+          serverCreatedAt: null,
+          isOptimistic: true,
+          pending: true,
           status: "pending",
         };
-        set({ messages: [...get().messages, pendingMsg] });
+        set({ messages: upsertMessage(get().messages, pendingMsg) });
         return;
       }
     }
@@ -328,10 +363,16 @@ export const useChatStore = create((set, get) => ({
 
     // Stable client id for optimistic UI ↔ ACK ↔ delivery matching
     const clientMessageId = makeClientMessageId();
+    const clientSeq = nextClientSeq();
+    const clientCreatedAt = messageData.scheduledFor
+      ? new Date(messageData.scheduledFor).toISOString()
+      : new Date().toISOString();
     const optimisticMessage = {
       _id: clientMessageId,
       optimisticId: clientMessageId,
       clientMessageId,
+      clientSeq,
+      clientCreatedAt,
       text: messageData.text,
       image: messageData.image,
       video: messageData.video,
@@ -343,9 +384,11 @@ export const useChatStore = create((set, get) => ({
       scheduledFor: messageData.scheduledFor,
       senderId: authUser._id,
       receiverId: selectedUser._id,
-      createdAt: messageData.scheduledFor
-        ? new Date(messageData.scheduledFor).toISOString()
-        : new Date().toISOString(),
+      // Display clock only — ordering uses pending-at-end until server ACK
+      createdAt: clientCreatedAt,
+      serverCreatedAt: null,
+      isOptimistic: true,
+      pending: !messageData.scheduledFor,
       // Always start as sent (single ✓) — never fake delivered from onlineUsers
       status: messageData.scheduledFor ? "scheduled" : "sent",
       replyTo:
@@ -368,7 +411,8 @@ export const useChatStore = create((set, get) => ({
             : null,
     };
 
-    const optimisticList = [...messages, optimisticMessage];
+    // Upsert+sort: pending stays after all confirmed (WhatsApp order)
+    const optimisticList = upsertMessage(messages, optimisticMessage);
     set({ messages: optimisticList });
     persistDmThread(selectedUser._id, optimisticList, get().messagesMeta);
 
@@ -394,28 +438,11 @@ export const useChatStore = create((set, get) => ({
         }
 
         const newMessage = response.message;
-        const currentMessages = get().messages;
-        const updatedMessages = currentMessages.map((msg) => {
-          if (!messageMatchesIds(msg, { clientMessageId })) return msg;
-          // Never downgrade ticks (e.g. delivered/read arrived before ACK)
-          const nextStatus = upgradeStatus(msg.status, newMessage.status || "sent");
-          return {
-            ...msg,
-            ...newMessage,
-            _id: newMessage._id,
-            optimisticId: clientMessageId,
-            clientMessageId,
-            status: nextStatus,
-            image: optimisticMessage.image || newMessage.image,
-            audio: optimisticMessage.audio || newMessage.audio,
-            file: optimisticMessage.file || newMessage.file,
-            createdAt: optimisticMessage.createdAt,
-            replyTo: newMessage.replyTo || optimisticMessage.replyTo,
-            replyToMessage:
-              newMessage.replyToMessage || optimisticMessage.replyToMessage,
-            realId: newMessage._id,
-          };
-        });
+        const updatedMessages = applyServerAck(
+          get().messages,
+          clientMessageId,
+          newMessage
+        );
 
         const currentUsers = get().users;
         const updatedUsers = currentUsers.map((user) => {
@@ -495,25 +522,24 @@ export const useChatStore = create((set, get) => ({
         (sameId(newMessage.senderId, authUser._id) &&
           sameId(newMessage.receiverId, currentSelectedUser?._id));
 
-      if (isMessageForCurrentChat && !sameId(newMessage.senderId, authUser._id)) {
-        const messages = get().messages;
-        const alreadyExists = messages.some(
-          (m) =>
-            sameId(m._id, newMessage._id) ||
-            (newMessage.clientMessageId &&
-              messageMatchesIds(m, { clientMessageId: newMessage.clientMessageId }))
+      // Upsert into open thread (peer messages + own multi-device / ACK races)
+      // Confirmed messages insert by server time; pending stay at end
+      if (isMessageForCurrentChat) {
+        const nextMessages = upsertMessage(
+          get().messages,
+          withServerOrdering(newMessage)
         );
-
-        if (!alreadyExists) {
-          const nextMessages = [...messages, { ...newMessage }];
-          set({ messages: nextMessages });
-          persistDmThread(newMessage.senderId, nextMessages, get().messagesMeta);
-        }
+        set({ messages: nextMessages });
+        const peerId = sameId(newMessage.senderId, authUser._id)
+          ? newMessage.receiverId
+          : newMessage.senderId?._id || newMessage.senderId;
+        persistDmThread(peerId, nextMessages, get().messagesMeta);
       }
 
       // WhatsApp: notify only when NOT actively viewing this conversation
+      const peerSenderId = newMessage.senderId?._id || newMessage.senderId;
       const viewingThisChat = isActivelyViewingConversation(
-        newMessage.senderId,
+        peerSenderId,
         currentSelectedUser?._id
       );
       let shouldMarkRead = false;
@@ -538,16 +564,17 @@ export const useChatStore = create((set, get) => ({
             const preview = messagePreview(newMessage);
 
             if (shouldShowSystemNotification()) {
+              const peerId = newMessage.senderId?._id || newMessage.senderId;
               void showBrowserNotification(senderForNotify.fullName, {
                 body: preview,
                 icon: "/avatar.png",
-                tag: `chat-${newMessage.senderId}`,
+                tag: `chat-${peerId}`,
                 requireInteraction: false,
                 silent: false,
-                url: `/?chat=${newMessage.senderId}`,
-                chatId: newMessage.senderId,
+                url: `/?chat=${peerId}`,
+                chatId: peerId,
                 peer: {
-                  _id: senderForNotify._id,
+                  _id: senderForNotify._id?._id || senderForNotify._id || peerId,
                   fullName: senderForNotify.fullName,
                   profilePic: senderForNotify.profilePic,
                   isFriend: senderForNotify.isFriend !== false,
@@ -555,8 +582,19 @@ export const useChatStore = create((set, get) => ({
               });
             } else {
               // In-app only when tab is focused but user is elsewhere in the app
+              const peerId = newMessage.senderId?._id || newMessage.senderId;
               showInAppNotification(newMessage, senderForNotify, () => {
-                get().setSelectedUser(senderForNotify);
+                import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
+                  openConversationFromNotification({
+                    chatId: peerId,
+                    peer: {
+                      _id: senderForNotify._id?._id || senderForNotify._id || peerId,
+                      fullName: senderForNotify.fullName,
+                      profilePic: senderForNotify.profilePic,
+                      isFriend: senderForNotify.isFriend !== false,
+                    },
+                  });
+                });
               });
             }
           }
@@ -1136,25 +1174,48 @@ export const useChatStore = create((set, get) => ({
       });
     }
 
-    if (selectedUser && (!currentUser || currentUser._id !== selectedUser._id)) {
-      const mem = readMemoryThread("dm", selectedUser._id);
+    // Closing chat — clear thread so it can't bleed into the next open
+    if (!selectedUser) {
       set({
-        selectedUser,
+        selectedUser: null,
+        messages: [],
         isTyping: false,
-        messages: mem?.messages || [],
-        messagesMeta: mem
-          ? {
-              hasMoreOlder: mem.hasMoreOlder ?? true,
-              isSyncing: false,
-              oldestCursor: mem.oldestCachedAt,
-              newestCursor: mem.newestAt,
-            }
-          : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
-        isMessagesLoading: !mem?.messages?.length,
+        isMessagesLoading: false,
+        messagesMeta: {
+          hasMoreOlder: true,
+          isSyncing: false,
+          oldestCursor: null,
+          newestCursor: null,
+        },
       });
-    } else {
-      set({ selectedUser });
+      return;
     }
+
+    const sameUser =
+      currentUser && String(currentUser._id) === String(selectedUser._id);
+
+    if (sameUser) {
+      set({ selectedUser });
+      return;
+    }
+
+    const mem = readMemoryThread("dm", selectedUser._id);
+    set({
+      selectedUser,
+      isTyping: false,
+      // Always swap thread atomically — never keep previous chat's messages
+      messages: mem?.messages || [],
+      messagesMeta: mem
+        ? {
+            hasMoreOlder: mem.hasMoreOlder ?? true,
+            isSyncing: false,
+            oldestCursor: mem.oldestCachedAt,
+            newestCursor: mem.newestAt,
+          }
+        : { hasMoreOlder: true, isSyncing: false, oldestCursor: null, newestCursor: null },
+      isMessagesLoading: !mem?.messages?.length,
+      replyingToMessage: null,
+    });
   },
 
   /**

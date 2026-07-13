@@ -75,6 +75,24 @@ const groupMessageSchema = new mongoose.Schema(
             type: Boolean,
             default: false
         },
+        replyTo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "GroupMessage",
+            default: null
+        },
+        replyToMessage: {
+            text: String,
+            image: String,
+            senderId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User"
+            },
+            senderName: String
+        },
+        clientMessageId: {
+            type: String,
+            default: null
+        },
         mentions: [
             {
                 type: mongoose.Schema.Types.ObjectId,

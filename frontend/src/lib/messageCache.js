@@ -2,6 +2,8 @@
  * IndexedDB cache for chat message threads — instant open + background sync.
  */
 
+import { mergeThreadMessages } from "./messageSync";
+
 const DB_NAME = "chatappey_cache";
 const DB_VERSION = 1;
 const STORE = "threads";
@@ -29,24 +31,16 @@ export function threadKey(type, peerId) {
   return `${type}:${peerId}`;
 }
 
+/** @deprecated Prefer mergeThreadMessages — kept as alias for existing imports */
 export function mergeMessages(existing = [], incoming = []) {
-  const map = new Map();
-  for (const m of existing) {
-    if (m?._id != null) map.set(String(m._id), m);
-  }
-  for (const m of incoming) {
-    if (m?._id != null) map.set(String(m._id), m);
-  }
-  return [...map.values()].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  return mergeThreadMessages(existing, incoming);
 }
 
 function trimMessages(messages) {
   if (!Array.isArray(messages) || messages.length <= CACHE_MAX_MESSAGES) {
-    return messages || [];
+    return { messages: messages || [], trimmed: false };
   }
-  return messages.slice(-CACHE_MAX_MESSAGES);
+  return { messages: messages.slice(-CACHE_MAX_MESSAGES), trimmed: true };
 }
 
 export async function readThread(type, peerId) {
@@ -65,7 +59,8 @@ export async function readThread(type, peerId) {
 
 export async function writeThread(type, peerId, payload) {
   try {
-    const messages = trimMessages(payload.messages || []);
+    const { messages, trimmed } = trimMessages(payload.messages || []);
+    const hasMoreOlder = trimmed ? true : Boolean(payload.hasMoreOlder);
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, "readwrite");
@@ -74,7 +69,7 @@ export async function writeThread(type, peerId, payload) {
         type,
         peerId: String(peerId),
         messages,
-        hasMoreOlder: Boolean(payload.hasMoreOlder),
+        hasMoreOlder,
         oldestCachedAt: messages[0]?.createdAt || payload.oldestCachedAt || null,
         newestAt: messages[messages.length - 1]?.createdAt || payload.newestAt || null,
         syncedAt: payload.syncedAt ?? Date.now(),
@@ -124,9 +119,15 @@ export function readMemoryThread(type, peerId) {
 }
 
 export function writeMemoryThread(type, peerId, data) {
+  const { messages, trimmed } = trimMessages(data.messages || []);
   memoryThreads.set(threadKey(type, peerId), {
     ...data,
-    messages: trimMessages(data.messages || []),
+    type,
+    peerId: String(peerId),
+    messages,
+    hasMoreOlder: trimmed ? true : Boolean(data.hasMoreOlder),
+    oldestCachedAt: messages[0]?.createdAt || data.oldestCachedAt || null,
+    newestAt: messages[messages.length - 1]?.createdAt || data.newestAt || null,
     syncedAt: data.syncedAt ?? Date.now(),
   });
 }
@@ -135,6 +136,10 @@ export function clearMemoryThreads() {
   memoryThreads.clear();
 }
 
+/**
+ * Instant open: memory first, else IndexedDB.
+ * If memory already has messages, skip IDB (avoids cache-then-replace flicker).
+ */
 export async function hydrateThread(type, peerId) {
   const mem = readMemoryThread(type, peerId);
   if (mem?.messages?.length) return mem;
@@ -144,4 +149,20 @@ export async function hydrateThread(type, peerId) {
     return idb;
   }
   return null;
+}
+
+/** List cached thread cursors for reconnect catch-up (top N by newestAt). */
+export function listMemoryThreadCursors(limit = 20) {
+  const rows = [];
+  for (const record of memoryThreads.values()) {
+    if (!record?.peerId || !record?.newestAt) continue;
+    rows.push({
+      type: record.type,
+      peerId: record.peerId,
+      newestAt: record.newestAt,
+      syncedAt: record.syncedAt || 0,
+    });
+  }
+  rows.sort((a, b) => new Date(b.newestAt) - new Date(a.newestAt));
+  return rows.slice(0, limit);
 }

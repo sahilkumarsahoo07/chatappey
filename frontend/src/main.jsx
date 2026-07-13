@@ -24,13 +24,30 @@ if ("serviceWorker" in navigator) {
   // Seamless: switch chat in-place, zero reload
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type !== "NOTIFICATION_CLICK") return;
-    openConversationFromNotification({
+    const opened = openConversationFromNotification({
       chatId: event.data.chatId,
       groupId: event.data.groupId,
       url: event.data.url,
       peer: event.data.peer,
       group: event.data.group,
     });
+    // Auth / route not ready — keep pending for App flush
+    if (!opened) {
+      try {
+        sessionStorage.setItem(
+          "pendingNotificationOpen",
+          JSON.stringify({
+            chatId: event.data.chatId,
+            groupId: event.data.groupId,
+            url: event.data.url,
+            peer: event.data.peer,
+            group: event.data.group,
+          })
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    }
   });
 }
 

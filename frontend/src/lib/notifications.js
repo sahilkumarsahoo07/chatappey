@@ -47,18 +47,38 @@ export const refreshNotificationPermissionUI = () => {
 };
 
 const buildNotificationOptions = (options = {}) => {
+  const toId = (value) => {
+    if (value == null || value === "") return null;
+    if (typeof value === "object") {
+      const inner = value._id ?? value.id;
+      if (inner == null) return null;
+      return String(inner);
+    }
+    const s = String(value);
+    return s === "[object Object]" ? null : s;
+  };
+
   const url = options.url || options.data?.url || "/";
-  let chatId = options.chatId || options.data?.chatId || null;
-  let groupId = options.groupId || options.data?.groupId || null;
+  let chatId = toId(options.chatId || options.data?.chatId);
+  let groupId = toId(options.groupId || options.data?.groupId);
   if (!chatId && !groupId && url.includes("?")) {
     try {
       const params = new URLSearchParams(url.split("?")[1]);
-      chatId = params.get("chat");
-      groupId = params.get("group");
+      chatId = toId(params.get("chat"));
+      groupId = toId(params.get("group"));
     } catch (_) {
       /* ignore */
     }
   }
+
+  const peerRaw = options.peer || options.data?.peer || null;
+  const groupRaw = options.group || options.data?.group || null;
+  const peer = peerRaw
+    ? { ...peerRaw, _id: toId(peerRaw._id) || chatId }
+    : null;
+  const group = groupRaw
+    ? { ...groupRaw, _id: toId(groupRaw._id) || groupId }
+    : null;
 
   return {
     icon: sameOriginIcon(options.icon),
@@ -69,11 +89,16 @@ const buildNotificationOptions = (options = {}) => {
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
     data: {
-      url,
+      url:
+        chatId
+          ? `/?chat=${encodeURIComponent(chatId)}`
+          : groupId
+            ? `/?group=${encodeURIComponent(groupId)}`
+            : url,
       chatId,
       groupId,
-      peer: options.peer || options.data?.peer || null,
-      group: options.group || options.data?.group || null,
+      peer,
+      group,
     },
   };
 };
@@ -196,7 +221,16 @@ export const shouldShowSystemNotification = () =>
  */
 export const isActivelyViewingConversation = (conversationId, selectedId) => {
   if (conversationId == null || selectedId == null) return false;
-  if (String(conversationId) !== String(selectedId)) return false;
+  const a =
+    typeof conversationId === "object"
+      ? String(conversationId._id ?? conversationId.id ?? "")
+      : String(conversationId);
+  const b =
+    typeof selectedId === "object"
+      ? String(selectedId._id ?? selectedId.id ?? "")
+      : String(selectedId);
+  if (!a || !b || a === "[object Object]" || b === "[object Object]") return false;
+  if (a !== b) return false;
   try {
     // Chat UI only mounts on home; Settings/Calls/etc. must still notify
     if (window.location.pathname !== "/") return false;

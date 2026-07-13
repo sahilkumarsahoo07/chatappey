@@ -660,19 +660,22 @@ export const useAuthStore = create((set, get) => ({
 
     syncLiveConversations: async () => {
         try {
-            const [{ useChatStore }, { useGroupStore }] = await Promise.all([
+            const [{ useChatStore }, { useGroupStore }, cache] = await Promise.all([
                 import("./useChatStore"),
                 import("./useGroupStore"),
+                import("../lib/messageCache"),
             ]);
             const chat = useChatStore.getState();
             const group = useGroupStore.getState();
 
             await Promise.all([chat.refreshUsers(), group.getGroups()]);
 
+            // Open DM — delta only (never full replace when we have a cursor)
             const selectedUser = chat.selectedUser;
             if (selectedUser) {
-                const msgs = chat.messages;
-                const newest = msgs[msgs.length - 1]?.createdAt;
+                const newest =
+                    chat.messages[chat.messages.length - 1]?.createdAt ||
+                    chat.messagesMeta?.newestCursor;
                 if (newest) {
                     await chat.getMessages(selectedUser._id, { after: newest, background: true });
                 } else {
@@ -680,16 +683,83 @@ export const useAuthStore = create((set, get) => ({
                 }
             }
 
+            // Open group — delta only
             const selectedGroup = group.selectedGroup;
             if (selectedGroup) {
-                const msgs = group.groupMessages;
-                const newest = msgs[msgs.length - 1]?.createdAt;
+                const newest =
+                    group.groupMessages[group.groupMessages.length - 1]?.createdAt ||
+                    group.groupMessagesMeta?.newestCursor;
                 if (newest) {
-                    await group.getGroupMessages(selectedGroup._id, { after: newest, background: true });
+                    await group.getGroupMessages(selectedGroup._id, {
+                        after: newest,
+                        background: true,
+                    });
                 } else {
                     await group.getGroupMessages(selectedGroup._id, { background: true });
                 }
             }
+
+            // Catch up recent cached threads in background (WhatsApp-like, no UI replace)
+            const cursors = cache.listMemoryThreadCursors?.(12) || [];
+            await Promise.allSettled(
+                cursors.map(async (row) => {
+                    if (!row?.peerId || !row?.newestAt) return;
+                    if (row.type === "dm") {
+                        if (selectedUser && String(selectedUser._id) === String(row.peerId)) return;
+                        // Prefetch into cache only — don't touch open UI
+                        try {
+                            const params = { limit: 40, after: row.newestAt };
+                            const res = await (
+                                await import("../lib/axios")
+                            ).axiosInstance.get(`/messages/${row.peerId}`, { params });
+                            const incoming = Array.isArray(res.data)
+                                ? res.data
+                                : res.data?.messages || [];
+                            if (!incoming.length) return;
+                            const mem = cache.readMemoryThread("dm", row.peerId);
+                            const merged = cache.mergeMessages(mem?.messages || [], incoming);
+                            cache.writeMemoryThread("dm", row.peerId, {
+                                messages: merged,
+                                hasMoreOlder: mem?.hasMoreOlder ?? true,
+                                newestAt: merged[merged.length - 1]?.createdAt,
+                                oldestCachedAt: merged[0]?.createdAt,
+                            });
+                            cache.writeThread("dm", row.peerId, {
+                                messages: merged,
+                                hasMoreOlder: mem?.hasMoreOlder ?? true,
+                            }).catch(() => {});
+                        } catch {
+                            /* silent background */
+                        }
+                    } else if (row.type === "group") {
+                        if (selectedGroup && String(selectedGroup._id) === String(row.peerId)) return;
+                        try {
+                            const params = { limit: 40, after: row.newestAt };
+                            const res = await (
+                                await import("../lib/axios")
+                            ).axiosInstance.get(`/groups/${row.peerId}/messages`, { params });
+                            const incoming = Array.isArray(res.data)
+                                ? res.data
+                                : res.data?.messages || [];
+                            if (!incoming.length) return;
+                            const mem = cache.readMemoryThread("group", row.peerId);
+                            const merged = cache.mergeMessages(mem?.messages || [], incoming);
+                            cache.writeMemoryThread("group", row.peerId, {
+                                messages: merged,
+                                hasMoreOlder: mem?.hasMoreOlder ?? true,
+                                newestAt: merged[merged.length - 1]?.createdAt,
+                                oldestCachedAt: merged[0]?.createdAt,
+                            });
+                            cache.writeThread("group", row.peerId, {
+                                messages: merged,
+                                hasMoreOlder: mem?.hasMoreOlder ?? true,
+                            }).catch(() => {});
+                        } catch {
+                            /* silent background */
+                        }
+                    }
+                })
+            );
         } catch (err) {
             console.warn("syncLiveConversations failed:", err);
         }

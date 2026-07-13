@@ -436,3 +436,8 @@
 .highlight-message .chat-bubble {
     animation: highlight 2s ease-out;
 }
+
+.highlight-message {
+    animation: highlight 2s ease-out;
+    border-radius: 0.75rem;
+}

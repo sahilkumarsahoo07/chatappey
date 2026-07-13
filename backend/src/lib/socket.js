@@ -115,6 +115,18 @@ export function getReceiverSocketId(userId) {
   return userSocketMap[key];
 }
 
+/** Put online member sockets into a group room (covers create / add-member). */
+export function joinUsersToGroupRoom(userIds, groupId) {
+  if (!groupId || !userIds?.length) return;
+  const room = String(groupId);
+  for (const id of userIds) {
+    if (id == null) continue;
+    const uid =
+      typeof id === "object" && id._id != null ? String(id._id) : String(id);
+    io.in(`user:${uid}`).socketsJoin(room);
+  }
+}
+
 // Used to store online users
 const userSocketMap = {}; // { userId: socketId }
 
@@ -182,17 +194,15 @@ io.on("connection", async (socket) => {
     userSocketMap[String(userId)] = socket.id;
     socket.join(`user:${String(userId)}`);
 
-    // 3. Join user's groups (can remain async/background as it doesn't affect online status)
-    (async () => {
-      try {
-        const userGroups = await Group.find({ 'members.user': userId }).select('_id');
-        userGroups.forEach(group => {
-          socket.join(group._id.toString());
-        });
-      } catch (error) {
-        console.error("Error joining group rooms:", error);
-      }
-    })();
+    // 3. Join group rooms BEFORE advertising online — avoids missing first group messages
+    try {
+      const userGroups = await Group.find({ "members.user": userId }).select("_id").lean();
+      await Promise.all(
+        userGroups.map((group) => socket.join(group._id.toString()))
+      );
+    } catch (error) {
+      console.error("Error joining group rooms:", error);
+    }
 
     // 4. Notify the user they are connected
     socket.emit("userOnline", { userId });
@@ -565,6 +575,8 @@ io.on("connection", async (socket) => {
 
       const payload = newMessage.toObject ? newMessage.toObject() : newMessage;
       payload.clientMessageId = clientMessageId || payload.clientMessageId;
+      // Explicit server clock — clients MUST use this for ordering, never Date.now()
+      payload.serverCreatedAt = payload.createdAt;
 
       // ACK sender immediately (status: sent) — ticks upgrade via delivery/read events
       callback?.({ success: true, message: payload });
@@ -572,6 +584,8 @@ io.on("connection", async (socket) => {
       if (!shouldBeScheduled) {
         // Fan-out to all receiver devices via user room
         emitToUser(io, userSocketMap, receiverId, "newMessage", payload);
+        // Echo to sender's OTHER devices (same room). Sending device merges via clientMessageId.
+        emitToUser(io, userSocketMap, userId, "newMessage", payload);
       }
     } catch (error) {
       console.error("Error in sendMessage socket handler:", error.message);
@@ -616,7 +630,24 @@ io.on("connection", async (socket) => {
   // WebSocket-based message sending for group messages
   socket.on("sendGroupMessage", async (messageData, callback) => {
     try {
-      const { groupId, text, image, audio, file, fileName, isForwarded, mentions, poll } = messageData;
+      const {
+        groupId,
+        text,
+        image,
+        audio,
+        file,
+        fileName,
+        video,
+        videoThumbnail,
+        videoDuration,
+        videoPublicId,
+        isForwarded,
+        mentions,
+        poll,
+        replyTo,
+        replyToMessage,
+        clientMessageId,
+      } = messageData;
 
       // Check if group exists and user is a member
       const group = await Group.findById(groupId);
@@ -668,16 +699,41 @@ io.on("connection", async (socket) => {
         fileUrl = uploadResponse.secure_url;
       }
 
+      let validReplyTo = null;
+      let replyToMessageData = replyToMessage || null;
+      if (replyTo && mongoose.Types.ObjectId.isValid(replyTo)) {
+        const original = await GroupMessage.findById(replyTo).populate("senderId", "fullName");
+        if (original && original.groupId?.toString() === String(groupId)) {
+          validReplyTo = original._id;
+          replyToMessageData = {
+            text: original.text || replyToMessage?.text || "",
+            image: original.image || replyToMessage?.image || undefined,
+            senderId: original.senderId?._id || original.senderId,
+            senderName:
+              replyToMessage?.senderName ||
+              original.senderId?.fullName ||
+              "Member",
+          };
+        }
+      }
+
       const newMessage = new GroupMessage({
         groupId,
         senderId: userId,
         text,
         image: imageUrl,
+        video: video || undefined,
+        videoThumbnail: videoThumbnail || undefined,
+        videoDuration: videoDuration || undefined,
+        videoPublicId: videoPublicId || undefined,
         audio: audioUrl,
         file: fileUrl,
         fileName: fileName || null,
         isForwarded: isForwarded || false,
         mentions: mentions || [],
+        replyTo: validReplyTo,
+        replyToMessage: replyToMessageData,
+        clientMessageId: clientMessageId || null,
         poll: poll ? {
           question: poll.question,
           options: poll.options.map(opt => ({ text: opt.text, votes: [] }))
@@ -690,9 +746,16 @@ io.on("connection", async (socket) => {
       // Populate sender info
       await newMessage.populate('senderId', 'fullName profilePic');
 
+      const payload =
+        typeof newMessage.toObject === "function"
+          ? newMessage.toObject()
+          : newMessage;
+      payload.clientMessageId = clientMessageId || payload.clientMessageId;
+      payload.serverCreatedAt = payload.createdAt;
+
       // Update group's lastMessage and updatedAt
       group.lastMessage = {
-        text: text || "📷 Photo",
+        text: text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : poll ? "📊 Poll" : "📷 Photo"),
         senderId: userId,
         createdAt: newMessage.createdAt
       };
@@ -700,13 +763,13 @@ io.on("connection", async (socket) => {
       await group.save();
 
       // Broadcast to all group members
-      io.to(groupId).emit("group:newMessage", {
-        groupId,
-        message: newMessage
+      io.to(String(groupId)).emit("group:newMessage", {
+        groupId: String(groupId),
+        message: payload
       });
 
       // Send success response to sender
-      callback?.({ success: true, message: newMessage });
+      callback?.({ success: true, message: payload });
     } catch (error) {
       console.error("Error in sendGroupMessage socket handler:", error.message);
       callback?.({ error: error.message || "Internal server error" });

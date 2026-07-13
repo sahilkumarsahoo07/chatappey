@@ -4,11 +4,17 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 const BOTTOM_THRESHOLD = 100;
 const TOP_LOAD_THRESHOLD = 80;
 
+function itemKey(item, index, getItemKey) {
+  if (getItemKey) return getItemKey(item, index);
+  return item?.optimisticId || item?._id || index;
+}
+
 /**
  * WhatsApp-style virtualized message list:
  * - Opens pinned to latest message
  * - Reverse infinite scroll loads older pages without jumping
- * - Only auto-scrolls to bottom when pinBottom is active
+ * - Only auto-scrolls when pinned AND the last message identity changes
+ *   (never on every row height measure — that caused flicker)
  */
 function VirtualMessageList({
   items,
@@ -28,20 +34,17 @@ function VirtualMessageList({
 }) {
   const reachTopLock = useRef(false);
   const prevScrollHeightRef = useRef(0);
-  const prevItemsLenRef = useRef(0);
   const wasLoadingOlderRef = useRef(false);
   const pinBottomRef = useRef(true);
   const pendingRestoreRef = useRef(false);
+  const lastTailKeyRef = useRef(null);
 
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => containerRef.current,
     estimateSize: () => 88,
     overscan: 12,
-    getItemKey: (index) => {
-      const item = items[index];
-      return getItemKey ? getItemKey(item, index) : item?.optimisticId || item?._id || index;
-    },
+    getItemKey: (index) => itemKey(items[index], index, getItemKey),
     measureElement:
       typeof window !== "undefined" && navigator.userAgent.indexOf("Firefox") === -1
         ? (el) => el?.getBoundingClientRect().height
@@ -49,30 +52,52 @@ function VirtualMessageList({
   });
 
   const totalSize = virtualizer.getTotalSize();
+  const tailItem = items.length ? items[items.length - 1] : null;
+  const tailKey = tailItem
+    ? String(itemKey(tailItem, items.length - 1, getItemKey))
+    : null;
 
   const scrollToBottomInstant = useCallback(() => {
     const el = containerRef.current;
     if (!el || items.length === 0) return;
     virtualizer.scrollToIndex(items.length - 1, { align: "end", behavior: "auto" });
-    el.scrollTop = el.scrollHeight;
+    // Ensure absolute bottom after virtualizer settle
+    requestAnimationFrame(() => {
+      if (containerRef.current && pinBottomRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      }
+    });
   }, [containerRef, items.length, virtualizer]);
 
   // Chat open / explicit jump — never tied to message count
   useLayoutEffect(() => {
     pinBottomRef.current = true;
     onAtBottomChange?.(true);
+    lastTailKeyRef.current = tailKey;
     scrollToBottomInstant();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToBottomKey]);
 
-  // Keep bottom pinned while row heights settle (images), unless loading older
+  // Auto-scroll only when a NEW last message arrives and user is pinned to bottom
   useLayoutEffect(() => {
     if (!pinBottomRef.current || wasLoadingOlderRef.current || isLoadingOlder) return;
-    if (items.length === 0) return;
+    if (!tailKey || tailKey === lastTailKeyRef.current) return;
+    lastTailKeyRef.current = tailKey;
     scrollToBottomInstant();
-  }, [totalSize, scrollToBottomInstant, isLoadingOlder, items.length]);
+  }, [tailKey, scrollToBottomInstant, isLoadingOlder]);
 
-  // Capture scroll height before older messages land
+  // Soft re-pin after last-row height settles (images) — only if still at bottom
+  useLayoutEffect(() => {
+    if (!pinBottomRef.current || wasLoadingOlderRef.current || isLoadingOlder) return;
+    const el = containerRef.current;
+    if (!el || items.length === 0) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distance < BOTTOM_THRESHOLD) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [totalSize, isLoadingOlder, items.length, containerRef]);
+
+  // Capture scroll height before older messages land — preserve viewport
   useLayoutEffect(() => {
     if (isLoadingOlder) {
       wasLoadingOlderRef.current = true;
@@ -81,7 +106,6 @@ function VirtualMessageList({
       onAtBottomChange?.(false);
       const el = containerRef.current;
       if (el) prevScrollHeightRef.current = el.scrollHeight;
-      prevItemsLenRef.current = items.length;
       return;
     }
 
@@ -96,13 +120,6 @@ function VirtualMessageList({
     }
   }, [isLoadingOlder, items.length, containerRef, onAtBottomChange]);
 
-  // Extra restore after virtualizer remeasures prepended rows
-  useLayoutEffect(() => {
-    if (wasLoadingOlderRef.current || pendingRestoreRef.current) return;
-    if (isLoadingOlder) return;
-    // no-op: restore already applied above
-  }, [totalSize, isLoadingOlder]);
-
   const handleScroll = useCallback(
     (e) => {
       onScroll?.(e);
@@ -111,11 +128,7 @@ function VirtualMessageList({
 
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       const atBottom = distanceFromBottom < BOTTOM_THRESHOLD;
-      if (atBottom) {
-        pinBottomRef.current = true;
-      } else {
-        pinBottomRef.current = false;
-      }
+      pinBottomRef.current = atBottom;
       onAtBottomChange?.(atBottom);
 
       if (!onReachTop || !hasMoreOlder || isLoadingOlder) return;

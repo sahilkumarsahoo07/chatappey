@@ -6,6 +6,7 @@ import GroupChatHeader from "./GroupChatHeader";
 import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
+import { sortMessages } from "../lib/messageSync";
 import defaultAvatar from "../public/avatar.png";
 import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Info, CheckCheck, ChevronDown } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent } from "@mui/material";
@@ -94,7 +95,7 @@ const GroupChatContainer = () => {
     const [scrollEpoch, setScrollEpoch] = useState(0);
 
     const sortedGroupMessages = useMemo(
-        () => [...groupMessages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)),
+        () => sortMessages(groupMessages),
         [groupMessages]
     );
 
@@ -124,6 +125,10 @@ const GroupChatContainer = () => {
             setSearchOpen(false);
             setSearchQuery("");
             setSearchActiveId(null);
+            setInfoDialogMessageId(null);
+            setOpenMenuId(null);
+            setDeleteDialogMessageId(null);
+            setForwardDialogMessageId(null);
         }
     }, [selectedGroup?._id, getGroupMessages]);
 
@@ -155,8 +160,9 @@ const GroupChatContainer = () => {
         }
     }, []);
 
+    // Track new messages for chip — VirtualMessageList owns scroll position
     useLayoutEffect(() => {
-        if (!containerRef.current || isLoadingOlderGroup) return;
+        if (isLoadingOlderGroup) return;
 
         const lastMessage = sortedGroupMessages[sortedGroupMessages.length - 1];
         const lastId = lastMessage?.optimisticId || lastMessage?._id || null;
@@ -172,15 +178,16 @@ const GroupChatContainer = () => {
             isAtBottomRef.current = true;
             prevSelectedGroupIdRef.current = selectedGroup?._id;
             setPendingNewCount(0);
-            containerRef.current.scrollTop = containerRef.current.scrollHeight;
         } else if (prepended) {
             // VirtualMessageList preserves viewport
         } else if (lastChanged) {
-            if (isAtBottomRef.current || isMyMessage) {
+            if (isMyMessage) {
                 isAtBottomRef.current = true;
                 setPendingNewCount(0);
-                containerRef.current.scrollTop = containerRef.current.scrollHeight;
-            } else if (!isMyMessage) {
+                setScrollEpoch((n) => n + 1);
+            } else if (isAtBottomRef.current) {
+                setPendingNewCount(0);
+            } else {
                 setPendingNewCount((c) => c + 1);
             }
         }
@@ -279,7 +286,7 @@ const GroupChatContainer = () => {
         setOpenMenuId(messageId);
     };
 
-    const handleSwipeReply = (message) => {
+    const handleSwipeReply = useCallback((message) => {
         const sender = message.senderId;
         setReplyingToMessage({
             ...message,
@@ -288,7 +295,7 @@ const GroupChatContainer = () => {
                     ? "You"
                     : sender?.fullName || "Member",
         });
-    };
+    }, [authUser._id, setReplyingToMessage]);
 
     const menuMessage = openMenuId
         ? groupMessages.find((m) => m._id === openMenuId)
@@ -392,7 +399,8 @@ const GroupChatContainer = () => {
             <div className="mb-4">
                 {DateSeparator}
                 <div
-                    data-message-id={message._id}
+                    id={`msg-${message.realId || message._id}`}
+                    data-message-id={message.realId || message._id}
                     className={`flex ${isMyMessage ? "justify-end" : "justify-start"} ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}
                 >
                     <div className={`flex gap-2 max-w-[80%] ${isMyMessage ? "flex-row-reverse" : ""}`}>
@@ -436,6 +444,49 @@ const GroupChatContainer = () => {
                                         />
                                     ) : (
                                     <>
+                                    {message.replyToMessage && (
+                                        <div
+                                            className={`mb-2 p-2 rounded-lg border-l-4 cursor-pointer transition-colors ${
+                                                isMyMessage
+                                                    ? "bg-black/10 border-primary-content/50 hover:bg-black/20"
+                                                    : "bg-black/10 dark:bg-black/20 border-primary hover:bg-black/20 dark:hover:bg-black/30"
+                                            }`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const replyId = message.replyTo;
+                                                const element = document.getElementById(`msg-${replyId}`);
+                                                if (element) {
+                                                    element.scrollIntoView({ behavior: "smooth", block: "center" });
+                                                    element.classList.add("highlight-message");
+                                                    setTimeout(() => element.classList.remove("highlight-message"), 2000);
+                                                } else {
+                                                    toast("Original message not loaded", { icon: "🔍" });
+                                                }
+                                            }}
+                                        >
+                                            <p className={`text-xs font-bold opacity-80 mb-0.5 ${isMyMessage ? "text-primary-content" : "text-primary"}`}>
+                                                {String(message.replyToMessage.senderId) === String(authUser._id) ||
+                                                message.replyToMessage.senderId?._id === authUser._id
+                                                    ? "You"
+                                                    : message.replyToMessage.senderName || "Member"}
+                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && (
+                                                    <img
+                                                        src={message.replyToMessage.image}
+                                                        alt="Thumbnail"
+                                                        className="w-8 h-8 rounded object-cover"
+                                                        loading="lazy"
+                                                        onLoad={handleImageLoad}
+                                                    />
+                                                )}
+                                                <p className="text-xs opacity-70 truncate max-w-[150px]">
+                                                    {message.replyToMessage.text ||
+                                                        (message.replyToMessage.image ? "Photo" : "")}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                     {message.isForwarded && (
                                         <div className={`flex items-center gap-1 text-xs mb-1.5 ${isMyMessage ? "text-primary-content/70" : "text-base-content/50"}`}>
                                             <Forward className="w-3 h-3" />
@@ -520,6 +571,7 @@ const GroupChatContainer = () => {
         searchQuery,
         handleImageLoad,
         votePoll,
+        handleSwipeReply,
     ]);
 
     if (!selectedGroup) return null;
@@ -618,53 +670,250 @@ const GroupChatContainer = () => {
                 )}
             </div>
 
-            {/* Read Receipts Dialog */}
+            {/* Message Info — WhatsApp-style read / delivered */}
             <Dialog
                 open={!!infoDialogMessageId}
                 onClose={() => setInfoDialogMessageId(null)}
                 maxWidth="xs"
                 fullWidth
+                PaperProps={{
+                    className: "bg-base-100",
+                    sx: { borderRadius: "12px", overflow: "hidden" },
+                }}
             >
-                <DialogTitle className="flex items-center justify-between border-b border-base-300 bg-base-100">
+                <DialogTitle className="flex items-center justify-between border-b border-base-300 !py-3 !px-4 bg-base-100">
                     <div className="flex items-center gap-2">
                         <Info className="w-5 h-5 text-primary" />
-                        <span className="text-lg font-semibold">Message Info</span>
+                        <span className="text-base font-semibold">Message info</span>
                     </div>
-                    <button onClick={() => setInfoDialogMessageId(null)} className="btn btn-ghost btn-sm btn-circle">
+                    <button
+                        type="button"
+                        onClick={() => setInfoDialogMessageId(null)}
+                        className="btn btn-ghost btn-sm btn-circle"
+                    >
                         <X className="w-4 h-4" />
                     </button>
                 </DialogTitle>
-                <DialogContent className="p-0 bg-base-100">
-                    <div className="p-4">
-                        <h4 className="text-xs font-bold text-base-content/40 uppercase mb-3 px-2">Read by</h4>
-                        <div className="space-y-1">
-                            {(() => {
-                                const msg = groupMessages.find(m => m._id === infoDialogMessageId);
-                                const readers = msg?.readBy || [];
-                                if (readers.length === 1 && readers[0]._id === authUser._id) {
-                                    return <p className="text-sm text-center py-4 text-base-content/50">No one else has read this yet</p>;
-                                }
-                                return readers
-                                    .filter(r => r._id !== authUser._id)
-                                    .map(reader => (
-                                        <div key={reader._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 transition-colors">
+                <DialogContent className="!p-0 bg-base-100">
+                    {(() => {
+                        const msg = groupMessages.find(
+                            (m) =>
+                                String(m._id) === String(infoDialogMessageId) ||
+                                String(m.realId) === String(infoDialogMessageId)
+                        );
+                        if (!msg) {
+                            return (
+                                <p className="text-sm text-center py-8 text-base-content/50">
+                                    Message not found
+                                </p>
+                            );
+                        }
+
+                        const myId = String(authUser._id);
+                        const senderId = String(msg.senderId?._id || msg.senderId || "");
+
+                        const resolveMember = (raw) => {
+                            const id = String(raw?._id || raw?.user?._id || raw?.user || raw || "");
+                            if (!id) return null;
+                            if (raw && typeof raw === "object" && (raw.fullName || raw.profilePic)) {
+                                return {
+                                    _id: id,
+                                    fullName: raw.fullName || "Member",
+                                    profilePic: raw.profilePic || "",
+                                    readAt: raw.readAt || null,
+                                };
+                            }
+                            const member = (selectedGroup?.members || []).find(
+                                (m) => String(m.user?._id || m.user || m) === id
+                            );
+                            const user = member?.user;
+                            if (user && typeof user === "object") {
+                                return {
+                                    _id: id,
+                                    fullName: user.fullName || "Member",
+                                    profilePic: user.profilePic || "",
+                                    readAt: raw?.readAt || null,
+                                };
+                            }
+                            if (id === myId) {
+                                return {
+                                    _id: myId,
+                                    fullName: authUser.fullName || "You",
+                                    profilePic: authUser.profilePic || "",
+                                    readAt: raw?.readAt || null,
+                                };
+                            }
+                            return {
+                                _id: id,
+                                fullName: "Member",
+                                profilePic: "",
+                                readAt: raw?.readAt || null,
+                            };
+                        };
+
+                        const readerIds = new Set(
+                            (msg.readBy || [])
+                                .map((r) => String(r?._id || r))
+                                .filter((id) => id && id !== senderId)
+                        );
+
+                        const readByList = (msg.readBy || [])
+                            .map(resolveMember)
+                            .filter((r) => r && r._id !== senderId);
+
+                        // Deduplicate by id
+                        const readByUnique = [];
+                        const seenRead = new Set();
+                        for (const r of readByList) {
+                            if (seenRead.has(r._id)) continue;
+                            seenRead.add(r._id);
+                            readByUnique.push(r);
+                        }
+
+                        const deliveredToList = (selectedGroup?.members || [])
+                            .map((m) => resolveMember(m.user || m))
+                            .filter(
+                                (m) =>
+                                    m &&
+                                    m._id !== senderId &&
+                                    m._id !== myId &&
+                                    !readerIds.has(m._id)
+                            );
+
+                        const sentAt = msg.createdAt
+                            ? formatMessageTime(msg.createdAt)
+                            : null;
+
+                        return (
+                            <div>
+                                {/* Message preview strip */}
+                                <div className="px-4 py-3 bg-base-200/60 border-b border-base-300">
+                                    <div
+                                        className={`ml-auto max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                                            senderId === myId
+                                                ? "bg-primary text-primary-content"
+                                                : "bg-base-100 text-base-content"
+                                        }`}
+                                    >
+                                        {msg.image && (
                                             <img
-                                                src={reader.profilePic || defaultAvatar}
-                                                alt={reader.fullName}
-                                                className="w-10 h-10 rounded-full object-cover"
+                                                src={msg.image}
+                                                alt=""
+                                                className="max-h-24 rounded mb-1 object-cover"
                                             />
-                                            <div className="flex-1">
-                                                <p className="text-sm font-medium">{reader.fullName}</p>
-                                                <div className="flex items-center gap-1 text-[10px] text-success">
-                                                    <CheckCheck className="w-3 h-3" />
-                                                    Read
+                                        )}
+                                        <p className="whitespace-pre-wrap break-words line-clamp-4">
+                                            {msg.text ||
+                                                (msg.image
+                                                    ? "Photo"
+                                                    : msg.video
+                                                      ? "Video"
+                                                      : msg.audio
+                                                        ? "Audio"
+                                                        : msg.poll
+                                                          ? "Poll"
+                                                          : "Message")}
+                                        </p>
+                                        {sentAt && (
+                                            <p className="text-[10px] opacity-70 text-right mt-1">
+                                                {sentAt}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Read by */}
+                                <div className="px-2 pt-3 pb-1">
+                                    <div className="flex items-center justify-between px-3 mb-1">
+                                        <h4 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+                                            Read by
+                                        </h4>
+                                        <span className="text-xs text-base-content/40">
+                                            {readByUnique.length}
+                                        </span>
+                                    </div>
+                                    {readByUnique.length === 0 ? (
+                                        <p className="text-sm text-base-content/50 px-3 py-3">
+                                            No one has read this message yet
+                                        </p>
+                                    ) : (
+                                        <div className="divide-y divide-base-200">
+                                            {readByUnique.map((reader) => (
+                                                <div
+                                                    key={reader._id}
+                                                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-base-200/50"
+                                                >
+                                                    <img
+                                                        src={reader.profilePic || defaultAvatar}
+                                                        alt={reader.fullName}
+                                                        className="w-10 h-10 rounded-full object-cover shrink-0"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium truncate">
+                                                            {reader._id === myId ? "You" : reader.fullName}
+                                                        </p>
+                                                        <div className="flex items-center gap-1 text-xs text-sky-500">
+                                                            <CheckCheck className="w-3.5 h-3.5" />
+                                                            <span>
+                                                                {reader.readAt
+                                                                    ? formatMessageTime(reader.readAt)
+                                                                    : "Read"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            ))}
                                         </div>
-                                    ));
-                            })()}
-                        </div>
-                    </div>
+                                    )}
+                                </div>
+
+                                {/* Delivered to */}
+                                <div className="px-2 pt-2 pb-4 border-t border-base-300 mt-1">
+                                    <div className="flex items-center justify-between px-3 mb-1 mt-2">
+                                        <h4 className="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+                                            Delivered to
+                                        </h4>
+                                        <span className="text-xs text-base-content/40">
+                                            {deliveredToList.length}
+                                        </span>
+                                    </div>
+                                    {deliveredToList.length === 0 ? (
+                                        <p className="text-sm text-base-content/50 px-3 py-3">
+                                            {readByUnique.length > 0
+                                                ? "Delivered to everyone who can see this chat"
+                                                : "Waiting for delivery"}
+                                        </p>
+                                    ) : (
+                                        <div className="divide-y divide-base-200">
+                                            {deliveredToList.map((member) => (
+                                                <div
+                                                    key={member._id}
+                                                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-base-200/50"
+                                                >
+                                                    <img
+                                                        src={member.profilePic || defaultAvatar}
+                                                        alt={member.fullName}
+                                                        className="w-10 h-10 rounded-full object-cover shrink-0"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium truncate">
+                                                            {member.fullName}
+                                                        </p>
+                                                        <div className="flex items-center gap-1 text-xs text-base-content/50">
+                                                            <CheckCheck className="w-3.5 h-3.5" />
+                                                            <span>
+                                                                {sentAt ? `Delivered ${sentAt}` : "Delivered"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </DialogContent>
             </Dialog>
 

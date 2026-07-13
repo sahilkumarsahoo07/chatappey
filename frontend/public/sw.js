@@ -8,6 +8,17 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(clients.claim());
 });
 
+function toEntityId(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "object") {
+    const inner = value._id ?? value.id;
+    if (inner == null) return null;
+    return String(inner);
+  }
+  const s = String(value);
+  return s === "[object Object]" ? null : s;
+}
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -43,13 +54,13 @@ self.addEventListener("notificationclick", (event) => {
   const relativeUrl = nData.url || "/";
   const urlToOpen = new URL(relativeUrl, self.location.origin).href;
 
-  let chatId = nData.chatId || null;
-  let groupId = nData.groupId || null;
+  let chatId = toEntityId(nData.chatId);
+  let groupId = toEntityId(nData.groupId);
   if (!chatId && !groupId) {
     try {
       const params = new URL(urlToOpen).searchParams;
-      chatId = params.get("chat");
-      groupId = params.get("group");
+      chatId = toEntityId(params.get("chat"));
+      groupId = toEntityId(params.get("group"));
     } catch (_) {
       /* ignore */
     }
@@ -60,29 +71,41 @@ self.addEventListener("notificationclick", (event) => {
     url: relativeUrl,
     chatId,
     groupId,
-    peer: nData.peer || null,
-    group: nData.group || null,
+    peer: nData.peer
+      ? { ...nData.peer, _id: toEntityId(nData.peer._id) || chatId }
+      : null,
+    group: nData.group
+      ? { ...nData.group, _id: toEntityId(nData.group._id) || groupId }
+      : null,
   };
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windowClients) => {
-      const matchingClient = windowClients.find((c) =>
+      const originClients = windowClients.filter((c) =>
         c.url.startsWith(self.location.origin)
       );
 
-      if (matchingClient) {
-        // Focus only — do NOT navigate (navigate = full reload + hang)
-        await matchingClient.focus();
-        matchingClient.postMessage(payload);
+      if (originClients.length > 0) {
+        // Prefer focused / visible tab so the open lands in the active session
+        const target =
+          originClients.find((c) => c.focused) ||
+          originClients.find((c) => c.visibilityState === "visible") ||
+          originClients[0];
+
+        await target.focus();
+        // Message all origin clients — avoids missing the React app if focus pick is wrong
+        for (const client of originClients) {
+          client.postMessage(payload);
+        }
         return;
       }
 
-      // App not open — open home (notification click counts as user gesture)
+      // App not open — open home with deep link (notification click = user gesture)
       if (clients.openWindow) {
         const openUrl = chatId
-          ? new URL(`/?chat=${chatId}`, self.location.origin).href
+          ? new URL(`/?chat=${encodeURIComponent(chatId)}`, self.location.origin).href
           : groupId
-            ? new URL(`/?group=${groupId}`, self.location.origin).href
+            ? new URL(`/?group=${encodeURIComponent(groupId)}`, self.location.origin).href
             : urlToOpen;
         return clients.openWindow(openUrl);
       }

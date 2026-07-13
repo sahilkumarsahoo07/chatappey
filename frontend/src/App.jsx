@@ -141,30 +141,36 @@ function App() {
       } catch (_) {
         /* ignore */
       }
-      navigate("/");
-      // Apply after route paints
-      requestAnimationFrame(() => {
+      if (location.pathname !== "/") {
+        navigate("/");
+      } else {
         applyConversationSwitch(detail);
         flushPendingNotificationOpen();
-      });
+      }
     };
     window.addEventListener("spa-go-home-open-chat", onSpaOpen);
     return () => window.removeEventListener("spa-go-home-open-chat", onSpaOpen);
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
-  // Cold start with /?chat= or /?group= (only when app was closed)
+  // Apply pending notification open once we're on home + authenticated
   useEffect(() => {
     if (!authUser) return;
+    if (location.pathname !== "/") return;
+
     const params = new URLSearchParams(window.location.search);
     const chatId = params.get("chat");
     const groupId = params.get("group");
-    if (!chatId && !groupId) {
-      flushPendingNotificationOpen();
+    if (chatId || groupId) {
+      applyConversationSwitch({ chatId, groupId });
+      window.history.replaceState({}, document.title, "/");
       return;
     }
-    applyConversationSwitch({ chatId, groupId });
-    window.history.replaceState({}, document.title, "/");
-  }, [authUser]);
+    // Small delay lets HomePage mount before store-driven chat panel paint
+    const t = window.setTimeout(() => {
+      flushPendingNotificationOpen();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [authUser, location.pathname]);
 
   // console.log({ authUser })
 

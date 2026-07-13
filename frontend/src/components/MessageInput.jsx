@@ -63,6 +63,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     })));
     const selectedGroup = useGroupStore((s) => s.selectedGroup);
     const socket = useAuthStore((s) => s.socket);
+    const authUser = useAuthStore((s) => s.authUser);
 
     const isRestricted = isGroupChat && announcementOnly && !isAdmin;
     const filteredMembers = useMemo(() => {
@@ -350,6 +351,21 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         }
 
         // Prepare data (use captured values)
+        const replySenderId =
+            currentReplyingToMessage?.senderId?._id ||
+            currentReplyingToMessage?.senderId ||
+            null;
+        const replySenderName =
+            currentReplyingToMessage?.senderName ||
+            (replySenderId &&
+            selectedUser &&
+            String(replySenderId) === String(selectedUser._id)
+                ? selectedUser.fullName
+                : null) ||
+            (replySenderId && authUser && String(replySenderId) === String(authUser._id)
+                ? "You"
+                : currentReplyingToMessage?.senderId?.fullName || "Member");
+
         const messageData = {
             text: currentText,
             mentions: currentMentions,
@@ -357,8 +373,8 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             replyToMessage: currentReplyingToMessage ? {
                 text: currentReplyingToMessage.text,
                 image: currentReplyingToMessage.image,
-                senderId: currentReplyingToMessage.senderId,
-                senderName: currentReplyingToMessage.senderId === selectedUser?._id ? selectedUser.fullName : "You"
+                senderId: replySenderId,
+                senderName: replySenderName
             } : null,
             ...extraData
         };

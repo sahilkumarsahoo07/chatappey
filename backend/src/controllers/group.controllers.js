@@ -1,8 +1,9 @@
 import Group from "../models/group.model.js";
 import GroupMessage from "../models/groupMessage.model.js";
 import User from "../models/user.model.js";
+import mongoose from "mongoose";
 import cloudinary from "../lib/cloudinary.js";
-import { io, getReceiverSocketId } from "../lib/socket.js";
+import { io, getReceiverSocketId, joinUsersToGroupRoom } from "../lib/socket.js";
 import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
 import {
     annotateDeleteFlags,
@@ -34,16 +35,10 @@ const sendSystemMessage = async (groupId, text) => {
             };
             await group.save();
 
-            // Notify all group members via socket
-            group.members.forEach(member => {
-                const memberId = member.user || member;
-                const socketId = getReceiverSocketId(memberId.toString());
-                if (socketId) {
-                    io.to(socketId).emit("group:newMessage", {
-                        groupId,
-                        message: newMessage
-                    });
-                }
+            // Broadcast via room so all joined members receive it
+            io.to(String(groupId)).emit("group:newMessage", {
+                groupId: String(groupId),
+                message: newMessage
             });
         }
         return newMessage;
@@ -89,6 +84,9 @@ export const createGroup = async (req, res) => {
         });
 
         await newGroup.save();
+
+        // Join rooms before system message so live broadcast reaches online members
+        joinUsersToGroupRoom(allMemberIds, newGroup._id);
 
         // Send system message
         const adminUser = await User.findById(adminId);
@@ -370,6 +368,9 @@ export const addMembers = async (req, res) => {
         group.members.push(...membersToAdd);
         await group.save();
 
+        // Join rooms before system messages so new members get live updates
+        joinUsersToGroupRoom(newMemberIds, groupId);
+
         const adminUser = await User.findById(userId);
         for (const memberId of newMemberIds) {
             const addedUser = await User.findById(memberId);
@@ -602,7 +603,23 @@ export const getGroupMessages = async (req, res) => {
 export const sendGroupMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, isForwarded, mentions, poll } = req.body;
+        const {
+            text,
+            image,
+            audio,
+            file,
+            fileName,
+            video,
+            videoThumbnail,
+            videoDuration,
+            videoPublicId,
+            isForwarded,
+            mentions,
+            poll,
+            replyTo,
+            replyToMessage,
+            clientMessageId,
+        } = req.body;
         const senderId = req.user._id;
 
         const group = await Group.findById(groupId);
@@ -652,6 +669,24 @@ export const sendGroupMessage = async (req, res) => {
             validMentions = mentions.filter(id => memberIds.includes(id.toString()));
         }
 
+        let validReplyTo = null;
+        let replyToMessageData = replyToMessage || null;
+        if (replyTo && mongoose.Types.ObjectId.isValid(replyTo)) {
+            const original = await GroupMessage.findById(replyTo).populate("senderId", "fullName");
+            if (original && original.groupId?.toString() === String(groupId)) {
+                validReplyTo = original._id;
+                replyToMessageData = {
+                    text: original.text || replyToMessage?.text || "",
+                    image: original.image || replyToMessage?.image || undefined,
+                    senderId: original.senderId?._id || original.senderId,
+                    senderName:
+                        replyToMessage?.senderName ||
+                        original.senderId?.fullName ||
+                        "Member",
+                };
+            }
+        }
+
         const newMessage = new GroupMessage({
             groupId,
             senderId,
@@ -667,6 +702,9 @@ export const sendGroupMessage = async (req, res) => {
             readBy: [senderId],
             isForwarded: isForwarded || false,
             mentions: validMentions,
+            replyTo: validReplyTo,
+            replyToMessage: replyToMessageData,
+            clientMessageId: clientMessageId || null,
             poll: poll || undefined
         });
 
@@ -689,29 +727,38 @@ export const sendGroupMessage = async (req, res) => {
             .populate("senderId", "fullName profilePic")
             .populate("mentions", "fullName profilePic");
 
-        // Notify all group members via socket
-        group.members.forEach(member => {
-            const memberId = member.user || member;
-            const socketId = getReceiverSocketId(memberId.toString());
-            if (socketId) {
-                io.to(socketId).emit("group:newMessage", {
-                    groupId,
-                    message: populatedMessage
-                });
+        const payload =
+            typeof populatedMessage.toObject === "function"
+                ? {
+                    ...populatedMessage.toObject(),
+                    serverCreatedAt: populatedMessage.createdAt,
+                    clientMessageId: clientMessageId || undefined,
+                  }
+                : populatedMessage;
 
-                // Send special mention notification to mentioned users
-                if (validMentions.includes(memberId.toString())) {
+        // Broadcast via group room (all devices that joined) + mention pings
+        io.to(String(groupId)).emit("group:newMessage", {
+            groupId: String(groupId),
+            message: payload
+        });
+
+        if (validMentions.length > 0) {
+            group.members.forEach(member => {
+                const memberId = member.user || member;
+                if (!validMentions.map(String).includes(memberId.toString())) return;
+                const socketId = getReceiverSocketId(memberId.toString());
+                if (socketId) {
                     io.to(socketId).emit("group:mentioned", {
                         groupId,
                         groupName: group.name,
-                        message: populatedMessage,
+                        message: payload,
                         mentionedBy: sender.fullName
                     });
                 }
-            }
-        });
+            });
+        }
 
-        res.status(201).json(populatedMessage);
+        res.status(201).json(payload);
     } catch (error) {
         console.error("Error in sendGroupMessage:", error.message);
         res.status(500).json({ error: "Internal server error" });
@@ -737,18 +784,36 @@ export const markGroupMessagesAsRead = async (req, res) => {
         const memberInfo = group.members.find(m => (m.user?._id || m.user || m).toString() === userId.toString());
         const joinedAt = memberInfo?.joinedAt || new Date(0);
 
+        const unreadFilter = {
+            groupId,
+            senderId: { $ne: userId },
+            readBy: { $ne: userId },
+            createdAt: { $gte: joinedAt }
+        };
+
+        const unreadIds = await GroupMessage.find(unreadFilter).select("_id").lean();
+
         // Mark all unread messages as read by this user
-        await GroupMessage.updateMany(
-            {
-                groupId,
-                senderId: { $ne: userId },
-                readBy: { $ne: userId },
-                createdAt: { $gte: joinedAt }
-            },
-            {
-                $addToSet: { readBy: userId }
-            }
-        );
+        await GroupMessage.updateMany(unreadFilter, {
+            $addToSet: { readBy: userId }
+        });
+
+        const reader = await User.findById(userId).select("fullName profilePic");
+        const readAt = new Date();
+
+        // Notify group so senders can update Message Info live (WhatsApp-style)
+        if (unreadIds.length > 0) {
+            io.to(String(groupId)).emit("group:messagesRead", {
+                groupId: String(groupId),
+                messageIds: unreadIds.map((m) => String(m._id)),
+                readBy: {
+                    _id: userId,
+                    fullName: reader?.fullName,
+                    profilePic: reader?.profilePic || "",
+                },
+                readAt,
+            });
+        }
 
         res.status(200).json({ success: true });
     } catch (error) {
