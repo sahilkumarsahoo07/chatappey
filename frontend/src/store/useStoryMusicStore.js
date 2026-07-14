@@ -354,4 +354,25 @@ export const useStoryMusicStore = create((set, get) => ({
       }
     }
   },
+
+  reset: () => {
+    if (searchAbort) searchAbort.abort();
+    set({
+      isOpen: false,
+      query: "",
+      searching: false,
+      searchError: null,
+      results: [],
+      related: [],
+      trending: [],
+      trendingLoading: false,
+      recentSearches: [],
+      recentlyPlayed: [],
+      selectedSong: null,
+      previewSong: null,
+      clipDuration: 30,
+      startOffset: 0,
+      stickerTheme: "classic",
+    });
+  },
 }));

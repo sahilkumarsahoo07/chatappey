@@ -673,4 +673,28 @@ export const useStatusStore = create((set, get) => ({
     socket.off("status:commentDeleted");
     boundSocketId = null;
   },
+
+  reset: () => {
+    get().unsubscribeFromStatusEvents();
+    set({
+      feed: [],
+      myStatus: null,
+      isFeedLoading: false,
+      isUploading: false,
+      uploadProgress: 0,
+      uploadError: null,
+      isViewerOpen: false,
+      viewerGroups: [],
+      viewerGroupIndex: 0,
+      viewerStatusIndex: 0,
+      viewersList: [],
+      likesList: [],
+      reactionsList: [],
+      commentsList: [],
+      isViewersLoading: false,
+      showViewersPanel: false,
+      insightsTab: "overview",
+      isCreateOpen: false,
+    });
+  },
 }));

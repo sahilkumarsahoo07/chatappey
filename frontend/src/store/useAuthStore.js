@@ -145,23 +145,87 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
+    clearAllUserData: async () => {
+        // 1. Clear IndexedDB threads cache
+        try {
+            const { clearAllThreads, clearMemoryThreads } = await import("../lib/messageCache");
+            await clearAllThreads();
+            clearMemoryThreads();
+        } catch (e) {
+            console.error("Failed to clear thread cache:", e);
+        }
+
+        // 2. Reset all Zustand stores
+        try {
+            const [
+                { useChatStore },
+                { useGroupStore },
+                { useStatusStore },
+                { useCallStore },
+                { useNotificationStore },
+                { useStoryMusicStore },
+                { useNetworkStore }
+            ] = await Promise.all([
+                import("./useChatStore"),
+                import("./useGroupStore"),
+                import("./useStatusStore"),
+                import("./useCallStore"),
+                import("./useNotificationStore"),
+                import("./useStoryMusicStore"),
+                import("./useNetworkStore")
+            ]);
+
+            useChatStore.getState().reset?.();
+            useGroupStore.getState().reset?.();
+            useStatusStore.getState().reset?.();
+            useCallStore.getState().reset?.();
+            useNotificationStore.getState().reset?.();
+            useStoryMusicStore.getState().reset?.();
+            useNetworkStore.getState().reset?.();
+        } catch (e) {
+            console.error("Failed to reset stores:", e);
+        }
+
+        // 3. Clear LocalStorage and SessionStorage (preserve theme)
+        try {
+            const theme = localStorage.getItem("chat-theme");
+            localStorage.clear();
+            if (theme) {
+                localStorage.setItem("chat-theme", theme);
+            }
+            sessionStorage.clear();
+        } catch (e) {
+            console.error("Failed to clear storage:", e);
+        }
+
+        // 4. Clear Cookies
+        try {
+            const cookies = document.cookie.split(";");
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                const eqPos = cookie.indexOf("=");
+                const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+            }
+        } catch (e) {
+            console.error("Failed to clear cookies:", e);
+        }
+    },
+
     logout: async () => {
         try {
             await axiosInstance.post("/auth/logout");
             set({ authUser: null });
 
-            // Remove token from localStorage
-            localStorage.removeItem("token");
+            // Disconnect socket first to stop listening
+            get().disconnectSocket();
 
-            import("../lib/messageCache").then(({ clearAllThreads, clearMemoryThreads }) => {
-                clearAllThreads();
-                clearMemoryThreads();
-            });
+            // Clear all data & reset all stores
+            await get().clearAllUserData();
 
             toast.success("Logged out successfully");
-            get().disconnectSocket();
         } catch (error) {
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to logout");
         }
     },
 
@@ -170,18 +234,15 @@ export const useAuthStore = create((set, get) => ({
             await axiosInstance.post("/auth/logout-global");
             set({ authUser: null });
 
-            // Remove token from localStorage
-            localStorage.removeItem("token");
+            // Disconnect socket first
+            get().disconnectSocket();
 
-            import("../lib/messageCache").then(({ clearAllThreads, clearMemoryThreads }) => {
-                clearAllThreads();
-                clearMemoryThreads();
-            });
+            // Clear all data & reset all stores
+            await get().clearAllUserData();
 
             toast.success("Logged out from all devices");
-            get().disconnectSocket();
         } catch (error) {
-            toast.error(error.response.data.message);
+            toast.error(error.response?.data?.message || "Failed to logout globally");
         }
     },
 
@@ -590,12 +651,12 @@ export const useAuthStore = create((set, get) => ({
             });
         });
 
-        socket.on("global-logout", ({ userId }) => {
+        socket.on("global-logout", async ({ userId }) => {
             const currentUserId = get().authUser?._id;
             if (currentUserId === userId) {
                 set({ authUser: null });
-                localStorage.removeItem("token");
                 get().disconnectSocket();
+                await get().clearAllUserData();
                 // toast.error("Security: All sessions invalidated. Please re-login.", { id: "global-logout-toast" });
             }
         });

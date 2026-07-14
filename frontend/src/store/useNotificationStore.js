@@ -104,4 +104,12 @@ export const useNotificationStore = create((set, get) => ({
             )
         }));
     },
+
+    reset: () => {
+        set({
+            notifications: [],
+            unreadCount: 0,
+            isLoading: false,
+        });
+    },
 }));

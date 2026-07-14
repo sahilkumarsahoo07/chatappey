@@ -1411,5 +1411,25 @@ export const useChatStore = create((set, get) => ({
     } else {
       socket.emit("stopTyping", { receiverId: selectedUser._id });
     }
+  },
+
+  reset: () => {
+    get().unsubscribeFromMessages();
+    set({
+      messages: [],
+      messagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
+      isLoadingOlder: false,
+      users: [],
+      discoverUsers: [],
+      selectedUser: null,
+      isUsersLoading: false,
+      isDiscoverLoading: false,
+      isMessagesLoading: false,
+      friendRequests: [],
+      sentRequests: [],
+      isFriendRequestsLoading: false,
+      replyingToMessage: null,
+      isTyping: false,
+    });
   }
 }));

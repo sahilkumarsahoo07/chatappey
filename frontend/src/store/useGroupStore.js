@@ -1373,5 +1373,22 @@ export const useGroupStore = create((set, get) => ({
         } catch (error) {
             toast.error("Failed to vote");
         }
+    },
+
+    reset: () => {
+        get().unsubscribeFromGroupEvents();
+        set({
+            groups: [],
+            selectedGroup: null,
+            groupMessages: [],
+            groupMessagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
+            isLoadingOlderGroup: false,
+            isGroupsLoading: false,
+            isGroupMessagesLoading: false,
+            typingUsers: [],
+            recordingUsers: [],
+            scrollTargetIndex: -1,
+            scrollTargetKey: null,
+        });
     }
 }));

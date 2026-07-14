@@ -156,3 +156,18 @@ export async function flushOfflineQueue(handler, { maxAttempts = 3 } = {}) {
   }
   return { processed };
 }
+
+export async function clearOfflineQueue() {
+  try {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const req = tx.objectStore(STORE).clear();
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return false;
+  }
+}
+

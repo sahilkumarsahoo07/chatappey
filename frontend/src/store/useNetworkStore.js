@@ -93,6 +93,16 @@ export const useNetworkStore = create((set, get) => ({
       set({ isFlushing: false });
     }
   },
+
+  reset: async () => {
+    try {
+      const { clearOfflineQueue } = await import("../lib/offlineQueue");
+      await clearOfflineQueue();
+    } catch (e) {
+      console.error("Failed to clear offline queue:", e);
+    }
+    set({ queue: [], isFlushing: false });
+  },
 }));
 
 export async function sendOrQueueMessage(receiverId, messageData) {

@@ -241,4 +241,28 @@ export const useCallStore = create((set, get) => ({
             set({ isLoadingHistory: false });
         }
     },
+
+    reset: () => {
+        if (get().isInCall || get().zegoInstance) {
+            get().endCall();
+        }
+        set({
+            isInCall: false,
+            callType: null,
+            caller: null,
+            receiver: null,
+            incomingCall: null,
+            callStatus: 'idle',
+            isMuted: false,
+            isVideoOff: false,
+            isSpeakerOn: false,
+            callStartTime: null,
+            roomID: null,
+            zegoInstance: null,
+            isMinimized: false,
+            callHistory: [],
+            isLoadingHistory: false,
+            endedCall: null,
+        });
+    },
 }));
