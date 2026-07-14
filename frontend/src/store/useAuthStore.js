@@ -35,6 +35,11 @@ export const useAuthStore = create((set, get) => ({
     isAdminLoading: false,
 
     checkAuth: async () => {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            set({ authUser: null, isCheckingAuth: false });
+            return;
+        }
         try {
             const res = await axiosInstance.get("/auth/check");
 
