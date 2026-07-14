@@ -3,11 +3,11 @@
 .story-music-sheet {
   --ig-pink: #ff2d55;
   --ig-bg: #121212;
-  --ig-panel: #121212;
-  --ig-elev: #1a1a1a;
-  --ig-chip: #262626;
-  --ig-muted: #8e8e8e;
-  --ig-line: rgba(255, 255, 255, 0.08);
+  --ig-panel: #161618;
+  --ig-elev: #1f1f23;
+  --ig-chip: rgba(255, 255, 255, 0.05);
+  --ig-muted: #a0a0a9;
+  --ig-line: rgba(255, 255, 255, 0.06);
 
   position: fixed;
   inset: 0;
@@ -15,18 +15,21 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(12px);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
-  animation: smFade 0.18s ease;
+  animation: smFade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes smFade {
   from {
     opacity: 0;
+    backdrop-filter: blur(0px);
   }
   to {
     opacity: 1;
+    backdrop-filter: blur(12px);
   }
 }
 
@@ -35,13 +38,15 @@
   z-index: 10;
   background: var(--ig-panel);
   color: #fff;
-  border-radius: 18px 18px 0 0;
+  border-radius: 20px 20px 0 0;
   max-height: min(94dvh, 900px);
   display: flex;
   flex-direction: column;
-  animation: smUp 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: smUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   padding-bottom: env(safe-area-inset-bottom, 0);
   overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.085);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
 }
 
 @keyframes smUp {
@@ -60,73 +65,129 @@
     padding: 1rem;
   }
   .story-music-panel {
-    width: min(420px, 100%);
-    border-radius: 18px;
-    max-height: 88vh;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    width: min(430px, 100%);
+    border-radius: 20px;
+    max-height: 85vh;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
   }
 }
 
+/* Beautiful Slim Scrollbars */
+.story-music-body::-webkit-scrollbar,
+.instagram-scrubber-track::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.story-music-body::-webkit-scrollbar-track,
+.instagram-scrubber-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.story-music-body::-webkit-scrollbar-thumb,
+.instagram-scrubber-track::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  transition: background 0.2s ease;
+}
+
+.story-music-body::-webkit-scrollbar-thumb:hover,
+.instagram-scrubber-track::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .story-music-handle {
-  display: none;
+  display: block;
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  margin: 8px auto 0;
+  flex-shrink: 0;
 }
 
 .story-music-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 10px;
+  padding: 12px 18px 8px;
 }
 
 .story-music-header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .story-music-header-left h3 {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  background: linear-gradient(to right, #fff, #e4e4e7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .story-music-header-icon {
   width: 22px;
   height: 22px;
   color: var(--ig-pink);
+  filter: drop-shadow(0 2px 8px rgba(255, 45, 85, 0.35));
 }
 
 .story-music-close {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 50%;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.04);
   color: #fff;
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.story-music-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
 }
 
 .story-music-close:active {
-  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.95);
 }
 
 .story-music-search {
-  margin: 0 16px 12px;
+  margin: 4px 18px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--ig-chip);
-  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
   padding: 0 14px;
-  height: 40px;
+  height: 42px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.story-music-search:focus-within {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 45, 85, 0.55);
+  box-shadow: 0 0 16px rgba(255, 45, 85, 0.15);
 }
 
 .story-music-search svg {
   color: var(--ig-muted);
   flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.story-music-search:focus-within svg {
+  color: var(--ig-pink);
 }
 
 .story-music-search input {
@@ -137,11 +198,11 @@
   outline: none;
   color: #fff;
   font-size: 0.95rem;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .story-music-search input::placeholder {
-  color: var(--ig-muted);
+  color: #71717a;
 }
 
 .story-music-search-clear {
@@ -152,33 +213,38 @@
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.story-music-search-clear:hover {
+  color: #fff;
 }
 
 .story-music-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 8px;
+  padding: 0 0 16px;
   -webkit-overflow-scrolling: touch;
 }
 
 .story-music-section {
-  padding: 8px 0 4px;
+  padding: 10px 0 6px;
 }
 
 .story-music-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px 8px;
+  padding: 0 18px 8px;
 }
 
 .story-music-section h4,
 .story-music-section-title {
   margin: 0;
-  padding: 0 16px 8px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  padding: 0 18px 8px;
+  font-size: 0.74rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ig-muted);
 }
@@ -186,31 +252,42 @@
 .story-music-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 8px 16px;
+  gap: 14px;
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  padding: 10px 10px;
   border: none;
   background: transparent;
   color: #fff;
   text-align: left;
   cursor: pointer;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.story-music-row:hover {
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .story-music-row:active {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .story-music-row.is-selected {
-  background: rgba(255, 45, 85, 0.08);
+  background: rgba(255, 45, 85, 0.06);
+  border-left: 3px solid var(--ig-pink);
+  border-radius: 0 10px 10px 0;
 }
 
 .story-music-cover {
-  width: 52px;
-  height: 52px;
-  border-radius: 6px;
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
   object-fit: cover;
-  background: #2a2a2a;
+  background: #18181b;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .story-music-meta {
@@ -219,8 +296,8 @@
 }
 
 .story-music-meta .title {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.94rem;
+  font-weight: 700;
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
@@ -229,50 +306,69 @@
 }
 
 .story-music-meta .sub {
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
   color: var(--ig-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .story-music-play {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   border: none;
-  background: var(--ig-chip);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.story-music-play:hover {
+  background: var(--ig-pink);
+  color: #fff;
+  border-color: var(--ig-pink);
+  box-shadow: 0 0 12px rgba(255, 45, 85, 0.45);
+  transform: scale(1.08);
 }
 
 .story-music-play:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
 .story-music-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 7px 13px;
   border-radius: 999px;
-  background: var(--ig-chip);
-  border: none;
-  color: #fafafa;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  margin: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e4e4e7;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0 6px 8px 0;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.story-music-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .story-music-chip:active {
   opacity: 0.85;
+  transform: translateY(0);
 }
 
 .story-music-clear-link {
@@ -351,86 +447,94 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 2px;
-  height: 36px;
-  margin: 14px 0 6px;
-  padding: 0 2px;
+  height: 42px;
+  margin: 20px 0 8px;
+  padding: 0 4px;
 }
 
 .story-music-wave span {
   flex: 1;
-  max-width: 4px;
+  max-width: 5px;
   min-width: 2px;
   border-radius: 1px;
-  background: var(--ig-pink);
-  transform-origin: bottom center;
-  animation: smEq 0.85s ease-in-out infinite alternate;
-}
-
-.story-music-wave span:nth-child(odd) {
-  animation-duration: 0.7s;
-}
-.story-music-wave span:nth-child(3n) {
-  animation-delay: 0.12s;
-}
-.story-music-wave span:nth-child(4n) {
-  animation-delay: 0.22s;
-}
-.story-music-wave span:nth-child(5n) {
-  animation-delay: 0.08s;
+  background: rgba(255, 45, 85, 0.35);
+  transition: background 0.15s ease, height 0.15s ease;
 }
 
 .story-music-wave.is-paused span {
-  animation: none;
-  opacity: 0.4;
-}
-
-@keyframes smEq {
-  from {
-    transform: scaleY(0.35);
-  }
-  to {
-    transform: scaleY(1);
-  }
+  opacity: 0.7;
 }
 
 .story-music-times {
   display: flex;
   justify-content: space-between;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--ig-muted);
   font-variant-numeric: tabular-nums;
-  margin-bottom: 10px;
-}
-
-.story-music-clips {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 0 10px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.story-music-clips::-webkit-scrollbar {
-  display: none;
-}
-
-.story-music-clips button {
-  flex: 0 0 auto;
-  border: none;
-  background: var(--ig-chip);
-  color: #fafafa;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 0.8125rem;
+  margin-bottom: 12px;
   font-weight: 600;
-  cursor: pointer;
-  line-height: 1;
 }
 
-.story-music-clips button.is-active {
-  background: var(--ig-pink);
-  color: #fff;
+.story-music-recent-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 16px 8px;
+  gap: 8px;
+}
+
+.story-music-clip-btn {
+  border: 2px solid rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+  border-radius: 50% !important;
+  width: 44px !important;
+  height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.story-music-clip-btn:hover,
+.story-music-clip-btn.is-active {
+  background: var(--ig-pink) !important;
+  border-color: var(--ig-pink) !important;
+  color: #fff !important;
+  transform: scale(1.08);
+  box-shadow: 0 0 14px rgba(255, 45, 85, 0.5);
+}
+
+.story-music-sticker-themes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.story-music-theme-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 999px !important;
+  padding: 6px 14px !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: capitalize;
+}
+
+.story-music-theme-btn:hover,
+.story-music-theme-btn.is-active {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: #fff !important;
+  font-weight: 700 !important;
+  transform: scale(1.05);
 }
 
 .story-music-trim {
@@ -680,4 +784,72 @@
 .music-eq.is-paused i {
   animation: none;
   opacity: 0.4;
+}
+
+/* Instagram-Style Scrubber Styles */
+.instagram-scrubber-container {
+  position: relative;
+  width: 100%;
+  height: 90px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 24px 0 16px;
+  display: flex;
+  align-items: center;
+}
+
+.instagram-scrubber-track {
+  overflow-x: auto;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: grab;
+  scrollbar-width: none; /* Firefox */
+  padding: 0;
+}
+
+.instagram-scrubber-track::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.instagram-scrubber-track:active {
+  cursor: grabbing;
+}
+
+.instagram-scrubber-bar {
+  width: 3.5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.15s ease, height 0.15s ease;
+  flex-shrink: 0;
+}
+
+/* Active range segment styling */
+.instagram-scrubber-bar.is-active {
+  background: rgba(255, 45, 85, 0.5); /* Dim pink for active but unplayed */
+}
+
+/* Currently playing progress timeline styling */
+.instagram-scrubber-bar.is-played {
+  background: var(--ig-pink); /* Glowing pink for current playhead progress */
+  box-shadow: 0 0 4px rgba(255, 45, 85, 0.6);
+}
+
+/* Center selection window overlay */
+.instagram-scrubber-window {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  border: 2px solid #ffffff;
+  border-radius: 12px;
+  pointer-events: none; /* Click pass-through */
+  box-shadow: 0 0 0 9999px rgba(18, 18, 18, 0.65); /* Instagram-style dim overlay */
+  z-index: 5;
 }

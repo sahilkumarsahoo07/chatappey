@@ -49,11 +49,21 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
 
     // Refs
     const fileInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
     const videoInputRef = useRef(null);
     const docInputRef = useRef(null);
     const textareaRef = useRef(null);
     const mentionsRef = useRef(null);
     const attachmentMenuRef = useRef(null);
+
+    const isMobileOrTablet = useMemo(() => {
+        if (typeof window === "undefined" || !navigator) return false;
+        const ua = navigator.userAgent || "";
+        const isTouch = navigator.maxTouchPoints > 0;
+        const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+        const isIPad = /Macintosh/i.test(ua) && isTouch;
+        return isMobileUA || isIPad || (isTouch && window.innerWidth <= 1024);
+    }, []);
 
     const { sendMessage, replyingToMessage, clearReplyingToMessage, selectedUser } = useChatStore(useShallow((state) => ({
         sendMessage: state.sendMessage,
@@ -303,6 +313,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         setAudioUrl(null);
         voice.clearPreview();
         if (fileInputRef.current) fileInputRef.current.value = "";
+        if (cameraInputRef.current) cameraInputRef.current.value = "";
         if (videoInputRef.current) videoInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
     };
@@ -367,6 +378,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         
         // Clear file inputs synchronously
         if (fileInputRef.current) fileInputRef.current.value = "";
+        if (cameraInputRef.current) cameraInputRef.current.value = "";
         if (videoInputRef.current) videoInputRef.current.value = "";
         if (docInputRef.current) docInputRef.current.value = "";
         if (textareaRef.current) {
@@ -692,6 +704,7 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                     <form onSubmit={handleFormSubmit} className="flex items-end gap-2 min-w-0 w-full max-w-full">
                         {/* Hidden Inputs */}
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageChange} />
+                        <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleImageChange} />
                         <input type="file" accept={VIDEO_ACCEPT} className="hidden" ref={videoInputRef} onChange={handleVideoChange} />
                         <input type="file" className="hidden" ref={docInputRef} onChange={handleFileChange} />
 
@@ -788,7 +801,13 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
                                 {/* Camera Instant Button */}
                                 <button
                                     type="button"
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={() => {
+                                        if (isMobileOrTablet) {
+                                            cameraInputRef.current?.click();
+                                        } else {
+                                            fileInputRef.current?.click();
+                                        }
+                                    }}
                                     className="p-1.5 rounded-full text-base-content/60 hover:bg-base-300 hover:text-base-content"
                                     title="Take photo"
                                 >

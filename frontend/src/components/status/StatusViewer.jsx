@@ -23,11 +23,27 @@ import { haptic } from "../../lib/haptics";
 import { buildQualityUrl, selectFastestMediaUrl } from "../../lib/mediaDelivery";
 import DoubleTapLike from "../DoubleTapLike";
 import MusicSticker from "./MusicSticker";
+import { parseStoryMusicApi } from "../../lib/storyMusicApi";
 import "./storyMusic.css";
 
 const IMAGE_MS = 5000;
 const HOLD_MS = 180; // distinguish tap vs hold
 const SWIPE_PX = 56;
+
+const musicRefreshedSet = new Set();
+
+function isAudioUrlExpired(url) {
+  if (!url) return true;
+  try {
+    const u = new URL(url);
+    const expire = u.searchParams.get("expire");
+    if (expire) {
+      const expireTimeMs = Number(expire) * 1000;
+      return Date.now() >= (expireTimeMs - 30000);
+    }
+  } catch (e) {}
+  return false;
+}
 
 /**
  * Full-screen WhatsApp-style story viewer.
@@ -66,6 +82,7 @@ function StatusViewer() {
   const [muted, setMuted] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
+  const [musicLoading, setMusicLoading] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [entering, setEntering] = useState(true);
   const [mediaSrc, setMediaSrc] = useState("");
@@ -177,6 +194,7 @@ function StatusViewer() {
     setPaused(false);
     setMediaReady(false);
     setMediaLoading(true);
+    setMusicLoading(false);
     setMediaError(false);
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
@@ -244,9 +262,9 @@ function StatusViewer() {
     }
   }, [group, viewerStatusIndex, viewerGroupIndex, viewerGroups]);
 
-  // Image timer — only after media ready; pauses on hold / viewers / hidden
+  // Image timer — only after media ready; pauses on hold / viewers / hidden / music loading
   useEffect(() => {
-    if (!isViewerOpen || !status || isVideo || showViewersPanel || !mediaReady) {
+    if (!isViewerOpen || !status || isVideo || showViewersPanel || !mediaReady || musicLoading) {
       return;
     }
 
@@ -278,7 +296,45 @@ function StatusViewer() {
     goNext,
     showViewersPanel,
     mediaReady,
+    musicLoading,
   ]);
+
+  // Music URL check and auto-refresh before playing
+  useEffect(() => {
+    const music = status?.music;
+    if (!isViewerOpen || !music?.sourceUrl) return;
+
+    let isCurrent = true;
+
+    const checkAndRefresh = async () => {
+      const isExpired = !music.audioUrl || isAudioUrlExpired(music.audioUrl);
+      if (isExpired && !musicRefreshedSet.has(status._id)) {
+        musicRefreshedSet.add(status._id);
+        setMusicLoading(true);
+        try {
+          const data = await parseStoryMusicApi(music.sourceUrl);
+          if (data?.song?.audioUrl && isCurrent) {
+            useStatusStore.getState().patchStatusInFeed(status._id, {
+              music: {
+                ...music,
+                audioUrl: data.song.audioUrl,
+              },
+            });
+          }
+        } catch (err) {
+          console.warn("Failed to refresh status music:", err);
+        } finally {
+          if (isCurrent) setMusicLoading(false);
+        }
+      }
+    };
+
+    checkAndRefresh();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isViewerOpen, status?._id, status?.music]);
 
   // Story soundtrack — autoplay, pause with hold/sheet, respect mute
   useEffect(() => {
@@ -308,6 +364,28 @@ function StatusViewer() {
     };
     audio.addEventListener("timeupdate", onTime);
 
+    const onError = async () => {
+      if (!music?.sourceUrl || musicRefreshedSet.has(status._id)) return;
+      musicRefreshedSet.add(status._id);
+      setMusicLoading(true);
+      try {
+        const data = await parseStoryMusicApi(music.sourceUrl);
+        if (data?.song?.audioUrl) {
+          useStatusStore.getState().patchStatusInFeed(status._id, {
+            music: {
+              ...music,
+              audioUrl: data.song.audioUrl,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to refresh music on error:", err);
+      } finally {
+        setMusicLoading(false);
+      }
+    };
+    audio.addEventListener("error", onError);
+
     const tryPlay = () => {
       if (pausedRef.current || holdingRef.current || document.hidden || muted) return;
       audio.play().catch(() => {});
@@ -318,6 +396,7 @@ function StatusViewer() {
 
     return () => {
       audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("error", onError);
       audio.pause();
     };
   }, [isViewerOpen, status?._id, status?.music?.audioUrl, muted]);
@@ -613,7 +692,7 @@ function StatusViewer() {
         onPointerCancel={endHold}
       >
         <audio ref={musicRef} preload="auto" playsInline />
-        {mediaLoading && !mediaError && (
+        {(mediaLoading || musicLoading) && !mediaError && (
           <span className="absolute z-10 loading loading-spinner loading-lg text-white/70" />
         )}
         {mediaError && (

@@ -17,6 +17,20 @@ import { prepareStatusMedia } from "../lib/statusMedia";
 import { useAuthStore } from "./useAuthStore";
 import { haptic } from "../lib/haptics";
 import { emitStoryReactionFx } from "../lib/storyReactionFx";
+import { parseStoryMusicApi } from "../lib/storyMusicApi";
+
+function isAudioUrlExpired(url) {
+  if (!url) return true;
+  try {
+    const u = new URL(url);
+    const expire = u.searchParams.get("expire");
+    if (expire) {
+      const expireTimeMs = Number(expire) * 1000;
+      return Date.now() >= (expireTimeMs - 30000);
+    }
+  } catch (e) {}
+  return false;
+}
 
 function sortFeed(feed) {
   return [...feed].sort((a, b) => {
@@ -88,11 +102,42 @@ export const useStatusStore = create((set, get) => ({
         feed: data.feed || [],
         myStatus: data.myStatus || null,
       });
+      get().preloadStatusMusic();
     } catch (error) {
       console.error(error);
       if (!silent) toast.error(error.response?.data?.error || "Failed to load statuses");
     } finally {
       if (!silent) set({ isFeedLoading: false });
+    }
+  },
+
+  preloadStatusMusic: async () => {
+    const feed = get().feed || [];
+    const myStatus = get().myStatus;
+    const all = [];
+    if (myStatus?.statuses) all.push(...myStatus.statuses);
+    for (const g of feed) {
+      if (g.statuses) all.push(...g.statuses);
+    }
+    const targets = all.filter(s => s?.music?.sourceUrl && (!s.music.audioUrl || isAudioUrlExpired(s.music.audioUrl)));
+    if (!targets.length) return;
+
+    for (const status of targets) {
+      (async () => {
+        try {
+          const data = await parseStoryMusicApi(status.music.sourceUrl);
+          if (data?.song?.audioUrl) {
+            get().patchStatusInFeed(status._id, {
+              music: {
+                ...status.music,
+                audioUrl: data.song.audioUrl,
+              },
+            });
+          }
+        } catch (e) {
+          console.warn("Failed preloading status music:", e);
+        }
+      })();
     }
   },
 

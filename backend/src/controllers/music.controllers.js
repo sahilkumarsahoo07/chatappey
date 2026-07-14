@@ -10,6 +10,9 @@ import {
 const searchCache = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
+const linkCache = new Map();
+const LINK_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 function cacheGet(key) {
   const hit = searchCache.get(key);
   if (!hit) return null;
@@ -25,6 +28,24 @@ function cacheSet(key, data) {
   if (searchCache.size > 200) {
     const first = searchCache.keys().next().value;
     searchCache.delete(first);
+  }
+}
+
+function linkCacheGet(key) {
+  const hit = linkCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > LINK_CACHE_TTL_MS) {
+    linkCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function linkCacheSet(key, data) {
+  linkCache.set(key, { at: Date.now(), data });
+  if (linkCache.size > 500) {
+    const first = linkCache.keys().next().value;
+    linkCache.delete(first);
   }
 }
 
@@ -89,11 +110,11 @@ export const parseMusic = async (req, res) => {
     if (!link) return res.status(400).json({ error: "link required" });
 
     const cacheKey = `link:${link}`;
-    const cached = cacheGet(cacheKey);
+    const cached = linkCacheGet(cacheKey);
     if (cached) return res.json({ song: cached, cached: true });
 
     const song = await getMusicByLink(link);
-    cacheSet(cacheKey, song);
+    linkCacheSet(cacheKey, song);
     return res.json({ song, cached: false });
   } catch (error) {
     console.error("parseMusic:", error.message);

@@ -250,15 +250,14 @@ async function songsFromVideoIds(videoIds, { limit = 5 } = {}) {
   const settled = await Promise.allSettled(
     ids.map(async (id) => {
       const meta = await oembedMeta(id);
-      if (!meta?.sourceUrl) return null;
-      return parseMusicMedia(meta.sourceUrl, meta);
+      return meta;
     })
   );
 
   const songs = [];
   const seen = new Set();
   for (const r of settled) {
-    if (r.status !== "fulfilled" || !r.value?.id || !r.value?.audioUrl) continue;
+    if (r.status !== "fulfilled" || !r.value?.id) continue;
     if (seen.has(r.value.id)) continue;
     seen.add(r.value.id);
     songs.push(r.value);
@@ -271,8 +270,72 @@ async function songsFromVideoIds(videoIds, { limit = 5 } = {}) {
  * When Geethle fails: try YouTube search for the query, then popular alternatives.
  * Always prefers returning songs over throwing.
  */
+export async function searchYoutubeDirect(query, { limit = 30 } = {}) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q).replace(/%20/g, "+")}`;
+  const html = await fetchText(url, { timeout: 8000 });
+
+  const match = html.match(/var ytInitialData = ({.*?});/);
+  if (!match) {
+    throw new Error("Could not parse YouTube initial data");
+  }
+
+  const data = JSON.parse(match[1]);
+  const videos = [];
+
+  function findVideos(obj) {
+    if (!obj || typeof obj !== "object") return;
+    if (obj.videoRenderer) {
+      videos.push(obj.videoRenderer);
+      return;
+    }
+    for (const k of Object.keys(obj)) {
+      findVideos(obj[k]);
+    }
+  }
+  findVideos(data);
+
+  const songs = [];
+  for (const v of videos) {
+    if (songs.length >= limit) break;
+    const videoId = v.videoId;
+    if (!videoId) continue;
+
+    const title = v.title?.runs?.[0]?.text || v.title?.accessibility?.accessibilityData?.label || "Unknown track";
+    const artist = v.ownerText?.runs?.[0]?.text || "Unknown artist";
+    const durationStr = v.lengthText?.simpleText || "";
+    const duration = parseDurationSeconds(durationStr);
+
+    songs.push({
+      id: videoId,
+      title: title.trim(),
+      artist: artist.trim(),
+      album: "",
+      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      sourceUrl: `https://music.youtube.com/watch?v=${videoId}`,
+      duration,
+      audioUrl: "",
+    });
+  }
+
+  return songs;
+}
+
 export async function searchAlternateSongs(query, { limit = 5 } = {}) {
   const q = String(query || "").trim();
+  if (q) {
+    try {
+      const direct = await searchYoutubeDirect(q, { limit });
+      if (direct && direct.length > 0) {
+        return direct;
+      }
+    } catch (e) {
+      console.warn("searchAlternateSongs direct failed, falling back:", e.message);
+    }
+  }
+
   const songs = [];
   const seen = new Set();
 
@@ -427,10 +490,28 @@ export async function parseMusicMedia(youtubeMusicUrl, geethleMeta = null) {
  * Full flow: geethle (preferred) → YouTube fallback → alternate songs.
  * Always tries to attach related/suggested tracks after the primary hit.
  */
-export async function searchStoryMusic(query, { relatedLimit = 4 } = {}) {
+export async function searchStoryMusic(query, { relatedLimit = 15 } = {}) {
+  try {
+    const directResults = await searchYoutubeDirect(query, { limit: 30 });
+    if (directResults && directResults.length > 0) {
+      return {
+        song: directResults[0],
+        related: directResults.slice(15, 30),
+        results: directResults.slice(0, 15),
+        fallback: false,
+      };
+    }
+  } catch (directErr) {
+    console.warn("searchStoryMusic direct failed, trying meta/suggested:", directErr.message);
+  }
+
   try {
     const meta = await resolveSearchMeta(query);
-    const primary = await parseMusicMedia(meta.sourceUrl, meta);
+    const primary = {
+      ...meta,
+      audioUrl: "",
+      duration: 0,
+    };
 
     let related = [];
     if (relatedLimit > 0) {
@@ -440,7 +521,6 @@ export async function searchStoryMusic(query, { relatedLimit = 4 } = {}) {
     return {
       song: primary,
       related,
-      // Keep Results = top match only; Suggested = related list
       results: [primary],
       fallback: false,
     };
@@ -455,7 +535,7 @@ export async function searchStoryMusic(query, { relatedLimit = 4 } = {}) {
     return {
       song: alternates[0],
       related: alternates.slice(1),
-      results: [alternates[0]],
+      results: alternates,
       fallback: true,
     };
   }

@@ -100,15 +100,62 @@ export function getVideoDuration(file) {
   });
 }
 
+export function getDynamicImageConfig() {
+  let maxEdge = 2048; // default to standard high resolution
+  let quality = 0.88; // default standard quality
+  
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (conn) {
+    const isSaveData = conn.saveData === true;
+    const effType = conn.effectiveType; // '4g', '3g', '2g', 'slow-2g'
+    const downlink = conn.downlink || 0; // Mbps
+
+    if (isSaveData) {
+      maxEdge = 1080;
+      quality = 0.70;
+    } else if (effType === "4g" && downlink >= 15) {
+      // 4K resolution / maximum quality
+      maxEdge = 3840;
+      quality = 0.95;
+    } else if (effType === "4g" || downlink >= 6) {
+      // 2K/QHD resolution / very high quality
+      maxEdge = 2560;
+      quality = 0.90;
+    } else if (effType === "3g" || downlink >= 1.5) {
+      // FHD / standard quality
+      maxEdge = 1920;
+      quality = 0.82;
+    } else {
+      // Data saver/slow connection
+      maxEdge = 1080;
+      quality = 0.72;
+    }
+  } else {
+    // If browser connection API is not available, default to 2.5K high quality (like desktop/wifi networks)
+    maxEdge = 2560;
+    quality = 0.90;
+  }
+  return { maxEdge, quality };
+}
+
 /** Compress image via canvas → Blob File for multipart upload */
-export async function compressImageFile(
-  file,
-  { maxEdge = MAX_IMAGE_EDGE, quality = IMAGE_QUALITY } = {}
-) {
+export async function compressImageFile(file, options = {}) {
   if (!isImageFile(file)) return file;
+
+  const dynamicConfig = getDynamicImageConfig();
+  const maxEdge = options.maxEdge ?? dynamicConfig.maxEdge;
+  const quality = options.quality ?? dynamicConfig.quality;
 
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+
+  // If the image is smaller than maxEdge, and we don't need resizing, and original file is under 3MB,
+  // we can preserve the exact original file to prevent any loss.
+  if (scale >= 1 && file.size < 3 * 1024 * 1024) {
+    bitmap.close?.();
+    return file;
+  }
+
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
 

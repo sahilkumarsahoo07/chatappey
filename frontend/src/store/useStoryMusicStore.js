@@ -31,6 +31,7 @@ let searchAbort = null;
 let debounceTimer = null;
 const searchMemCache = new Map();
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const resolvingMap = new Map();
 
 function getCachedSearch(q) {
   const hit = searchMemCache.get(q.toLowerCase());
@@ -63,7 +64,7 @@ export const useStoryMusicStore = create((set, get) => ({
   recentlyPlayed: readJson(PLAYED_KEY, []),
   selectedSong: null,
   previewSong: null,
-  clipDuration: 15,
+  clipDuration: 30,
   startOffset: 0,
   stickerTheme: "classic",
 
@@ -74,7 +75,17 @@ export const useStoryMusicStore = create((set, get) => ({
 
   closePicker: () => {
     if (searchAbort) searchAbort.abort();
-    set({ isOpen: false, searching: false });
+    set({
+      isOpen: false,
+      searching: false,
+      query: "",
+      results: [],
+      related: [],
+      previewSong: null,
+      clipDuration: 30,
+      startOffset: 0,
+      stickerTheme: "classic",
+    });
   },
 
   setQuery: (query) => set({ query }),
@@ -107,6 +118,7 @@ export const useStoryMusicStore = create((set, get) => ({
     const cached = readJson(TREND_CACHE_KEY, null);
     if (cached?.results?.length && Date.now() - (cached.at || 0) < 30 * 60 * 1000) {
       set({ trending: cached.results });
+      get().preloadResultAudios(cached.results);
       return;
     }
     set({ trendingLoading: true });
@@ -115,6 +127,7 @@ export const useStoryMusicStore = create((set, get) => ({
       const results = data.results || [];
       writeJson(TREND_CACHE_KEY, { at: Date.now(), results });
       set({ trending: results });
+      get().preloadResultAudios(results);
     } catch (e) {
       console.warn("trending music:", e.message);
     } finally {
@@ -136,12 +149,14 @@ export const useStoryMusicStore = create((set, get) => ({
     // Instant paint from memory cache while typing
     const cached = getCachedSearch(query);
     if (cached) {
+      const results = cached.results || (cached.song ? [cached.song] : []);
       set({
-        results: cached.results || (cached.song ? [cached.song] : []),
+        results,
         related: cached.related || [],
         searching: false,
         searchError: null,
       });
+      get().preloadResultAudios(results);
       return;
     }
 
@@ -159,13 +174,14 @@ export const useStoryMusicStore = create((set, get) => ({
 
     const cached = getCachedSearch(q);
     if (cached) {
+      const results = cached.results || (cached.song ? [cached.song] : []);
       set({
-        results: cached.results || (cached.song ? [cached.song] : []),
+        results,
         related: cached.related || [],
         searching: false,
         searchError: null,
       });
-      get().pushRecent(q);
+      get().preloadResultAudios(results);
       return;
     }
 
@@ -174,7 +190,6 @@ export const useStoryMusicStore = create((set, get) => ({
     const { signal } = searchAbort;
 
     set({ searching: true, searchError: null });
-    get().pushRecent(q);
 
     try {
       const data = await searchStoryMusicApi(q, { signal });
@@ -197,6 +212,7 @@ export const useStoryMusicStore = create((set, get) => ({
         searching: false,
         searchError: null,
       });
+      get().preloadResultAudios(results);
     } catch (e) {
       if (e?.code === "ERR_CANCELED" || e?.name === "CanceledError" || signal.aborted) return;
       if (get().query.trim().toLowerCase() !== q.toLowerCase()) return;
@@ -213,6 +229,7 @@ export const useStoryMusicStore = create((set, get) => ({
         results,
         related: [],
       });
+      get().preloadResultAudios(results);
     }
   },
 
@@ -224,7 +241,7 @@ export const useStoryMusicStore = create((set, get) => ({
   setClip: ({ startOffset, clipDuration }) => {
     set({
       startOffset: Math.max(0, Number(startOffset) || 0),
-      clipDuration: Math.min(30, Math.max(5, Number(clipDuration) || 15)),
+      clipDuration: Math.min(60, Math.max(30, Number(clipDuration) || 30)),
     });
   },
 
@@ -245,7 +262,18 @@ export const useStoryMusicStore = create((set, get) => ({
         theme: stickerTheme,
       },
     };
-    set({ selectedSong: song, isOpen: false, previewSong: null });
+    set({
+      selectedSong: song,
+      isOpen: false,
+      searching: false,
+      query: "",
+      results: [],
+      related: [],
+      previewSong: null,
+      clipDuration: 30,
+      startOffset: 0,
+      stickerTheme: "classic",
+    });
     return song;
   },
 
@@ -270,6 +298,60 @@ export const useStoryMusicStore = create((set, get) => ({
       return { ...song, ...data.song, sticker: song.sticker };
     } catch {
       return song;
+    }
+  },
+
+  /** Resolve audioUrl for a song on-demand when starting play or preview */
+  resolveSongAudio: async (song) => {
+    if (!song) return null;
+    if (song.audioUrl) return song;
+
+    const cacheKey = song.id;
+    if (resolvingMap.has(cacheKey)) {
+      return resolvingMap.get(cacheKey);
+    }
+
+    const promise = (async () => {
+      try {
+        const data = await parseStoryMusicApi(song.sourceUrl);
+        if (data?.song) {
+          const resolvedSong = { ...song, ...data.song };
+          set((state) => {
+            const updateList = (list) =>
+              list.map((s) => (s?.id === song.id ? resolvedSong : s));
+            return {
+              results: updateList(state.results),
+              related: updateList(state.related),
+              trending: updateList(state.trending),
+              recentlyPlayed: updateList(state.recentlyPlayed),
+              previewSong: state.previewSong?.id === song.id ? resolvedSong : state.previewSong,
+              selectedSong: state.selectedSong?.id === song.id ? resolvedSong : state.selectedSong,
+            };
+          });
+          return resolvedSong;
+        }
+      } catch (e) {
+        console.warn("Failed to resolve song audio:", e);
+        throw e;
+      } finally {
+        resolvingMap.delete(cacheKey);
+      }
+      return song;
+    })();
+
+    resolvingMap.set(cacheKey, promise);
+    return promise;
+  },
+
+  preloadResultAudios: async (songs) => {
+    if (!songs || !songs.length) return;
+    const targets = songs.slice(0, 3).filter((s) => s && !s.audioUrl);
+    for (const song of targets) {
+      try {
+        await get().resolveSongAudio(song);
+      } catch (e) {
+        // ignore preload errors silently
+      }
     }
   },
 }));

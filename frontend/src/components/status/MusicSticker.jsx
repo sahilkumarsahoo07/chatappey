@@ -36,8 +36,8 @@ function MusicSticker({
     (e) => {
       if (!dragRef.current.active || !containerRef?.current || !onChange) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.min(0.92, Math.max(0.08, (e.clientX - dragRef.current.ox) / rect.width));
-      const y = Math.min(0.92, Math.max(0.08, (e.clientY - dragRef.current.oy) / rect.height));
+      const x = (e.clientX - dragRef.current.ox) / rect.width;
+      const y = (e.clientY - dragRef.current.oy) / rect.height;
       onChange({ x, y });
     },
     [containerRef, onChange]
