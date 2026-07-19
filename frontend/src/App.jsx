@@ -32,6 +32,7 @@ import {
   applyConversationSwitch,
   flushPendingNotificationOpen,
 } from './lib/openFromNotification';
+import { subscribeToWebPush } from './lib/notifications';
 import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
 import CallEndedScreen from './components/call/CallEndedScreen';
@@ -60,9 +61,12 @@ function App() {
   useVisualViewportKeyboard();
   useComposerLayout();
 
-  // Network monitoring + offline queue flush
+  // Network monitoring + offline queue flush + web push registration
   useEffect(() => {
-    if (authUser) initNetwork();
+    if (authUser) {
+      initNetwork();
+      subscribeToWebPush().catch(() => {});
+    }
   }, [authUser, initNetwork]);
 
   // iOS-style edge swipe back (skip on home chat list with no deeper route stack needs)

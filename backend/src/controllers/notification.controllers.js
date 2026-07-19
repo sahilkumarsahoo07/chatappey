@@ -92,3 +92,45 @@ export const getUnreadCount = async (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 };
+
+// Return VAPID Public Key for Push Subscriptions
+export const getVapidPublicKey = async (req, res) => {
+    try {
+        const { VAPID_PUBLIC_KEY } = await import("../lib/webpush.js");
+        res.status(200).json({ publicKey: VAPID_PUBLIC_KEY });
+    } catch (error) {
+        console.error("Error in getVapidPublicKey:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Save User Web Push Subscription
+export const subscribeToPush = async (req, res) => {
+    try {
+        const { subscription } = req.body;
+        if (!subscription || !subscription.endpoint || !subscription.keys) {
+            return res.status(400).json({ error: "Invalid subscription payload" });
+        }
+
+        const user = req.user;
+        const exists = user.pushSubscriptions?.some(sub => sub.endpoint === subscription.endpoint);
+
+        if (!exists) {
+            user.pushSubscriptions = user.pushSubscriptions || [];
+            user.pushSubscriptions.push({
+                endpoint: subscription.endpoint,
+                expirationTime: subscription.expirationTime || null,
+                keys: {
+                    p256dh: subscription.keys.p256dh,
+                    auth: subscription.keys.auth,
+                },
+            });
+            await user.save();
+        }
+
+        res.status(200).json({ success: true, message: "Push subscription saved" });
+    } catch (error) {
+        console.error("Error in subscribeToPush:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};

@@ -81,6 +81,7 @@ import { unarchiveDmChat } from "../utils/chatPreference.utils.js";
 import { emitToUser, canUpgradeStatus } from "../utils/messageStatus.utils.js";
 import { applyComputedStatus } from "../utils/groupMessageStatus.utils.js";
 import { ackGroupMessagesDelivered, isValidObjectId } from "../utils/groupDelivery.utils.js";
+import { sendPushNotification } from "./webpush.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -214,6 +215,38 @@ io.on("connection", async (socket) => {
       io.emit("userListUpdate", { userId });
       // Tell friends this user is online so they can upgrade pending ticks
       io.emit("peerOnline", { userId: String(userId) });
+
+      // Automatically mark all pending sent messages to this user as delivered (double tick)
+      (async () => {
+        try {
+          const now = new Date();
+          const pendingMessages = await Message.find({ receiverId: userId, status: "sent" }).select("_id senderId clientMessageId");
+          if (pendingMessages.length > 0) {
+            await Message.updateMany(
+              { receiverId: userId, status: "sent" },
+              { $set: { status: "delivered", deliveredAt: now } }
+            );
+            const sendersMap = {};
+            for (const msg of pendingMessages) {
+              const sId = String(msg.senderId);
+              if (!sendersMap[sId]) sendersMap[sId] = [];
+              sendersMap[sId].push(msg);
+            }
+            for (const [sId, msgs] of Object.entries(sendersMap)) {
+              for (const m of msgs) {
+                emitToUser(io, userSocketMap, sId, "messageDelivered", {
+                  messageId: m._id,
+                  clientMessageId: m.clientMessageId,
+                  status: "delivered",
+                  deliveredAt: now,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error auto-delivering pending messages on connect:", err.message);
+        }
+      })();
     }
   }
 
@@ -544,11 +577,16 @@ io.on("connection", async (socket) => {
       }
 
       const shouldBeScheduled = isScheduled || !!scheduledFor;
-      // Always start as "sent" — upgrade to delivered only when receiver ACKs (WhatsApp-like)
+      const receiverIsOnline = Boolean(userSocketMap[String(receiverId)]) && !incognitoUsers.has(String(receiverId));
       let initialStatus = "sent";
-      if (shouldBeScheduled) initialStatus = "scheduled";
-
       const now = new Date();
+
+      if (shouldBeScheduled) {
+        initialStatus = "scheduled";
+      } else if (receiverIsOnline) {
+        initialStatus = "delivered";
+      }
+
       const newMessage = new Message({
         senderId: userId,
         receiverId,
@@ -562,6 +600,7 @@ io.on("connection", async (socket) => {
         file: fileUrl,
         fileName: fileName || null,
         status: initialStatus,
+        deliveredAt: initialStatus === "delivered" ? now : undefined,
         clientMessageId: clientMessageId || undefined,
         sentAt: shouldBeScheduled ? undefined : now,
         replyTo: validReplyTo || null,
@@ -584,7 +623,7 @@ io.on("connection", async (socket) => {
       // Explicit server clock — clients MUST use this for ordering, never Date.now()
       payload.serverCreatedAt = payload.createdAt;
 
-      // ACK sender immediately (status: sent) — ticks upgrade via delivery/read events
+      // ACK sender immediately
       callback?.({ success: true, message: payload });
 
       if (!shouldBeScheduled) {
@@ -592,6 +631,22 @@ io.on("connection", async (socket) => {
         emitToUser(io, userSocketMap, receiverId, "newMessage", payload);
         // Echo to sender's OTHER devices (same room). Sending device merges via clientMessageId.
         emitToUser(io, userSocketMap, userId, "newMessage", payload);
+
+        // Web Push Notification for receiver (outside browser / backgrounded)
+        User.findById(userId).select("fullName profilePic").then((senderUser) => {
+          const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
+          sendPushNotification(receiverId, {
+            title: senderUser?.fullName || "New Message",
+            body: bodyText,
+            icon: senderUser?.profilePic || "/avatar.png",
+            tag: `chat-${userId}`,
+            data: {
+              url: `/?chat=${userId}`,
+              chatId: userId,
+              peer: senderUser,
+            },
+          }).catch((e) => console.error("Error sending Web Push notification:", e.message));
+        }).catch(() => {});
       }
     } catch (error) {
       console.error("Error in sendMessage socket handler:", error.message);

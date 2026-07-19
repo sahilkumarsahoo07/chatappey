@@ -6,9 +6,17 @@ import {
     markAllAsRead,
     deleteNotification,
     getUnreadCount,
+    getVapidPublicKey,
+    subscribeToPush,
 } from "../controllers/notification.controllers.js";
 
 const router = express.Router();
+
+// Get VAPID public key
+router.get("/vapid-public-key", protectRoute, getVapidPublicKey);
+
+// Subscribe to push notifications
+router.post("/subscribe", protectRoute, subscribeToPush);
 
 // Get all notifications
 router.get("/", protectRoute, getNotifications);

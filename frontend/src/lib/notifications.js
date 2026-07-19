@@ -1,6 +1,43 @@
-// Notification utility — Windows + mobile, no page reload on click
+import { axiosInstance } from "./axios";
 
 const DEFAULT_ICON = "/avatar.png";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export const subscribeToWebPush = async () => {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    const res = await axiosInstance.get("/notifications/vapid-public-key");
+    const publicKey = res.data?.publicKey;
+    if (!publicKey) return;
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      const convertedKey = urlBase64ToUint8Array(publicKey);
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedKey,
+      });
+    }
+
+    await axiosInstance.post("/notifications/subscribe", { subscription });
+  } catch (err) {
+    console.error("Web Push subscription error:", err);
+  }
+};
 
 const sameOriginIcon = (icon) => {
   try {
@@ -22,18 +59,24 @@ export const getNotificationPermission = () => {
  */
 export const requestNotificationPermission = async ({ showTest = false } = {}) => {
   if (!("Notification" in window)) return false;
-  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "granted") {
+    subscribeToWebPush().catch(() => {});
+    return true;
+  }
   if (Notification.permission === "denied") return false;
 
   try {
     const permission = await Notification.requestPermission();
-    if (permission === "granted" && showTest) {
-      await showBrowserNotification("ChatAppey Notifications Enabled!", {
-        body: "You will now receive message and call notifications",
-        icon: DEFAULT_ICON,
-        url: "/",
-        requireInteraction: false,
-      });
+    if (permission === "granted") {
+      subscribeToWebPush().catch(() => {});
+      if (showTest) {
+        await showBrowserNotification("ChatAppey Notifications Enabled!", {
+          body: "You will now receive message and call notifications",
+          icon: DEFAULT_ICON,
+          url: "/",
+          requireInteraction: false,
+        });
+      }
     }
     return permission === "granted";
   } catch (error) {
