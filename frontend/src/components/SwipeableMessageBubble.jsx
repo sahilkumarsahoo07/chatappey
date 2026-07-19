@@ -173,12 +173,17 @@ export default function SwipeableMessageBubble({
 
       <div
         ref={bubbleRef}
-        className="relative z-[1] w-fit max-w-full will-change-transform"
+        className="relative z-[1] w-fit max-w-full will-change-transform select-none"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={finishTouch}
         onTouchCancel={finishTouch}
-        style={{ touchAction: "pan-y" }}
+        style={{
+          touchAction: "pan-y",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+        }}
       >
         {children}
       </div>
