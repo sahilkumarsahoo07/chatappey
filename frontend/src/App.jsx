@@ -174,12 +174,22 @@ function App() {
 
   // console.log({ authUser })
 
-  if (isCheckingAuth && !authUser)
+  if (isCheckingAuth && !authUser) {
     return (
-      <div className="flex items-center justify-center h-screen bg-base-100">
-        {/* Loader removed based on user request */}
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-base-100 text-base-content select-none">
+        <div className="flex flex-col items-center gap-4 animate-pulse">
+          <div className="size-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
+            <svg xmlns="http://www.w3.org/2000/svg" className="size-9 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4.913 2.658c2.075-.27 4.19-.408 6.337-.408 2.147 0 4.262.139 6.337.408 1.922.25 3.291 1.861 3.405 3.727a4.403 4.403 0 00-1.032-.121H4.072c-.352 0-.698.042-1.032.121.114-1.866 1.483-3.476 3.405-3.727zM3 8.25a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 8.25v6a2.25 2.25 0 01-2.25 2.25H14.121l-3.268 3.268a1.125 1.125 0 01-1.591 0L6 16.5H5.25A2.25 2.25 0 013 14.25v-6z" />
+            </svg>
+          </div>
+          <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            ChatAppey
+          </span>
+        </div>
       </div>
     );
+  }
   return (
     <div data-theme={theme}>
       {authUser && <LeftNavbar />}

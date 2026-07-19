@@ -18,12 +18,27 @@ const getBaseUrl = () => {
 };
 const BASE_URL = getBaseUrl();
 
+const getInitialAuthUser = () => {
+    try {
+        const token = localStorage.getItem("token");
+        const cachedUser = localStorage.getItem("chat_user");
+        if (token && cachedUser) {
+            return JSON.parse(cachedUser);
+        }
+    } catch (e) {
+        console.error("Error parsing cached authUser:", e);
+    }
+    return null;
+};
+
+const initialAuthUser = getInitialAuthUser();
+
 export const useAuthStore = create((set, get) => ({
-    authUser: null,
+    authUser: initialAuthUser,
     isSigningUp: false,
     isLoggingIn: false,
     isUpdatingProfile: false,
-    isCheckingAuth: true,
+    isCheckingAuth: !initialAuthUser,
     isVerifyingOTP: false,
     onlineUsers: [],
     socket: null,
@@ -38,16 +53,26 @@ export const useAuthStore = create((set, get) => ({
         const token = localStorage.getItem("token");
         if (!token) {
             set({ authUser: null, isCheckingAuth: false });
+            localStorage.removeItem("chat_user");
             return;
         }
         try {
             const res = await axiosInstance.get("/auth/check");
 
             set({ authUser: res.data });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {
+                console.error("Failed to save authUser to localStorage:", e);
+            }
             get().connectSocket();
         } catch (error) {
             console.log("Error in checkAuth:", error);
-            set({ authUser: null });
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                localStorage.removeItem("token");
+                localStorage.removeItem("chat_user");
+                set({ authUser: null });
+            }
         } finally {
             set({ isCheckingAuth: false });
         }
@@ -63,6 +88,9 @@ export const useAuthStore = create((set, get) => ({
             if (res.data.token) {
                 localStorage.setItem("token", res.data.token);
             }
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
 
             toast.success("Account created successfully");
             get().connectSocket();
@@ -96,6 +124,9 @@ export const useAuthStore = create((set, get) => ({
             if (res.data.token) {
                 localStorage.setItem("token", res.data.token);
             }
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
 
             toast.success("Account verified successfully");
             get().connectSocket();
@@ -134,6 +165,9 @@ export const useAuthStore = create((set, get) => ({
             if (res.data.token) {
                 localStorage.setItem("token", res.data.token);
             }
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
 
             toast.success("Logged in successfully");
 
@@ -251,6 +285,9 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.put("/auth/update-profile", data);
             set({ authUser: res.data });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
             toast.success("Profile updated successfully");
         } catch (error) {
             console.log("error in update profile:", error);
@@ -264,6 +301,9 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.put("/auth/update-name", { fullName });
             set({ authUser: res.data.user });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data.user));
+            } catch (e) {}
             toast.success("Name updated successfully");
         } catch (error) {
             console.log("Error updating name:", error);
@@ -275,6 +315,9 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.put("/auth/update-about", { about });
             set({ authUser: res.data.user });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data.user));
+            } catch (e) {}
             toast.success("About updated successfully");
         } catch (error) {
             console.log("Error updating name:", error);
@@ -297,6 +340,9 @@ export const useAuthStore = create((set, get) => ({
         try {
             const res = await axiosInstance.put("/auth/update-privacy", privacyData);
             set({ authUser: res.data });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
             toast.success("Privacy settings updated");
         } catch (error) {
             console.error("Error updating privacy settings:", error);
@@ -311,6 +357,9 @@ export const useAuthStore = create((set, get) => ({
             const res = await axiosInstance.put("/auth/update-appearance", appearanceData);
             console.log("✅ Response received:", res.data);
             set({ authUser: res.data });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(res.data));
+            } catch (e) {}
             toast.success("Appearance updated");
         } catch (error) {
             console.error("❌ Error updating appearance:", error);
@@ -325,6 +374,9 @@ export const useAuthStore = create((set, get) => ({
             // Update local user state
             const updatedUser = { ...get().authUser, isIncognito: res.data.isIncognito };
             set({ authUser: updatedUser });
+            try {
+                localStorage.setItem("chat_user", JSON.stringify(updatedUser));
+            } catch (e) {}
             toast.success(res.data.message);
             return true;
         } catch (error) {

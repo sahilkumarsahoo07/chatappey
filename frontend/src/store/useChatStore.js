@@ -34,6 +34,22 @@ import {
 
 const PAGE_SIZE = 40;
 
+const getInitialUsers = () => {
+  try {
+    const cached = localStorage.getItem("chat_users_list");
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+  return [];
+};
+
+const persistUsersCache = (usersList) => {
+  try {
+    if (Array.isArray(usersList)) {
+      localStorage.setItem("chat_users_list", JSON.stringify(usersList));
+    }
+  } catch (e) {}
+};
+
 const persistDmThread = (userId, messages, meta = {}) => {
   if (!userId || !messages?.length) return;
   const payload = {
@@ -80,7 +96,7 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   messagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
   isLoadingOlder: false,
-  users: [],
+  users: getInitialUsers(),
   discoverUsers: [],
   selectedUser: null,
   isUsersLoading: false,
@@ -95,10 +111,14 @@ export const useChatStore = create((set, get) => ({
 
   // Sidebar friends / chats list only — never pass a search query here
   getUsers: async () => {
-    set({ isUsersLoading: true });
+    // Only set isUsersLoading to true if we don't have any cached users
+    if (!get().users || get().users.length === 0) {
+      set({ isUsersLoading: true });
+    }
     try {
       const res = await axiosInstance.get("/messages/users");
       set({ users: res.data });
+      persistUsersCache(res.data);
       get().prefetchChats(res.data);
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to fetch users");
@@ -135,6 +155,7 @@ export const useChatStore = create((set, get) => ({
     try {
       const res = await axiosInstance.get("/messages/users");
       set({ users: res.data });
+      persistUsersCache(res.data);
     } catch (error) {
       // Silently fail, don't show error toast for background refresh
       console.error("Error refreshing users:", error);

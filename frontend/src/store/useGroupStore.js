@@ -94,8 +94,24 @@ const parseMessagesResponse = (data) => {
   };
 };
 
+const getInitialGroups = () => {
+  try {
+    const cached = localStorage.getItem("chat_groups_list");
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+  return [];
+};
+
+const persistGroupsCache = (groupsList) => {
+  try {
+    if (Array.isArray(groupsList)) {
+      localStorage.setItem("chat_groups_list", JSON.stringify(groupsList));
+    }
+  } catch (e) {}
+};
+
 export const useGroupStore = create((set, get) => ({
-    groups: [],
+    groups: getInitialGroups(),
     selectedGroup: null,
     groupMessages: [],
     groupMessagesMeta: { hasMoreOlder: false, isSyncing: false, oldestCursor: null, newestCursor: null },
@@ -113,10 +129,13 @@ export const useGroupStore = create((set, get) => ({
 
     // Get all groups for current user
     getGroups: async () => {
-        set({ isGroupsLoading: true });
+        if (!get().groups || get().groups.length === 0) {
+            set({ isGroupsLoading: true });
+        }
         try {
             const res = await axiosInstance.get("/groups");
             set({ groups: res.data });
+            persistGroupsCache(res.data);
         } catch (error) {
             toast.error(error.response?.data?.error || "Failed to load groups");
         } finally {
