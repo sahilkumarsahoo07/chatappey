@@ -107,6 +107,20 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     }, [replyingToMessage]);
 
     useEffect(() => {
+        const handleFocus = (e) => {
+            const replyText = e.detail?.replyText;
+            if (replyText) {
+                setText((prev) => (prev ? `${prev} ${replyText}` : replyText));
+            }
+            setTimeout(() => {
+                textareaRef.current?.focus();
+            }, 100);
+        };
+        window.addEventListener("focus-chat-input", handleFocus);
+        return () => window.removeEventListener("focus-chat-input", handleFocus);
+    }, []);
+
+    useEffect(() => {
         const handleClickOutside = (e) => {
             if (mentionsRef.current && !mentionsRef.current.contains(e.target)) {
                 setShowMentions(false);

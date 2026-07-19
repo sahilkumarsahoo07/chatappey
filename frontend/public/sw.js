@@ -38,6 +38,10 @@ self.addEventListener("push", (event) => {
       tag: data.tag || "chat-message",
       requireInteraction: !!data.requireInteraction,
       silent: false,
+      actions: [
+        { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
+        { action: "open", title: "Open Chat" },
+      ],
       data: data.data || { url: data.url || "/" },
     })
   );
@@ -53,6 +57,8 @@ self.addEventListener("notificationclick", (event) => {
   const nData = event.notification.data || {};
   const relativeUrl = nData.url || "/";
   const urlToOpen = new URL(relativeUrl, self.location.origin).href;
+  const userAction = event.action;
+  const userReplyText = event.reply || null;
 
   let chatId = toEntityId(nData.chatId);
   let groupId = toEntityId(nData.groupId);
@@ -68,6 +74,8 @@ self.addEventListener("notificationclick", (event) => {
 
   const payload = {
     type: "NOTIFICATION_CLICK",
+    action: userAction,
+    replyText: userReplyText,
     url: relativeUrl,
     chatId,
     groupId,

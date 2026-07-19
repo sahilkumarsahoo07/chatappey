@@ -6,6 +6,8 @@ import {
   dismissNotificationPromptLater,
   requestNotificationPermission,
   refreshNotificationPermissionUI,
+  isIOSDevice,
+  isStandalonePWA,
 } from "../lib/notifications";
 
 export const NotificationPromptModal = () => {
@@ -108,9 +110,24 @@ export const NotificationPromptModal = () => {
               Turn On Notifications
             </h3>
             <p className="text-sm text-base-content/70 leading-relaxed px-2">
-              Stay connected like WhatsApp! Get instant alerts for incoming messages and calls even when ChatAppey is in the background or minimized.
+              Stay connected like WhatsApp! Get instant alerts for incoming messages and quick replies even when ChatAppey is in the background.
             </p>
           </div>
+
+          {isIOSDevice() && !isStandalonePWA() && (
+            <div className="w-full text-left p-3 rounded-xl bg-primary/10 border border-primary/20 text-xs text-base-content/80 space-y-1">
+              <p className="font-semibold text-primary flex items-center gap-1">
+                <span>📱 iPhone Notification Note:</span>
+              </p>
+              <p>
+                Safari on iOS requires adding ChatAppey to your Home Screen:
+                <br />
+                1. Tap the <span className="font-bold">Share ↗️</span> button in Safari
+                <br />
+                2. Select <span className="font-bold">"Add to Home Screen"</span>
+              </p>
+            </div>
+          )}
 
           <div className="w-full flex flex-col gap-2.5 pt-2">
             <button

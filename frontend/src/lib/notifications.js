@@ -39,6 +39,19 @@ export const subscribeToWebPush = async () => {
   }
 };
 
+export const isIOSDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+};
+
+export const isStandalonePWA = () => {
+  if (typeof window === "undefined") return false;
+  return Boolean(
+    window.navigator.standalone ||
+    window.matchMedia?.("(display-mode: standalone)")?.matches
+  );
+};
+
 const sameOriginIcon = (icon) => {
   try {
     const url = new URL(icon || DEFAULT_ICON, window.location.href);
@@ -131,6 +144,10 @@ const buildNotificationOptions = (options = {}) => {
     renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
+    actions: [
+      { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
+      { action: "open", title: "Open Chat" },
+    ],
     data: {
       url:
         chatId

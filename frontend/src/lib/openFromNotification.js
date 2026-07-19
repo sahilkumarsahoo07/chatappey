@@ -21,7 +21,7 @@ function sameEntityId(a, b) {
 }
 
 function normalizeOpenPayload(raw = {}) {
-  let { chatId, groupId, url, peer, group } = raw;
+  let { chatId, groupId, url, peer, group, replyText } = raw;
 
   if ((!chatId && !groupId) && url) {
     try {
@@ -44,7 +44,7 @@ function normalizeOpenPayload(raw = {}) {
     group = { ...group, _id: toEntityId(group._id) || groupId };
   }
 
-  return { chatId, groupId, url, peer, group };
+  return { chatId, groupId, url, peer, group, replyText };
 }
 
 /**
@@ -53,7 +53,7 @@ function normalizeOpenPayload(raw = {}) {
  */
 export function openConversationFromNotification(raw = {}) {
   const payload = normalizeOpenPayload(raw);
-  const { chatId, groupId, peer, group } = payload;
+  const { chatId, groupId, peer, group, replyText } = payload;
 
   if (!chatId && !groupId) return false;
 
@@ -82,12 +82,12 @@ export function openConversationFromNotification(raw = {}) {
     return true;
   }
 
-  return applyConversationSwitch({ chatId, groupId, peer, group });
+  return applyConversationSwitch({ chatId, groupId, peer, group, replyText });
 }
 
 /** Instant store switch — sync, zero reload, zero hang */
 export function applyConversationSwitch(raw = {}) {
-  const { chatId, groupId, peer, group } = normalizeOpenPayload(raw);
+  const { chatId, groupId, peer, group, replyText } = normalizeOpenPayload(raw);
 
   if (!chatId && !groupId) return false;
 
@@ -137,6 +137,11 @@ export function applyConversationSwitch(raw = {}) {
       useChatStore.getState().getMessages?.(chatId);
       useChatStore.getState().markMessagesAsRead?.(chatId);
     }
+
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("focus-chat-input", { detail: { replyText } }));
+    }, 100);
+
     return true;
   }
 
@@ -169,6 +174,11 @@ export function applyConversationSwitch(raw = {}) {
       useGroupStore.getState().getGroupMessages?.(groupId);
       useGroupStore.getState().markGroupMessagesAsRead?.(groupId);
     }
+
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("focus-chat-input", { detail: { replyText } }));
+    }, 100);
+
     return true;
   }
 
