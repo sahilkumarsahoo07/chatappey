@@ -15,18 +15,18 @@ const Navbar = () => {
 
     return (
      <header className="border-b border-base-300/50 fixed w-full top-0 z-40 backdrop-blur-lg bg-base-100/90 shadow-sm">
-        <div className="container mx-auto px-4 h-16">
+        <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16">
             <div className="flex items-center justify-between h-full">
                 {/* Logo/Brand - More polished with subtle animation */}
                 <Link 
                     to="/" 
-                    className="flex items-center gap-3 group transition-all active:scale-[0.98]"
+                    className="flex items-center gap-2 sm:gap-3 group transition-all active:scale-[0.98] shrink-0"
                 >
-                    <div className="size-9 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-all duration-300 shadow-sm hover:shadow-primary/10">
-                        <MessageCircleHeart className="w-5 h-5 text-primary group-hover:rotate-12 transition-transform duration-300" />
+                    <div className="size-8 sm:size-9 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-all duration-300 shadow-sm hover:shadow-primary/10">
+                        <MessageCircleHeart className="w-4 h-4 sm:w-5 sm:h-5 text-primary group-hover:rotate-12 transition-transform duration-300" />
                     </div>
                     <div className="flex flex-col leading-tight">
-                        <h1 className="font-bold text-lg tracking-tight bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+                        <h1 className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
                             ChatAppey
                         </h1>
                         <span className="text-xs text-base-content/60 -mt-1 hidden sm:block">

@@ -12,6 +12,7 @@ import {
 
 const LandingPage = () => {
   const [activeFaq, setActiveFaq] = useState(-1);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans antialiased selection:bg-indigo-500/20 relative overflow-x-hidden">
@@ -25,16 +26,16 @@ const LandingPage = () => {
       </div>
 
       {/* GLASSMORPHISM NAVBAR */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-white/70 backdrop-blur-xl border-b border-white/50 shadow-sm transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-6 md:px-12 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-12">
+      <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-white/50 shadow-sm transition-all duration-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-12 h-16 sm:h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3 sm:gap-12">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-[14px] bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-all duration-300">
-                <MessageSquare className="w-5 h-5 text-white" />
+            <Link to="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-[12px] sm:rounded-[14px] bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-all duration-300">
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </div>
-              <span className="text-2xl font-black tracking-tight text-slate-900">
-                Chatappey
+              <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+                ChatAppey
               </span>
             </Link>
 
@@ -47,16 +48,16 @@ const LandingPage = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <Link to="/login" className="text-slate-600 hover:text-indigo-600 text-sm font-bold transition-colors">Log in</Link>
-            <Link to="/signup" className="h-10 px-6 rounded-xl bg-slate-900 text-white hover:bg-indigo-600 text-xs font-black flex items-center gap-1.5 shadow-lg shadow-slate-900/10 hover:shadow-indigo-600/25 transition-all">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link to="/login" className="text-slate-600 hover:text-indigo-600 text-xs sm:text-sm font-bold px-2 py-1.5 transition-colors">Log in</Link>
+            <Link to="/signup" className="h-9 sm:h-10 px-3.5 sm:px-6 rounded-xl bg-slate-900 text-white hover:bg-indigo-600 text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-lg shadow-slate-900/10 hover:shadow-indigo-600/25 transition-all whitespace-nowrap">
               Get Started
             </Link>
           </div>
         </div>
       </nav>
 
-      <main className="relative z-10 pt-24">
+      <main className="relative z-10 pt-20 sm:pt-24">
         
         {/* HERO SECTION */}
         <section className="max-w-7xl mx-auto px-6 md:px-12 pt-16 pb-20 lg:pt-28 lg:pb-24 relative">
