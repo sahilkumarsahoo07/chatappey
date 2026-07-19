@@ -2,15 +2,13 @@
 @plugin "daisyui";
 
 html,
-body {
+body,
+#root {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     overflow-x: hidden;
     max-width: 100%;
     overscroll-behavior-x: none;
-}
-
-#root {
-    overflow-x: hidden;
-    max-width: 100%;
 }
 
 @plugin "daisyui" {

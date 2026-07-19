@@ -15,7 +15,7 @@ const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans antialiased selection:bg-indigo-500/20 relative overflow-x-hidden">
+    <div className="min-h-[100dvh] bg-slate-50 text-slate-800 flex flex-col font-sans antialiased selection:bg-indigo-500/20 relative overflow-x-hidden pb-[env(safe-area-inset-bottom,0px)]">
       
       {/* VIBRANT GLOSSY MESH GRADIENTS */}
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">

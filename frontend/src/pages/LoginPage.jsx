@@ -19,7 +19,7 @@ const LoginPage = () => {
     };
 
     return (
-        <div className="min-h-screen grid lg:grid-cols-2 bg-base-100 pt-[env(safe-area-inset-top,0px)]">
+        <div className="min-h-[100dvh] grid lg:grid-cols-2 bg-base-100 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
             {/* Left Side - Form */}
             <div className="flex flex-col justify-center items-center px-4 py-6 sm:px-8 sm:py-8 lg:px-12 lg:py-8 relative overflow-hidden">
                 {/* Subtle Background Gradient */}
