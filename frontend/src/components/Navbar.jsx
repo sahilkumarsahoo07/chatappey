@@ -14,7 +14,7 @@ const Navbar = () => {
     const { theme, setTheme } = useThemeStore();
 
     return (
-     <header className="border-b border-base-300/50 fixed w-full top-0 z-40 backdrop-blur-lg bg-base-100/90 shadow-sm">
+     <header className="border-b border-base-300/50 fixed w-full top-0 z-40 backdrop-blur-lg bg-base-100/90 shadow-sm pt-[env(safe-area-inset-top,0px)]">
         <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16">
             <div className="flex items-center justify-between h-full">
                 {/* Logo/Brand - More polished with subtle animation */}

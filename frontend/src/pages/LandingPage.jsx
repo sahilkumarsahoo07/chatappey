@@ -26,7 +26,7 @@ const LandingPage = () => {
       </div>
 
       {/* GLASSMORPHISM NAVBAR */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-white/50 shadow-sm transition-all duration-300">
+      <nav className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-xl border-b border-white/50 shadow-sm transition-all duration-300 pt-[env(safe-area-inset-top,0px)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-12 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-12">
             {/* Logo */}
@@ -49,7 +49,7 @@ const LandingPage = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            <Link to="/login" className="text-slate-600 hover:text-indigo-600 text-xs sm:text-sm font-bold px-2 py-1.5 transition-colors">Log in</Link>
+            <Link to="/login" className="text-slate-600 hover:text-indigo-600 text-xs sm:text-sm font-bold px-2.5 py-2 transition-colors">Log in</Link>
             <Link to="/signup" className="h-9 sm:h-10 px-3.5 sm:px-6 rounded-xl bg-slate-900 text-white hover:bg-indigo-600 text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-lg shadow-slate-900/10 hover:shadow-indigo-600/25 transition-all whitespace-nowrap">
               Get Started
             </Link>
@@ -57,7 +57,7 @@ const LandingPage = () => {
         </div>
       </nav>
 
-      <main className="relative z-10 pt-20 sm:pt-24">
+      <main className="relative z-10 pt-[calc(4rem+env(safe-area-inset-top,0px))] sm:pt-[calc(5rem+env(safe-area-inset-top,0px))]">
         
         {/* HERO SECTION */}
         <section className="max-w-7xl mx-auto px-6 md:px-12 pt-16 pb-20 lg:pt-28 lg:pb-24 relative">
