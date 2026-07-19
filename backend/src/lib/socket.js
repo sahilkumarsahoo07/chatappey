@@ -843,6 +843,26 @@ io.on("connection", async (socket) => {
         message: payload
       });
 
+      // Send Web Push Notification to group members (outside browser / backgrounded)
+      group.members.forEach((m) => {
+        const memberId = (m.user?._id || m.user).toString();
+        if (memberId !== userId.toString()) {
+          const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
+          const senderName = newMessage.senderId?.fullName || "Member";
+          sendPushNotification(memberId, {
+            title: `${group.name} (${senderName})`,
+            body: bodyText,
+            icon: group.image || newMessage.senderId?.profilePic || "/avatar.png",
+            tag: `group-${groupId}`,
+            data: {
+              url: `/?group=${groupId}`,
+              groupId: String(groupId),
+              group: { _id: String(groupId), name: group.name, image: group.image },
+            },
+          }).catch((e) => console.error("Error sending Group Web Push notification:", e.message));
+        }
+      });
+
       // Send success response to sender
       callback?.({ success: true, message: payload });
     } catch (error) {

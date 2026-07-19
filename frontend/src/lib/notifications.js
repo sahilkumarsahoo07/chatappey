@@ -25,15 +25,17 @@ export const subscribeToWebPush = async () => {
     const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
 
+    const convertedKey = urlBase64ToUint8Array(publicKey);
     if (!subscription) {
-      const convertedKey = urlBase64ToUint8Array(publicKey);
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedKey,
       });
     }
 
-    await axiosInstance.post("/notifications/subscribe", { subscription });
+    if (subscription) {
+      await axiosInstance.post("/notifications/subscribe", { subscription });
+    }
   } catch (err) {
     console.error("Web Push subscription error:", err);
   }

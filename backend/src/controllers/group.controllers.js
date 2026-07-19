@@ -4,6 +4,7 @@ import User from "../models/user.model.js";
 import mongoose from "mongoose";
 import cloudinary from "../lib/cloudinary.js";
 import { io, getReceiverSocketId, joinUsersToGroupRoom, userSocketMap } from "../lib/socket.js";
+import { sendPushNotification } from "../lib/webpush.js";
 import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
 import {
     annotateDeleteFlags,
@@ -760,6 +761,25 @@ export const sendGroupMessage = async (req, res) => {
         io.to(String(groupId)).emit("group:newMessage", {
             groupId: String(groupId),
             message: payload
+        });
+
+        // Send Web Push Notification to group members (outside browser / backgrounded)
+        group.members.forEach((m) => {
+            const memberId = (m.user?._id || m.user || m).toString();
+            if (memberId !== senderId.toString()) {
+                const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
+                sendPushNotification(memberId, {
+                    title: `${group.name} (${sender.fullName})`,
+                    body: bodyText,
+                    icon: group.image || sender.profilePic || "/avatar.png",
+                    tag: `group-${groupId}`,
+                    data: {
+                        url: `/?group=${groupId}`,
+                        groupId: String(groupId),
+                        group: { _id: String(groupId), name: group.name, image: group.image },
+                    },
+                }).catch((e) => console.error("Error sending REST Group Web Push notification:", e.message));
+            }
         });
 
         if (validMentions.length > 0) {

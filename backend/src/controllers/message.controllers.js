@@ -4,6 +4,7 @@ import FriendRequest from "../models/friendRequest.model.js";
 
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io, userSocketMap } from "../lib/socket.js";
+import { sendPushNotification } from "../lib/webpush.js";
 import { emitToUser } from "../utils/messageStatus.utils.js";
 import mongoose from "mongoose";
 import { getPreferencesMap, isChatMuted, unarchiveDmChat } from "../utils/chatPreference.utils.js";
@@ -492,6 +493,20 @@ export const sendMessage = async (req, res) => {
                     });
                 }
             }
+
+            // Web Push Notification for receiver (outside browser / backgrounded)
+            const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
+            sendPushNotification(receiverId, {
+                title: sender.fullName || "New Message",
+                body: bodyText,
+                icon: sender.profilePic || "/avatar.png",
+                tag: `chat-${senderId}`,
+                data: {
+                    url: `/?chat=${senderId}`,
+                    chatId: String(senderId),
+                    peer: sender,
+                },
+            }).catch((e) => console.error("Error sending REST Web Push notification:", e.message));
         }
 
         const responsePayload =
