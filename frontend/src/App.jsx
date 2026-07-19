@@ -36,6 +36,7 @@ import IncomingCallNotification from './components/IncomingCallNotification';
 import CallWindow from './components/CallWindow';
 import CallEndedScreen from './components/call/CallEndedScreen';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
+import NotificationPromptModal from './components/NotificationPromptModal';
 import { CreateStatusModal } from './components/status';
 import { useStatusStore } from './store/useStatusStore';
 import { useVisualViewportKeyboard } from './hooks/useVisualViewportKeyboard';
@@ -222,6 +223,7 @@ function App() {
       <CallWindow />
       <CallEndedScreen />
       {authUser && <NotificationPermissionBanner />}
+      <NotificationPromptModal />
 
       {/* WhatsApp-style Status */}
       {authUser && (

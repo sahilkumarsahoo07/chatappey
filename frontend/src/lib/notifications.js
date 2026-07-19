@@ -134,9 +134,38 @@ const showStandardNotification = (title, options) => {
   }
 };
 
+export const isMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+export const shouldShowNotificationPrompt = () => {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  if (Notification.permission === "granted") return false;
+
+  try {
+    const dismissedUntil = localStorage.getItem("notification_prompt_dismissed_until");
+    if (dismissedUntil && Date.now() < Number(dismissedUntil)) {
+      return false;
+    }
+  } catch (_) {}
+
+  return true;
+};
+
+export const dismissNotificationPromptLater = () => {
+  try {
+    const thirtyMinsLater = Date.now() + 30 * 60 * 1000;
+    localStorage.setItem("notification_prompt_dismissed_until", String(thirtyMinsLater));
+    refreshNotificationPermissionUI();
+  } catch (e) {
+    console.error("Error setting notification prompt snooze:", e);
+  }
+};
+
 /**
- * Show system notification. Uses direct Notification API first (reliable on Windows),
- * then service worker when the tab is hidden.
+ * Show system notification. Uses Service Worker for mobile (Android/iOS)
+ * and tab hidden states, direct Notification API for desktop active window.
  */
 export const showBrowserNotification = async (title, options = {}) => {
   if (!("Notification" in window)) {
@@ -149,23 +178,24 @@ export const showBrowserNotification = async (title, options = {}) => {
   }
 
   const notificationOptions = buildNotificationOptions(options);
+  const mobile = isMobileDevice();
 
-  // Direct API — most reliable when user is on the site (Windows Chrome/Edge)
-  if (!document.hidden) {
-    const direct = showStandardNotification(title, notificationOptions);
-    if (direct) return direct;
-  }
-
-  if ("serviceWorker" in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification(title, notificationOptions);
-      return null;
-    } catch (err) {
-      console.error("[notify] SW failed, using standard API:", err);
+  // On Mobile or backgrounded tab, Service Worker registration.showNotification is mandatory
+  if (mobile || document.hidden) {
+    if ("serviceWorker" in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && registration.showNotification) {
+          await registration.showNotification(title, notificationOptions);
+          return null;
+        }
+      } catch (err) {
+        console.error("[notify] Service worker showNotification failed:", err);
+      }
     }
   }
 
+  // Fallback or active desktop tab
   return showStandardNotification(title, notificationOptions);
 };
 
