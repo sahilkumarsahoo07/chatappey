@@ -146,10 +146,7 @@ const buildNotificationOptions = (options = {}) => {
     renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
-    actions: [
-      { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
-      { action: "open", title: "Open Chat" },
-    ],
+    actions: [],
     data: {
       url:
         chatId

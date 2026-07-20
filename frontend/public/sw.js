@@ -38,10 +38,7 @@ self.addEventListener("push", (event) => {
       tag: data.tag || "chat-message",
       requireInteraction: !!data.requireInteraction,
       silent: false,
-      actions: [
-        { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
-        { action: "open", title: "Open Chat" },
-      ],
+      actions: [],
       data: data.data || { url: data.url || "/" },
     })
   );
@@ -58,7 +55,6 @@ self.addEventListener("notificationclick", (event) => {
   const relativeUrl = nData.url || "/";
   const urlToOpen = new URL(relativeUrl, self.location.origin).href;
   const userAction = event.action;
-  const userReplyText = event.reply ? String(event.reply).trim() : null;
 
   let chatId = toEntityId(nData.chatId);
   let groupId = toEntityId(nData.groupId);
@@ -72,87 +68,9 @@ self.addEventListener("notificationclick", (event) => {
     }
   }
 
-  // Handle inline notification reply directly in background — DO NOT OPEN BROWSER WINDOW
-  if (userAction === "reply" && userReplyText) {
-    event.waitUntil(
-      (async () => {
-        let sent = false;
-        try {
-          const endpoint = chatId
-            ? `/api/messages/send/${encodeURIComponent(chatId)}`
-            : groupId
-              ? `/api/groups/${encodeURIComponent(groupId)}/messages`
-              : null;
-
-          if (endpoint) {
-            const res = await fetch(endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ text: userReplyText }),
-            });
-            if (res.ok) {
-              sent = true;
-            }
-          }
-        } catch (err) {
-          console.error("Background notification reply failed:", err);
-        }
-
-        // Notify open window clients (if any exist) so they can update messages in background without taking focus
-        const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
-        const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
-
-        if (originClients.length > 0) {
-          for (const client of originClients) {
-            client.postMessage({
-              type: "NOTIFICATION_REPLY_SENT",
-              sent,
-              chatId,
-              groupId,
-              replyText: userReplyText,
-            });
-          }
-        }
-
-        // If background send failed (e.g. session expired), fallback to opening/focusing window so user text is preserved
-        if (!sent) {
-          if (originClients.length > 0) {
-            const target = originClients.find((c) => c.focused) || originClients[0];
-            await target.focus();
-            for (const client of originClients) {
-              client.postMessage({
-                type: "NOTIFICATION_CLICK",
-                action: userAction,
-                replyText: userReplyText,
-                url: relativeUrl,
-                chatId,
-                groupId,
-                peer: nData.peer,
-                group: nData.group,
-              });
-            }
-          } else if (clients.openWindow) {
-            let openUrl = chatId
-              ? new URL(`/?chat=${encodeURIComponent(chatId)}`, self.location.origin).href
-              : groupId
-                ? new URL(`/?group=${encodeURIComponent(groupId)}`, self.location.origin).href
-                : urlToOpen;
-            const u = new URL(openUrl);
-            u.searchParams.set("replyText", userReplyText);
-            await clients.openWindow(u.href);
-          }
-        }
-      })()
-    );
-    return;
-  }
-
-  // Normal click or "Open Chat" action -> focus or open browser window
   const payload = {
     type: "NOTIFICATION_CLICK",
     action: userAction,
-    replyText: userReplyText,
     url: relativeUrl,
     chatId,
     groupId,
@@ -187,17 +105,11 @@ self.addEventListener("notificationclick", (event) => {
 
       // App not open — open home with deep link (notification click = user gesture)
       if (clients.openWindow) {
-        let openUrl = chatId
+        const openUrl = chatId
           ? new URL(`/?chat=${encodeURIComponent(chatId)}`, self.location.origin).href
           : groupId
             ? new URL(`/?group=${encodeURIComponent(groupId)}`, self.location.origin).href
             : urlToOpen;
-
-        if (userReplyText) {
-          const u = new URL(openUrl);
-          u.searchParams.set("replyText", userReplyText);
-          openUrl = u.href;
-        }
 
         return clients.openWindow(openUrl);
       }
