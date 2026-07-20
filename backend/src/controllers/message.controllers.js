@@ -490,6 +490,7 @@ export const sendMessage = async (req, res) => {
             io.to(`user:${senderId.toString()}`).emit("newMessage", msgPayload);
             io.to(`user:${receiverId.toString()}`).emit("newMessage", msgPayload);
 
+            const receiverSocketId = getReceiverSocketId(receiverId.toString());
             if (receiverSocketId) {
                 const senderSocketId = getReceiverSocketId(senderId.toString());
                 if (senderSocketId) {
