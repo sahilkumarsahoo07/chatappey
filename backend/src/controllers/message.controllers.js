@@ -486,9 +486,11 @@ export const sendMessage = async (req, res) => {
                 serverCreatedAt: newMessage.createdAt,
             };
 
-            if (receiverSocketId) {
-                io.to(receiverSocketId).emit("newMessage", msgPayload);
+            // Broadcast to receiver's sockets AND sender's sockets (for multi-tab / notification reply sync)
+            io.to(`user:${senderId.toString()}`).emit("newMessage", msgPayload);
+            io.to(`user:${receiverId.toString()}`).emit("newMessage", msgPayload);
 
+            if (receiverSocketId) {
                 const senderSocketId = getReceiverSocketId(senderId.toString());
                 if (senderSocketId) {
                     io.to(senderSocketId).emit("messageDelivered", {

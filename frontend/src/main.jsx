@@ -31,26 +31,45 @@ if ("serviceWorker" in navigator) {
       if (!replyText) return;
 
       if (chatId) {
+        // Optimistic UI update: append immediately if this chat is open
+        const sel = useChatStore.getState().selectedUser;
+        const authUser = useChatStore.getState().authUser || (window.__INITIAL_AUTH_USER__);
+        if (sel && String(sel._id) === String(chatId)) {
+          const optimisticMsg = {
+            _id: clientMessageId,
+            clientMessageId,
+            text: replyText,
+            senderId: authUser?._id || "me",
+            receiverId: chatId,
+            createdAt: new Date().toISOString(),
+            status: "sent",
+            isOptimistic: true,
+            pending: true,
+          };
+          useChatStore.setState((state) => ({
+            messages: state.messages.concat(optimisticMsg),
+          }));
+        }
+
         axiosInstance.post(`/messages/send/${encodeURIComponent(chatId)}`, {
           text: replyText,
           clientMessageId,
           replyFromNotification: true,
-        }).then(() => {
-          const sel = useChatStore.getState().selectedUser;
-          if (sel && String(sel._id) === String(chatId)) {
-            useChatStore.getState().getMessages?.(chatId);
-          } else {
-            useChatStore.getState().refreshUsers?.();
+        }).then((res) => {
+          const currentSel = useChatStore.getState().selectedUser;
+          if (currentSel && String(currentSel._id) === String(chatId) && res.data) {
+            useChatStore.getState().getMessages?.(chatId, { reconcile: true, background: true });
           }
+          useChatStore.getState().refreshUsers?.();
         }).catch((err) => console.error("Client side notification reply post error:", err));
       } else if (groupId) {
         axiosInstance.post(`/groups/${encodeURIComponent(groupId)}/messages`, {
           text: replyText,
           clientMessageId,
           replyFromNotification: true,
-        }).then(() => {
-          const sel = useGroupStore.getState().selectedGroup;
-          if (sel && String(sel._id) === String(groupId)) {
+        }).then((res) => {
+          const currentSel = useGroupStore.getState().selectedGroup;
+          if (currentSel && String(currentSel._id) === String(groupId) && res.data) {
             useGroupStore.getState().getGroupMessages?.(groupId);
           }
         }).catch((err) => console.error("Client side group notification reply post error:", err));
@@ -61,19 +80,17 @@ if ("serviceWorker" in navigator) {
     if (event.data?.type === "NOTIFICATION_REPLY_SENT") {
       const { chatId, groupId } = event.data;
       if (chatId) {
-        import("./store/useChatStore.js").then(({ useChatStore }) => {
-          const sel = useChatStore.getState().selectedUser;
-          if (sel && String(sel._id) === String(chatId)) {
-            useChatStore.getState().getMessages?.(chatId);
-          }
-        });
+        const sel = useChatStore.getState().selectedUser;
+        if (sel && String(sel._id) === String(chatId)) {
+          useChatStore.getState().getMessages?.(chatId, { reconcile: true, background: true });
+        } else {
+          useChatStore.getState().refreshUsers?.();
+        }
       } else if (groupId) {
-        import("./store/useGroupStore.js").then(({ useGroupStore }) => {
-          const sel = useGroupStore.getState().selectedGroup;
-          if (sel && String(sel._id) === String(groupId)) {
-            useGroupStore.getState().getGroupMessages?.(groupId);
-          }
-        });
+        const sel = useGroupStore.getState().selectedGroup;
+        if (sel && String(sel._id) === String(groupId)) {
+          useGroupStore.getState().getGroupMessages?.(groupId);
+        }
       }
       return;
     }

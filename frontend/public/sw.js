@@ -189,10 +189,10 @@ self.addEventListener("push", (event) => {
  * Never call client.navigate() — that reloads and freezes the UI.
  */
 function getApiBaseUrl() {
-  if (self.location.origin.includes(":5173")) {
+  if (self.location.origin.includes(":5173") || self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1") {
     return "http://localhost:5001/api";
   }
-  return "/api";
+  return "https://chatappey.onrender.com/api";
 }
 
 self.addEventListener("notificationclick", (event) => {

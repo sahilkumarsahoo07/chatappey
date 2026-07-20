@@ -640,6 +640,18 @@ export const sendGroupMessage = async (req, res) => {
         } = req.body;
         const senderId = req.user._id;
 
+        if (clientMessageId) {
+            const existing = await GroupMessage.findOne({ clientMessageId })
+                .populate("senderId", "fullName profilePic")
+                .populate("mentions", "fullName profilePic");
+            if (existing) {
+                const payload = typeof existing.toObject === "function"
+                    ? { ...existing.toObject(), serverCreatedAt: existing.createdAt }
+                    : existing;
+                return res.status(200).json(payload);
+            }
+        }
+
         const group = await Group.findById(groupId);
 
         if (!group) {
