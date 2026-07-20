@@ -332,9 +332,6 @@ export const sendMessage = async (req, res) => {
         const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled, replyFromNotification } = req.body;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
-        const t0 = Date.now();
-        const traceId = req.body.clientMessageId || `rest_${t0}`;
-        console.log(`[${new Date().toISOString().substring(11, 23)}] MESSAGE_RECEIVED id=${traceId} conversationId=${receiverId} senderId=${senderId} replyFromNotification=${!!replyFromNotification}`);
 
         // Quick Reply = background send only. Never leave sender as "actively viewing".
         if (replyFromNotification) {
@@ -479,7 +476,6 @@ export const sendMessage = async (req, res) => {
         });
 
         await newMessage.save();
-        console.log(`[${new Date().toISOString().substring(11, 23)}] MESSAGE_SAVED id=${newMessage._id} conversationId=${receiverId} recipientId=${receiverId} elapsedMs=${Date.now() - t0}`);
 
         // Unarchive for both participants when a new message is sent (WhatsApp-style)
         await unarchiveDmChat(senderId, receiverId);
@@ -512,7 +508,6 @@ export const sendMessage = async (req, res) => {
 
             // Web Push Notification for receiver (outside browser / backgrounded)
             const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
-            console.log(`[${new Date().toISOString().substring(11, 23)}] PUSH_DECISION_START id=${newMessage._id} conversationId=${senderId} recipientId=${receiverId}`);
             sendPushNotification(receiverId, {
                 title: sender.fullName || "New Message",
                 body: bodyText,

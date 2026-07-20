@@ -140,11 +140,6 @@ const incognitoUsers = new Set();
 // Map: userId (string) -> { status: "ONLINE_ACTIVE" | "ONLINE_IDLE" | "BACKGROUND" | "OFFLINE", lastSeen: Date, sockets: Set<string>, activeConversationId: string | null }
 const userPresenceMap = new Map();
 
-const notifTrace = (stage, meta = {}) => {
-  const ts = new Date().toISOString().substring(11, 23);
-  console.log(`[${ts}] ${stage}`, meta);
-};
-
 /**
  * Quick Reply is a background-only send. It must NEVER leave the sender with an
  * activeConversationId that would suppress the next inbound push.
@@ -153,24 +148,9 @@ const notifTrace = (stage, meta = {}) => {
  */
 export const clearPresenceAfterQuickReply = (userId) => {
   if (!userId) return;
-  const uIdStr = String(userId);
-  const presence = userPresenceMap.get(uIdStr);
-  if (!presence) {
-    notifTrace("QUICK_REPLY_CLEANUP_COMPLETED", { recipientId: uIdStr, presence: null });
-    return;
-  }
-  notifTrace("QUICK_REPLY_CLEANUP_STARTED", {
-    recipientId: uIdStr,
-    status: presence.status,
-    activeConversationId: presence.activeConversationId || null,
-  });
+  const presence = userPresenceMap.get(String(userId));
+  if (!presence) return;
   presence.activeConversationId = null;
-  notifTrace("QUICK_REPLY_CLEANUP_COMPLETED", {
-    recipientId: uIdStr,
-    status: presence.status,
-    activeConversationId: null,
-    sockets: presence.sockets?.size || 0,
-  });
 };
 
 export const isUserActivelyViewingInSocket = (userId, conversationId) => {
@@ -182,25 +162,13 @@ export const isUserActivelyViewingInSocket = (userId, conversationId) => {
 
   // CRITICAL: Only a truly focused ONLINE_ACTIVE user viewing this exact chat
   // may suppress push. BACKGROUND / OFFLINE / ONLINE_IDLE must NEVER suppress.
-  // ONLINE_IDLE is the 60s idle timer — treating it as "actively viewing" was
-  // suppressing Message 2 after Quick Reply woke a zombie ONLINE_ACTIVE window
-  // that then flipped to ONLINE_IDLE while activeConversationId was still set.
   if (presence.status !== "ONLINE_ACTIVE") return false;
   if (!presence.sockets || presence.sockets.size === 0) return false;
 
-  const isViewingSameConversation =
-    presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
-
-  notifTrace("PRESENCE_CHECK", {
-    recipientId: uIdStr,
-    conversationId: convIdStr,
-    status: presence.status,
-    activeConversationId: presence.activeConversationId || null,
-    sockets: presence.sockets.size,
-    result: !!isViewingSameConversation,
-  });
-
-  return !!isViewingSameConversation;
+  return !!(
+    presence.activeConversationId &&
+    String(presence.activeConversationId) === convIdStr
+  );
 };
 
 export const getVisibleOnlineUsers = () => {
@@ -359,11 +327,6 @@ io.on("connection", async (socket) => {
     const presence = userPresenceMap.get(uIdStr);
     if (presence) {
       presence.activeConversationId = conversationId ? String(conversationId) : null;
-      notifTrace("CHAT_ACTIVE_SET", {
-        recipientId: uIdStr,
-        activeConversationId: presence.activeConversationId,
-        status: presence.status,
-      });
     }
   });
 
