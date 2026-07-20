@@ -43,6 +43,20 @@ if ("serviceWorker" in navigator) {
       return;
     }
 
+    if (event.data?.type === "NOTIFICATION_MARK_READ") {
+      const { chatId, groupId } = event.data;
+      if (chatId) {
+        import("./store/useChatStore.js").then(({ useChatStore }) => {
+          useChatStore.getState().markMessagesAsRead?.(chatId);
+        });
+      } else if (groupId) {
+        import("./store/useGroupStore.js").then(({ useGroupStore }) => {
+          useGroupStore.getState().markGroupMessagesAsRead?.(groupId);
+        });
+      }
+      return;
+    }
+
     if (event.data?.type !== "NOTIFICATION_CLICK") return;
     const opened = openConversationFromNotification({
       chatId: event.data.chatId,

@@ -8,6 +8,10 @@ import {
   showInAppNotification,
   shouldShowSystemNotification,
   isActivelyViewingConversation,
+  shouldShowNotification,
+  syncStateWithServiceWorker,
+  isNotificationRecentlyShown,
+  recordNotificationShown,
 } from "../lib/notifications";
 import {
   hydrateThread,
@@ -949,10 +953,16 @@ export const useGroupStore = create((set, get) => ({
             }
 
             // WhatsApp: notify only when NOT actively viewing this group
-            const viewingThisGroup = isActivelyViewingConversation(
-              groupId,
-              selectedGroup?._id
-            );
+            const notificationDecision = shouldShowNotification({
+              incomingConversationId: groupId,
+              activeConversationId: selectedGroup?._id,
+              documentVisible: document.visibilityState === "visible",
+              windowFocused: document.hasFocus(),
+              senderId: senderIdStr,
+              currentUserId: authUser._id,
+            });
+
+            const viewingThisGroup = notificationDecision.action === "SUPPRESS";
 
             if (isFromOther && !isSystem) {
                 if (viewingThisGroup) {
@@ -960,45 +970,50 @@ export const useGroupStore = create((set, get) => ({
                 } else {
                     const group = groups.find((g) => String(g._id) === String(groupId)) || selectedGroup;
                     if (!group?.isMuted) {
-                        playNotificationSound();
-
                         const body = `${message.senderId?.fullName || "Someone"}: ${message.text || "📷 Photo"}`;
                         const g = group || { name: "New Group Message" };
+                        const msgKey = message._id || message.clientMessageId;
 
-                        if (shouldShowSystemNotification()) {
-                            showBrowserNotification(g.name || "New Group Message", {
-                                body,
-                                icon: "/avatar.png",
-                                tag: `group-${groupId}`,
-                                requireInteraction: false,
-                                silent: false,
-                                url: `/?group=${groupId}`,
-                                groupId: String(groupId),
-                                group: {
-                                    _id: String(g._id || groupId),
-                                    name: g.name,
-                                    image: g.image,
-                                    members: g.members,
-                                },
-                            });
-                        } else {
-                            showInAppNotification(
-                                { text: body },
-                                { fullName: g.name, profilePic: g.image || "/avatar.png" },
-                                () => {
-                                    import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
-                                        openConversationFromNotification({
-                                            groupId: String(groupId),
-                                            group: {
-                                                _id: String(g._id || groupId),
-                                                name: g.name,
-                                                image: g.image,
-                                                members: g.members,
-                                            },
+                        if (!isNotificationRecentlyShown(msgKey)) {
+                            recordNotificationShown(msgKey);
+
+                            if (notificationDecision.action === "SYSTEM_NOTIFICATION") {
+                                playNotificationSound();
+                                showBrowserNotification(g.name || "New Group Message", {
+                                    body,
+                                    icon: "/avatar.png",
+                                    tag: `group-${groupId}`,
+                                    requireInteraction: false,
+                                    silent: false,
+                                    url: `/?group=${groupId}`,
+                                    groupId: String(groupId),
+                                    group: {
+                                        _id: String(g._id || groupId),
+                                        name: g.name,
+                                        image: g.image,
+                                        members: g.members,
+                                    },
+                                });
+                            } else if (notificationDecision.action === "IN_APP_NOTIFICATION") {
+                                playNotificationSound();
+                                showInAppNotification(
+                                    { text: body },
+                                    { fullName: g.name, profilePic: g.image || "/avatar.png" },
+                                    () => {
+                                        import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
+                                            openConversationFromNotification({
+                                                groupId: String(groupId),
+                                                group: {
+                                                    _id: String(g._id || groupId),
+                                                    name: g.name,
+                                                    image: g.image,
+                                                    members: g.members,
+                                                },
+                                            });
                                         });
-                                    });
-                                }
-                            );
+                                    }
+                                );
+                            }
                         }
                     }
                 }
@@ -1329,6 +1344,13 @@ export const useGroupStore = create((set, get) => ({
                 oldestCachedAt: groupMessages[0]?.createdAt,
                 newestAt: groupMessages[groupMessages.length - 1]?.createdAt,
             });
+        }
+
+        const socket = useAuthStore.getState().socket;
+        const nextActiveId = group?._id ? String(group._id) : null;
+        syncStateWithServiceWorker({ activeConversationId: nextActiveId });
+        if (socket?.connected) {
+            socket.emit("chat:active", { conversationId: nextActiveId });
         }
 
         if (!group) {

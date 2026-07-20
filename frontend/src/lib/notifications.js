@@ -104,6 +104,8 @@ export const refreshNotificationPermissionUI = () => {
   window.dispatchEvent(new Event("notification-permission-change"));
 };
 
+import { getPlatformNotificationActions } from "./platformNotifications.js";
+
 const buildNotificationOptions = (options = {}) => {
   const toId = (value) => {
     if (value == null || value === "") return null;
@@ -142,13 +144,11 @@ const buildNotificationOptions = (options = {}) => {
     icon: sameOriginIcon(options.icon),
     badge: sameOriginIcon(DEFAULT_ICON),
     body: options.body || "",
-    tag: options.tag || "chat-message",
+    tag: options.tag || (chatId ? `chat-${chatId}` : groupId ? `group-${groupId}` : "chat-message"),
     renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
-    actions: [
-      { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
-    ],
+    actions: getPlatformNotificationActions(),
     data: {
       url:
         chatId
@@ -294,6 +294,118 @@ export const playNotificationSound = () => {
   }
 };
 
+const sameEntityId = (a, b) => {
+  if (a == null || b == null) return false;
+  const strA = typeof a === "object" ? String(a._id || a.id || "") : String(a);
+  const strB = typeof b === "object" ? String(b._id || b.id || "") : String(b);
+  if (!strA || !strB || strA === "[object Object]" || strB === "[object Object]") return false;
+  return strA === strB;
+};
+
+// Notification Deduplication cache
+const recentNotificationKeys = new Set();
+
+export const isNotificationRecentlyShown = (key) => {
+  if (!key) return false;
+  return recentNotificationKeys.has(String(key));
+};
+
+export const recordNotificationShown = (key) => {
+  if (!key) return;
+  const strKey = String(key);
+  recentNotificationKeys.add(strKey);
+  setTimeout(() => {
+    recentNotificationKeys.delete(strKey);
+  }, 10000);
+};
+
+/**
+ * Service Worker active conversation state synchronization
+ */
+export const syncStateWithServiceWorker = (customState = {}) => {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+
+  const documentVisible = customState.documentVisible ?? (typeof document !== "undefined" ? document.visibilityState === "visible" : true);
+  const windowFocused = customState.windowFocused ?? (typeof document !== "undefined" ? document.hasFocus() : true);
+  const activeConversationId = customState.activeConversationId !== undefined ? customState.activeConversationId : null;
+
+  const payload = {
+    type: "SYNC_ACTIVE_CONVERSATION",
+    activeConversationId: activeConversationId ? String(activeConversationId) : null,
+    documentVisible,
+    windowFocused,
+    timestamp: Date.now(),
+  };
+
+  try {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(payload);
+    }
+  } catch (err) {
+    console.error("[SW Sync Error]:", err);
+  }
+};
+
+// Setup visibility & focus listeners to automatically sync SW state
+if (typeof window !== "undefined") {
+  const handleStateChange = () => {
+    syncStateWithServiceWorker();
+  };
+  window.addEventListener("visibilitychange", handleStateChange);
+  window.addEventListener("focus", handleStateChange);
+  window.addEventListener("blur", handleStateChange);
+}
+
+/**
+ * Centralized Notification Decision Engine
+ * Evaluates whether to SUPPRESS, show IN_APP_NOTIFICATION, or show SYSTEM_NOTIFICATION.
+ */
+export function shouldShowNotification({
+  incomingConversationId,
+  activeConversationId,
+  documentVisible = typeof document !== "undefined" ? document.visibilityState === "visible" : true,
+  windowFocused = typeof document !== "undefined" ? document.hasFocus() : true,
+  senderId = null,
+  currentUserId = null,
+}) {
+  // Never notify for messages sent by self
+  if (senderId && currentUserId && sameEntityId(senderId, currentUserId)) {
+    return { show: false, action: "SUPPRESS", reason: "SELF_MESSAGE" };
+  }
+
+  const isSameConversation =
+    incomingConversationId != null &&
+    activeConversationId != null &&
+    sameEntityId(incomingConversationId, activeConversationId);
+
+  const isHomePath = typeof window !== "undefined" ? window.location.pathname === "/" : true;
+
+  // RULE 1: User is actively viewing the exact conversation where message arrived
+  if (isSameConversation && documentVisible && windowFocused && isHomePath) {
+    const decision = { show: false, action: "SUPPRESS", reason: "ACTIVE_CONVERSATION_VISIBLE" };
+    if (import.meta.env?.DEV) {
+      console.log("[NotificationDecision]", decision);
+    }
+    return decision;
+  }
+
+  // RULE 2: App is visible and focused, but user is looking at a different chat / screen
+  if (documentVisible && windowFocused) {
+    const decision = { show: true, action: "IN_APP_NOTIFICATION", reason: "DIFFERENT_CONVERSATION_FOCUSED" };
+    if (import.meta.env?.DEV) {
+      console.log("[NotificationDecision]", decision);
+    }
+    return decision;
+  }
+
+  // RULE 3: App is in background, tab hidden, window blurred, or user on different page
+  const decision = { show: true, action: "SYSTEM_NOTIFICATION", reason: "APP_IN_BACKGROUND_OR_BLURRED" };
+  if (import.meta.env?.DEV) {
+    console.log("[NotificationDecision]", decision);
+  }
+  return decision;
+}
+
 export const isDocumentVisible = () => document.visibilityState === "visible";
 
 /** Backgrounded or another window focused — use OS notification */
@@ -302,30 +414,13 @@ export const shouldShowSystemNotification = () =>
 
 /**
  * WhatsApp-style active chat check.
- * True only when this conversation is open on the chat screen AND the tab is
- * visible + focused. When true: append message only — no sound, toast, in-app,
- * or OS notification; unread stays 0; mark read immediately.
  */
 export const isActivelyViewingConversation = (conversationId, selectedId) => {
-  if (conversationId == null || selectedId == null) return false;
-  const a =
-    typeof conversationId === "object"
-      ? String(conversationId._id ?? conversationId.id ?? "")
-      : String(conversationId);
-  const b =
-    typeof selectedId === "object"
-      ? String(selectedId._id ?? selectedId.id ?? "")
-      : String(selectedId);
-  if (!a || !b || a === "[object Object]" || b === "[object Object]") return false;
-  if (a !== b) return false;
-  try {
-    // Chat UI only mounts on home; Settings/Calls/etc. must still notify
-    if (window.location.pathname !== "/") return false;
-  } catch (_) {
-    return false;
-  }
-  if (shouldShowSystemNotification()) return false;
-  return true;
+  const decision = shouldShowNotification({
+    incomingConversationId: conversationId,
+    activeConversationId: selectedId,
+  });
+  return decision.action === "SUPPRESS";
 };
 
 const style = document.createElement("style");
@@ -344,3 +439,4 @@ if (!document.getElementById("in-app-notification-styles")) {
   style.id = "in-app-notification-styles";
   document.head.appendChild(style);
 }
+

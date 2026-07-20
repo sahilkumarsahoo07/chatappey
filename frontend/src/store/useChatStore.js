@@ -8,6 +8,10 @@ import {
   playNotificationSound,
   shouldShowSystemNotification,
   isActivelyViewingConversation,
+  shouldShowNotification,
+  syncStateWithServiceWorker,
+  isNotificationRecentlyShown,
+  recordNotificationShown,
 } from "../lib/notifications";
 import { haptic } from "../lib/haptics";
 import { sendOrQueueMessage, reactOrQueue } from "./useNetworkStore";
@@ -565,14 +569,21 @@ export const useChatStore = create((set, get) => ({
 
       // WhatsApp: notify only when NOT actively viewing this conversation
       const peerSenderId = newMessage.senderId?._id || newMessage.senderId;
-      const viewingThisChat = isActivelyViewingConversation(
-        peerSenderId,
-        currentSelectedUser?._id
-      );
+      const isFromOther = sameId(newMessage.receiverId, authUser._id);
+
+      const notificationDecision = shouldShowNotification({
+        incomingConversationId: peerSenderId,
+        activeConversationId: currentSelectedUser?._id,
+        documentVisible: document.visibilityState === "visible",
+        windowFocused: document.hasFocus(),
+        senderId: peerSenderId,
+        currentUserId: authUser._id,
+      });
+
       let shouldMarkRead = false;
 
-      if (sameId(newMessage.receiverId, authUser._id)) {
-        if (viewingThisChat) {
+      if (isFromOther) {
+        if (notificationDecision.action === "SUPPRESS") {
           // Message in open chat is the notification — no sound/toast/popup
           shouldMarkRead = true;
         } else {
@@ -580,49 +591,50 @@ export const useChatStore = create((set, get) => ({
           const senderMuted = senderUser?.isMuted;
 
           if (!senderMuted) {
-            playNotificationSound();
-
             const senderForNotify = senderUser || {
               _id: newMessage.senderId,
               fullName: newMessage.senderName || "New Message",
               profilePic: newMessage.senderProfilePic || "/avatar.png",
             };
-
             const preview = messagePreview(newMessage);
+            const msgKey = newMessage._id || newMessage.clientMessageId;
 
-            if (shouldShowSystemNotification()) {
-              const peerId = newMessage.senderId?._id || newMessage.senderId;
-              void showBrowserNotification(senderForNotify.fullName, {
-                body: preview,
-                icon: "/avatar.png",
-                tag: `chat-${peerId}`,
-                requireInteraction: false,
-                silent: false,
-                url: `/?chat=${peerId}`,
-                chatId: peerId,
-                peer: {
-                  _id: senderForNotify._id?._id || senderForNotify._id || peerId,
-                  fullName: senderForNotify.fullName,
-                  profilePic: senderForNotify.profilePic,
-                  isFriend: senderForNotify.isFriend !== false,
-                },
-              });
-            } else {
-              // In-app only when tab is focused but user is elsewhere in the app
-              const peerId = newMessage.senderId?._id || newMessage.senderId;
-              showInAppNotification(newMessage, senderForNotify, () => {
-                import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
-                  openConversationFromNotification({
-                    chatId: peerId,
-                    peer: {
-                      _id: senderForNotify._id?._id || senderForNotify._id || peerId,
-                      fullName: senderForNotify.fullName,
-                      profilePic: senderForNotify.profilePic,
-                      isFriend: senderForNotify.isFriend !== false,
-                    },
+            if (!isNotificationRecentlyShown(msgKey)) {
+              recordNotificationShown(msgKey);
+
+              if (notificationDecision.action === "SYSTEM_NOTIFICATION") {
+                playNotificationSound();
+                void showBrowserNotification(senderForNotify.fullName, {
+                  body: preview,
+                  icon: "/avatar.png",
+                  tag: `chat-${peerSenderId}`,
+                  requireInteraction: false,
+                  silent: false,
+                  url: `/?chat=${peerSenderId}`,
+                  chatId: peerSenderId,
+                  peer: {
+                    _id: senderForNotify._id?._id || senderForNotify._id || peerSenderId,
+                    fullName: senderForNotify.fullName,
+                    profilePic: senderForNotify.profilePic,
+                    isFriend: senderForNotify.isFriend !== false,
+                  },
+                });
+              } else if (notificationDecision.action === "IN_APP_NOTIFICATION") {
+                playNotificationSound();
+                showInAppNotification(newMessage, senderForNotify, () => {
+                  import("../lib/openFromNotification.js").then(({ openConversationFromNotification }) => {
+                    openConversationFromNotification({
+                      chatId: peerSenderId,
+                      peer: {
+                        _id: senderForNotify._id?._id || senderForNotify._id || peerSenderId,
+                        fullName: senderForNotify.fullName,
+                        profilePic: senderForNotify.profilePic,
+                        isFriend: senderForNotify.isFriend !== false,
+                      },
+                    });
                   });
                 });
-              });
+              }
             }
           }
         }
@@ -633,11 +645,7 @@ export const useChatStore = create((set, get) => ({
         : newMessage.senderId;
       const senderIndex = users.findIndex((u) => sameId(u._id, senderId));
 
-      // Open + focused chat for this peer (covers own echoes in the open thread)
-      const isChatAlreadyOpen = isActivelyViewingConversation(
-        senderId,
-        currentSelectedUser?._id
-      );
+      const isChatAlreadyOpen = notificationDecision.action === "SUPPRESS";
 
       if (senderIndex !== -1) {
         const updatedUsers = [...users];
@@ -1265,6 +1273,13 @@ export const useChatStore = create((set, get) => ({
         oldestCachedAt: messages[0]?.createdAt,
         newestAt: messages[messages.length - 1]?.createdAt,
       });
+    }
+
+    const socket = useAuthStore.getState().socket;
+    const nextActiveId = selectedUser?._id ? String(selectedUser._id) : null;
+    syncStateWithServiceWorker({ activeConversationId: nextActiveId });
+    if (socket?.connected) {
+      socket.emit("chat:active", { conversationId: nextActiveId });
     }
 
     // Closing chat — clear thread so it can't bleed into the next open

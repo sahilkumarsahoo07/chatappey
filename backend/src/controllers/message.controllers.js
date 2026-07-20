@@ -431,23 +431,15 @@ export const sendMessage = async (req, res) => {
             }
         }
 
-        // Check if receiver is online
-        const receiverSocketId = getReceiverSocketId(receiverId.toString());
-
-        // Determine status
-        let initialStatus = receiverSocketId ? "delivered" : "sent";
-
         // CRITICAL: Ensure we check BOTH isScheduled AND scheduledFor
         const shouldBeScheduled = isScheduled || !!scheduledFor;
-
-        if (shouldBeScheduled) {
-            initialStatus = "scheduled";
-        }
+        let initialStatus = shouldBeScheduled ? "scheduled" : "sent";
 
         const newMessage = new Message({
             senderId: senderId,
             receiverId,
             text,
+            clientMessageId: req.body.clientMessageId || undefined,
             image: imageUrl,
             video: video || undefined,
             videoThumbnail: videoThumbnail || undefined,

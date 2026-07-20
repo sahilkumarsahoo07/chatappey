@@ -43,6 +43,8 @@ router.post("/:groupId/unpin", protectRoute, unpinMessage);
 router.get("/:groupId/messages", protectRoute, getGroupMessages);
 router.post("/:groupId/messages", protectRoute, sendGroupMessage);
 router.put("/:groupId/messages/read", protectRoute, markGroupMessagesAsRead);
+router.post("/:groupId/messages/read", protectRoute, markGroupMessagesAsRead);
+router.post("/:groupId/read", protectRoute, markGroupMessagesAsRead);
 router.get("/:groupId/messages/:messageId/info", protectRoute, getGroupMessageInfo);
 router.get("/:groupId/messages/:messageId/delete-options", protectRoute, getGroupMessageDeleteOptions);
 router.delete("/:groupId/messages/:messageId/all", protectRoute, deleteGroupMessageForAll);

@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import User from "../models/user.model.js";
+import { isUserActivelyViewingInSocket } from "./socket.js";
 
 export const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BN6yldIGLIF3fbj-ToyKvtQXjykZrC907ERJmHDXLAurN23lKjOAnvx8iwBPTCk6DpVFxO3iqKZQjPVFP7SHR6s";
 export const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "PTk63Tyrtvy5xJSqLtrDRAs7wa9DeOwDbPjnjsiBZR4";
@@ -19,6 +20,16 @@ try {
  */
 export const sendPushNotification = async (userId, payload = {}) => {
   if (!userId) return;
+  const payloadData = payload.data || {};
+  const incomingChatId = payloadData.chatId;
+  const incomingGroupId = payloadData.groupId;
+  const incomingConversationId = incomingChatId || incomingGroupId;
+
+  // Server-side active conversation suppression check
+  if (incomingConversationId && isUserActivelyViewingInSocket(userId, incomingConversationId)) {
+    console.log(`[WebPush Suppressed] User ${userId} is actively chatting in conversation ${incomingConversationId}`);
+    return;
+  }
   try {
     const user = await User.findById(userId).select("pushSubscriptions");
     if (!user || !user.pushSubscriptions || user.pushSubscriptions.length === 0) {

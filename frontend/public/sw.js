@@ -1,11 +1,46 @@
 // Service Worker — show notifications + seamless click (NO page reload)
 
+// Active conversation state synchronized from client app
+let swActiveConversationId = null;
+let swIsDocumentVisible = false;
+let swIsWindowFocused = false;
+let swLastSyncTimestamp = 0;
+
+// Deduplication map for handled message notifications
+const handledPushMessageKeys = new Set();
+
+function isMessageRecentlyHandled(key) {
+  if (!key) return false;
+  return handledPushMessageKeys.has(String(key));
+}
+
+function markMessageHandled(key) {
+  if (!key) return;
+  const strKey = String(key);
+  handledPushMessageKeys.add(strKey);
+  setTimeout(() => {
+    handledPushMessageKeys.delete(strKey);
+  }, 15000);
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(clients.claim());
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data) return;
+
+  if (data.type === "SYNC_ACTIVE_CONVERSATION") {
+    swActiveConversationId = data.activeConversationId ? String(data.activeConversationId) : null;
+    swIsDocumentVisible = !!data.documentVisible;
+    swIsWindowFocused = !!data.windowFocused;
+    swLastSyncTimestamp = data.timestamp || Date.now();
+  }
 });
 
 function toEntityId(value) {
@@ -30,19 +65,91 @@ self.addEventListener("push", (event) => {
     };
   }
 
+  const payloadData = data.data || {};
+  const incomingChatId = toEntityId(payloadData.chatId);
+  const incomingGroupId = toEntityId(payloadData.groupId);
+  const incomingId = incomingChatId || incomingGroupId;
+  const messageKey = payloadData.messageId || payloadData.clientMessageId;
+
   event.waitUntil(
-    self.registration.showNotification(data.title || "New Message", {
-      body: data.body || "You have a new message",
-      icon: data.icon || "/avatar.png",
-      badge: "/avatar.png",
-      tag: data.tag || "chat-message",
-      requireInteraction: !!data.requireInteraction,
-      silent: false,
-      actions: [
-        { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
-      ],
-      data: data.data || { url: data.url || "/" },
-    })
+    (async () => {
+      // Check open window clients for active focus
+      const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
+
+      const activeClient = originClients.find((c) => c.focused || c.visibilityState === "visible");
+
+      // Active Chat Suppression Rule:
+      // If user is actively viewing this exact conversation in browser tab, SUPPRESS Web Push notification
+      const isViewingExactChat =
+        incomingId &&
+        swActiveConversationId &&
+        String(swActiveConversationId) === String(incomingId) &&
+        (swIsDocumentVisible || (activeClient && activeClient.visibilityState === "visible")) &&
+        (swIsWindowFocused || (activeClient && activeClient.focused));
+
+      if (isViewingExactChat) {
+        console.log(`[SW Push Suppressed] User is actively viewing conversation ${incomingId}`);
+        return;
+      }
+
+      // Deduplication check
+      if (messageKey && isMessageRecentlyHandled(messageKey)) {
+        return;
+      }
+      if (messageKey) {
+        markMessageHandled(messageKey);
+      }
+
+      const notificationTag = data.tag || (incomingChatId ? `chat-${incomingChatId}` : incomingGroupId ? `group-${incomingGroupId}` : "chat-message");
+      const currentTitle = data.title || "New Message";
+      const currentBody = data.body || "You have a new message";
+
+      let finalTitle = currentTitle;
+      let finalBody = currentBody;
+      let messageCount = 1;
+      let messageHistory = [currentBody];
+
+      // Bundling / Grouping multiple messages from the same conversation
+      try {
+        const existingNotifications = await self.registration.getNotifications({ tag: notificationTag });
+        if (existingNotifications && existingNotifications.length > 0) {
+          const prevNotif = existingNotifications[0];
+          const prevData = prevNotif.data || {};
+          const prevCount = prevData.count || 1;
+          const prevHistory = Array.isArray(prevData.messages) ? prevData.messages : [prevNotif.body];
+
+          messageCount = prevCount + 1;
+          messageHistory = [...prevHistory, currentBody].slice(-5); // Keep last 5 preview lines
+
+          finalTitle = currentTitle;
+          finalBody = `${messageCount} new messages\n${messageHistory.join("\n")}`;
+        }
+      } catch (err) {
+        console.error("Error grouping notifications:", err);
+      }
+
+      const updatedPayloadData = {
+        ...payloadData,
+        count: messageCount,
+        messages: messageHistory,
+      };
+
+      await self.registration.showNotification(finalTitle, {
+        body: finalBody,
+        icon: data.icon || "/avatar.png",
+        badge: "/avatar.png",
+        tag: notificationTag,
+        requireInteraction: !!data.requireInteraction,
+        silent: false,
+        actions: [
+          { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
+          { action: "mark_read", title: "✓ Mark as Read" },
+          { action: "open_chat", title: "💬 Open Chat" },
+        ],
+        data: updatedPayloadData,
+      });
+    })()
   );
 });
 
@@ -71,11 +178,49 @@ self.addEventListener("notificationclick", (event) => {
     }
   }
 
-  // Handle inline notification reply directly in background — DO NOT OPEN BROWSER WINDOW
+  // Handle Mark as Read directly in background — DO NOT OPEN OR FOCUS BROWSER WINDOW
+  if (userAction === "mark_read") {
+    event.waitUntil(
+      (async () => {
+        try {
+          const endpoint = chatId
+            ? `/api/messages/read/${encodeURIComponent(chatId)}`
+            : groupId
+              ? `/api/groups/${encodeURIComponent(groupId)}/messages/read`
+              : null;
+
+          if (endpoint) {
+            await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+            });
+          }
+        } catch (err) {
+          console.error("Background mark_read failed:", err);
+        }
+
+        const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+        const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
+
+        for (const client of originClients) {
+          client.postMessage({
+            type: "NOTIFICATION_MARK_READ",
+            chatId,
+            groupId,
+          });
+        }
+      })()
+    );
+    return;
+  }
+
+  // Handle inline notification reply directly in background — DO NOT OPEN OR FOCUS BROWSER WINDOW
   if (userAction === "reply" && userReplyText) {
     event.waitUntil(
       (async () => {
         let sent = false;
+        const clientMessageId = "nr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         try {
           const endpoint = chatId
             ? `/api/messages/send/${encodeURIComponent(chatId)}`
@@ -88,7 +233,11 @@ self.addEventListener("notificationclick", (event) => {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
-              body: JSON.stringify({ text: userReplyText }),
+              body: JSON.stringify({
+                text: userReplyText,
+                clientMessageId,
+                replyFromNotification: true,
+              }),
             });
             if (res.ok) {
               sent = true;
@@ -98,7 +247,7 @@ self.addEventListener("notificationclick", (event) => {
           console.error("Background notification reply failed:", err);
         }
 
-        // Notify open window clients (if any exist) so they can update messages in background without taking focus
+        // Notify open window clients so background tabs sync the sent message seamlessly
         const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
 
@@ -110,11 +259,12 @@ self.addEventListener("notificationclick", (event) => {
               chatId,
               groupId,
               replyText: userReplyText,
+              clientMessageId,
             });
           }
         }
 
-        // If background send failed (e.g. session expired), fallback to opening/focusing window so user text is preserved
+        // Fallback ONLY if background send failed (e.g., session expired / network offline)
         if (!sent) {
           if (originClients.length > 0) {
             const target = originClients.find((c) => c.focused) || originClients[0];
@@ -195,3 +345,4 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+

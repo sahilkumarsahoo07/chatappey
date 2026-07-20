@@ -525,18 +525,91 @@ export const useAuthStore = create((set, get) => ({
 
         set({ socket: socket });
 
+        // Client Presence Engine (ONLINE_ACTIVE, ONLINE_IDLE, BACKGROUND)
+        let activePresenceCleanup = null;
+        const initPresence = () => {
+            if (activePresenceCleanup) activePresenceCleanup();
+            let currentStatus = "ONLINE_ACTIVE";
+            let idleTimer = null;
+
+            const computeStatus = () => {
+                if (document.visibilityState === "hidden" || !document.hasFocus()) {
+                    return "BACKGROUND";
+                }
+                return "ONLINE_ACTIVE";
+            };
+
+            const sendPresence = (forcedStatus = null) => {
+                const s = get().socket;
+                if (!s?.connected) return;
+                const next = forcedStatus || computeStatus();
+                if (next !== currentStatus) {
+                    currentStatus = next;
+                    s.emit("presence:update", { status: next });
+                }
+            };
+
+            const resetIdle = () => {
+                if (idleTimer) clearTimeout(idleTimer);
+                if (document.visibilityState === "visible" && document.hasFocus()) {
+                    if (currentStatus === "ONLINE_IDLE" || currentStatus === "BACKGROUND") {
+                        sendPresence("ONLINE_ACTIVE");
+                    }
+                    idleTimer = setTimeout(() => {
+                        if (document.visibilityState === "visible" && document.hasFocus()) {
+                            sendPresence("ONLINE_IDLE");
+                        }
+                    }, 60000);
+                }
+            };
+
+            const onVisChange = () => {
+                if (document.visibilityState === "hidden") {
+                    sendPresence("BACKGROUND");
+                } else {
+                    resetIdle();
+                }
+            };
+
+            const onFocus = () => resetIdle();
+            const onBlur = () => sendPresence("BACKGROUND");
+
+            const evts = ["mousemove", "keydown", "touchstart", "click", "scroll"];
+            evts.forEach((e) => window.addEventListener(e, resetIdle, { passive: true }));
+            document.addEventListener("visibilitychange", onVisChange);
+            window.addEventListener("focus", onFocus);
+            window.addEventListener("blur", onBlur);
+
+            sendPresence();
+            resetIdle();
+
+            activePresenceCleanup = () => {
+                if (idleTimer) clearTimeout(idleTimer);
+                evts.forEach((e) => window.removeEventListener(e, resetIdle));
+                document.removeEventListener("visibilitychange", onVisChange);
+                window.removeEventListener("focus", onFocus);
+                window.removeEventListener("blur", onBlur);
+            };
+        };
+
         socket.on("connect", () => {
             console.log("Socket connected successfully");
+            initPresence();
             get().syncLiveConversations?.();
         });
 
         socket.on("disconnect", () => {
             console.log("Socket disconnected");
+            if (activePresenceCleanup) {
+                activePresenceCleanup();
+                activePresenceCleanup = null;
+            }
         });
 
         socket.on("reconnect", (attemptNumber) => {
             console.log("Socket reconnected after", attemptNumber, "attempts");
             toast.success("Connection restored");
+            initPresence();
             import("./useChatStore").then(({ useChatStore }) => {
                 useChatStore.getState().unsubscribeFromMessages();
                 useChatStore.getState().subscribeToMessages();
@@ -676,12 +749,36 @@ export const useAuthStore = create((set, get) => ({
         socket.on("getOnlineUsers", (userIds) => {
             set({ onlineUsers: userIds });
         });
+
+        socket.on("presence:change", ({ userId, status, lastSeen }) => {
+            import("./useChatStore").then(({ useChatStore }) => {
+                const chatStore = useChatStore.getState();
+                const updatedLogout = lastSeen || new Date().toISOString();
+
+                if (chatStore.selectedUser?._id === userId) {
+                    useChatStore.setState((state) => ({
+                        selectedUser: {
+                            ...state.selectedUser,
+                            lastLogout: updatedLogout,
+                            presenceStatus: status,
+                        },
+                    }));
+                }
+
+                useChatStore.setState((state) => ({
+                    users: state.users.map((user) =>
+                        user._id === userId
+                            ? { ...user, lastLogout: updatedLogout, presenceStatus: status }
+                            : user
+                    ),
+                }));
+            });
+        });
+
         socket.on("user-logged-out", ({ userId, lastLogout }) => {
-            // Import useChatStore to update the users list and selectedUser
             import("./useChatStore").then(({ useChatStore }) => {
                 const chatStore = useChatStore.getState();
 
-                // Update selectedUser if it's the one who logged out
                 if (chatStore.selectedUser?._id === userId) {
                     useChatStore.setState((state) => ({
                         selectedUser: {
@@ -691,7 +788,6 @@ export const useAuthStore = create((set, get) => ({
                     }));
                 }
 
-                // Update the users list with the new lastLogout time
                 useChatStore.setState((state) => ({
                     users: state.users.map((user) =>
                         user._id === userId ? { ...user, lastLogout } : user

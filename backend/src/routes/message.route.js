@@ -21,6 +21,8 @@ router.delete("/:messageId/everyone", protectRoute, deleteForAllMessage);
 router.post("/forward/:messageId", protectRoute, forwardMessage);
 
 router.put("/read/:id", protectRoute, markMessagesAsRead);
+router.post("/read/:id", protectRoute, markMessagesAsRead);
+router.post("/mark-read/:id", protectRoute, markMessagesAsRead);
 
 // New Features
 router.post("/:messageId/reaction", protectRoute, addReaction);

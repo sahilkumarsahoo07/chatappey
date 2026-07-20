@@ -136,6 +136,34 @@ export const userSocketMap = {}; // { userId: socketId }
 // Track incognito users
 const incognitoUsers = new Set();
 
+// User Presence Engine
+// Map: userId (string) -> { status: "ONLINE_ACTIVE" | "ONLINE_IDLE" | "BACKGROUND" | "OFFLINE", lastSeen: Date, sockets: Set<string>, activeConversationId: string | null }
+const userPresenceMap = new Map();
+
+export const isUserActivelyViewingInSocket = (userId, conversationId) => {
+  if (!userId || !conversationId) return false;
+  const uIdStr = String(userId);
+  const convIdStr = String(conversationId);
+  const presence = userPresenceMap.get(uIdStr);
+  if (!presence) return false;
+
+  const isOnlineActive = (presence.status === "ONLINE_ACTIVE" || presence.status === "ONLINE_IDLE") && presence.sockets?.size > 0;
+  return isOnlineActive && presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
+};
+
+export const getVisibleOnlineUsers = () => {
+  const onlineList = [];
+  for (const [uId, presence] of userPresenceMap.entries()) {
+    if (incognitoUsers.has(uId)) continue;
+    if (presence.sockets && presence.sockets.size > 0) {
+      if (presence.status === "ONLINE_ACTIVE" || presence.status === "ONLINE_IDLE") {
+        onlineList.push(uId);
+      }
+    }
+  }
+  return onlineList;
+};
+
 // Helper to update incognito status (exported for controller use)
 export const updateIncognitoStatus = (userId, status) => {
   const strUserId = userId.toString();
@@ -146,13 +174,11 @@ export const updateIncognitoStatus = (userId, status) => {
   }
 
   // Immediately broadcast the updated online list to all clients
-  const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
-  io.emit("getOnlineUsers", visibleOnlineUsers);
+  io.emit("getOnlineUsers", getVisibleOnlineUsers());
 };
 
 // Start cleaning incognito users interval (cleanup stale IDs)
 setInterval(() => {
-  // Optional: Verify active sockets for these IDs
   for (const userId of incognitoUsers) {
     if (!userSocketMap[userId]) {
       incognitoUsers.delete(userId);
@@ -167,37 +193,45 @@ io.on("connection", async (socket) => {
   const userId = socket.handshake.query.userId;
 
   if (userId) {
+    const uIdStr = String(userId);
     // 1. Immediately check DB for incognito status BEFORE adding to online map
-    // This prevents the race condition where they appear online for a split second
     let userIsIncognito = false;
     try {
       const user = await User.findById(userId).select('isIncognito');
       userIsIncognito = !!user?.isIncognito;
 
       if (userIsIncognito) {
-        incognitoUsers.add(userId.toString());
+        incognitoUsers.add(uIdStr);
       } else {
-        // Only remove if we are sure (though it shouldn't be there usually on new connect)
-        incognitoUsers.delete(userId.toString());
+        incognitoUsers.delete(uIdStr);
       }
     } catch (err) {
       console.error("Error checking incognito status on connect:", err);
     }
 
-    // CRITICAL: Check if socket disconnected during the DB check above
-    // If we don't check this, we may add a "dead" socket to the map and never catch the disconnect
     if (!socket.connected) {
       console.log(`Socket ${socket.id} for user ${userId} disconnected during auth. Aborting setup.`);
-      // Clean up incognito if we added it
-      incognitoUsers.delete(userId.toString());
-      return; // Exit early - do not add to userSocketMap or broadcast
+      incognitoUsers.delete(uIdStr);
+      return;
     }
 
-    // 2. Now it is safe to add to the socket map + join personal room (multi-device)
-    userSocketMap[String(userId)] = socket.id;
-    socket.join(`user:${String(userId)}`);
+    // 2. Add to userSocketMap + presence map + join personal room
+    userSocketMap[uIdStr] = socket.id;
+    socket.join(`user:${uIdStr}`);
 
-    // 3. Join group rooms BEFORE advertising online — avoids missing first group messages
+    if (!userPresenceMap.has(uIdStr)) {
+      userPresenceMap.set(uIdStr, {
+        status: "ONLINE_ACTIVE",
+        lastSeen: new Date(),
+        sockets: new Set([socket.id]),
+      });
+    } else {
+      const p = userPresenceMap.get(uIdStr);
+      p.sockets.add(socket.id);
+      p.status = "ONLINE_ACTIVE";
+    }
+
+    // 3. Join group rooms
     try {
       const userGroups = await Group.find({ "members.user": userId }).select("_id").lean();
       await Promise.all(
@@ -207,52 +241,88 @@ io.on("connection", async (socket) => {
       console.error("Error joining group rooms:", error);
     }
 
-    // 4. Notify the user they are connected
+    // 4. Notify user they are connected
     socket.emit("userOnline", { userId });
 
-    // 5. Notify others ONLY if NOT incognito — peer came online (for delivery upgrades)
-    if (!incognitoUsers.has(userId.toString())) {
+    // 5. Notify others ONLY if NOT incognito
+    if (!incognitoUsers.has(uIdStr)) {
       io.emit("userListUpdate", { userId });
-      // Tell friends this user is online so they can upgrade pending ticks
-      io.emit("peerOnline", { userId: String(userId) });
-
-      // Automatically mark all pending sent messages to this user as delivered (double tick)
-      (async () => {
-        try {
-          const now = new Date();
-          const pendingMessages = await Message.find({ receiverId: userId, status: "sent" }).select("_id senderId clientMessageId");
-          if (pendingMessages.length > 0) {
-            await Message.updateMany(
-              { receiverId: userId, status: "sent" },
-              { $set: { status: "delivered", deliveredAt: now } }
-            );
-            const sendersMap = {};
-            for (const msg of pendingMessages) {
-              const sId = String(msg.senderId);
-              if (!sendersMap[sId]) sendersMap[sId] = [];
-              sendersMap[sId].push(msg);
-            }
-            for (const [sId, msgs] of Object.entries(sendersMap)) {
-              for (const m of msgs) {
-                emitToUser(io, userSocketMap, sId, "messageDelivered", {
-                  messageId: m._id,
-                  clientMessageId: m.clientMessageId,
-                  status: "delivered",
-                  deliveredAt: now,
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Error auto-delivering pending messages on connect:", err.message);
-        }
-      })();
+      io.emit("peerOnline", { userId: uIdStr });
     }
   }
 
-  // 6. Broadcast online users (Filtered)
-  const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
-  io.emit("getOnlineUsers", visibleOnlineUsers);
+  // 6. Broadcast online users (only ACTIVE/IDLE, excluding BACKGROUND/OFFLINE and incognito)
+  io.emit("getOnlineUsers", getVisibleOnlineUsers());
+
+  // Real-time presence update (ONLINE_ACTIVE, ONLINE_IDLE, BACKGROUND)
+  socket.on("presence:update", async ({ status }) => {
+    if (!userId) return;
+    if (!["ONLINE_ACTIVE", "ONLINE_IDLE", "BACKGROUND"].includes(status)) return;
+    const uIdStr = String(userId);
+    const presence = userPresenceMap.get(uIdStr);
+    if (!presence) return;
+
+    const oldStatus = presence.status;
+    presence.status = status;
+
+    if (status === "BACKGROUND" && oldStatus !== "BACKGROUND") {
+      const now = new Date();
+      presence.lastSeen = now;
+      if (!incognitoUsers.has(uIdStr)) {
+        User.findByIdAndUpdate(uIdStr, { lastLogout: now }).catch(() => {});
+      }
+    }
+
+    io.emit("getOnlineUsers", getVisibleOnlineUsers());
+
+    if (!incognitoUsers.has(uIdStr)) {
+      io.emit("presence:change", {
+        userId: uIdStr,
+        status: presence.status,
+        lastSeen: presence.lastSeen || new Date(),
+      });
+    }
+  });
+
+  // Track active conversation user is currently viewing in chat screen
+  socket.on("chat:active", ({ conversationId }) => {
+    if (!userId) return;
+    const uIdStr = String(userId);
+    const presence = userPresenceMap.get(uIdStr);
+    if (presence) {
+      presence.activeConversationId = conversationId ? String(conversationId) : null;
+    }
+  });
+
+  // Bulk ACK delivered messages on client sync
+  socket.on("messagesReceived", async ({ messageIds }) => {
+    if (!Array.isArray(messageIds) || messageIds.length === 0) return;
+    try {
+      const now = new Date();
+      const pendingMessages = await Message.find({
+        _id: { $in: messageIds },
+        status: "sent",
+      }).select("_id senderId clientMessageId receiverId");
+
+      if (pendingMessages.length === 0) return;
+
+      await Message.updateMany(
+        { _id: { $in: pendingMessages.map((m) => m._id) }, status: "sent" },
+        { $set: { status: "delivered", deliveredAt: now } }
+      );
+
+      for (const m of pendingMessages) {
+        emitToUser(io, userSocketMap, String(m.senderId), "messageDelivered", {
+          messageId: m._id,
+          clientMessageId: m.clientMessageId,
+          status: "delivered",
+          deliveredAt: now,
+        });
+      }
+    } catch (err) {
+      console.error("Error in messagesReceived bulk ACK:", err.message);
+    }
+  });
 
   // Handle updating message status to delivered when receiver comes online
   socket.on("updatePendingMessages", async (data) => {
@@ -577,15 +647,8 @@ io.on("connection", async (socket) => {
       }
 
       const shouldBeScheduled = isScheduled || !!scheduledFor;
-      const receiverIsOnline = Boolean(userSocketMap[String(receiverId)]) && !incognitoUsers.has(String(receiverId));
-      let initialStatus = "sent";
+      let initialStatus = shouldBeScheduled ? "scheduled" : "sent";
       const now = new Date();
-
-      if (shouldBeScheduled) {
-        initialStatus = "scheduled";
-      } else if (receiverIsOnline) {
-        initialStatus = "delivered";
-      }
 
       const newMessage = new Message({
         senderId: userId,
@@ -989,32 +1052,41 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("disconnect", async () => {
-    if (userId && userSocketMap[String(userId)] === socket.id) {
-      delete userSocketMap[String(userId)];
+    if (userId) {
+      const uIdStr = String(userId);
+      const presence = userPresenceMap.get(uIdStr);
 
-      // Check if user was incognito
-      const isIncognito = incognitoUsers.has(userId.toString());
+      if (presence) {
+        presence.sockets.delete(socket.id);
 
-      // ONLY update lastLogout and emit event if user was NOT incognito
-      if (!isIncognito) {
-        try {
-          const logoutTime = new Date();
-          const user = await User.findByIdAndUpdate(userId, { lastLogout: logoutTime }, { new: true }).select('privacyLastSeen friends');
+        if (presence.sockets.size === 0) {
+          userPresenceMap.delete(uIdStr);
+          delete userSocketMap[uIdStr];
 
-          // Emit the user-logged-out event
-          const lastLogoutPayload = (user?.privacyLastSeen === "none") ? null : logoutTime;
+          const isIncognito = incognitoUsers.has(uIdStr);
 
-          io.emit("user-logged-out", { userId, lastLogout: lastLogoutPayload });
-        } catch (error) {
-          console.error("Error updating lastLogout on disconnect:", error);
+          if (!isIncognito) {
+            try {
+              const logoutTime = new Date();
+              const user = await User.findByIdAndUpdate(userId, { lastLogout: logoutTime }, { new: true }).select('privacyLastSeen friends');
+              const lastLogoutPayload = (user?.privacyLastSeen === "none") ? null : logoutTime;
+
+              io.emit("user-logged-out", { userId: uIdStr, lastLogout: lastLogoutPayload });
+              io.emit("presence:change", { userId: uIdStr, status: "OFFLINE", lastSeen: lastLogoutPayload });
+            } catch (error) {
+              console.error("Error updating lastLogout on disconnect:", error);
+            }
+          } else {
+            incognitoUsers.delete(uIdStr);
+          }
         }
       } else {
-        // If they were incognito, just remove them from the set (clean up)
-        incognitoUsers.delete(userId.toString());
+        if (userSocketMap[uIdStr] === socket.id) {
+          delete userSocketMap[uIdStr];
+        }
       }
     }
-    const visibleOnlineUsers = Object.keys(userSocketMap).filter(id => !incognitoUsers.has(id));
-    io.emit("getOnlineUsers", visibleOnlineUsers);
+    io.emit("getOnlineUsers", getVisibleOnlineUsers());
   });
 });
 

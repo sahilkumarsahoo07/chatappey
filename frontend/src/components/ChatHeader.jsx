@@ -72,31 +72,31 @@ const ChatHeader = ({ onWallpaperChange, onSearchOpen }) => {
     };
 
     const formatLastSeen = () => {
+        if (!selectedUser?.lastLogout) return "Offline";
+        const lastSeen = new Date(selectedUser.lastLogout);
+        const now = new Date();
+        const diffMs = now - lastSeen;
+
+        if (diffMs < 60000 && diffMs >= 0) return "Last seen just now";
+
         const formatTime = (date) => {
             return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
         };
 
-        if (selectedUser.lastLogout) {
-            const lastSeen = new Date(selectedUser.lastLogout);
-            const now = new Date();
+        const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const lastSeenDate = new Date(lastSeen.getFullYear(), lastSeen.getMonth(), lastSeen.getDate());
 
-            const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const lastSeenDate = new Date(lastSeen.getFullYear(), lastSeen.getMonth(), lastSeen.getDate());
+        const diffDays = Math.floor((nowDate - lastSeenDate) / (1000 * 60 * 60 * 24));
 
-            const diffDays = Math.floor((nowDate - lastSeenDate) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return `Last seen today at ${formatTime(lastSeen)}`;
+        if (diffDays === 1) return `Last seen yesterday at ${formatTime(lastSeen)}`;
+        if (diffDays < 7) return `Last seen ${lastSeen.toLocaleDateString([], { weekday: 'long' })} at ${formatTime(lastSeen)}`;
 
-            if (diffDays === 0) return `Last seen today at ${formatTime(lastSeen)}`;
-            if (diffDays === 1) return `Last seen yesterday at ${formatTime(lastSeen)}`;
-            if (diffDays < 7) return `Last seen ${lastSeen.toLocaleDateString([], { weekday: 'long' })} at ${formatTime(lastSeen)}`;
-
-            return `Last seen ${lastSeen.toLocaleDateString([], {
-                day: 'numeric',
-                month: 'short',
-                year: now.getFullYear() !== lastSeen.getFullYear() ? 'numeric' : undefined
-            })} at ${formatTime(lastSeen)}`;
-        }
-
-        return "Offline";
+        return `Last seen ${lastSeen.toLocaleDateString([], {
+            day: 'numeric',
+            month: 'short',
+            year: now.getFullYear() !== lastSeen.getFullYear() ? 'numeric' : undefined
+        })} at ${formatTime(lastSeen)}`;
     };
 
     useEffect(() => {
