@@ -558,11 +558,25 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
     const handleKeyDown = (e) => {
         if (showMentions && filteredMembers.length > 0) {
             // ... duplicate navigation logic or reuse ...
-            // For brevity, skipping advanced mention nav keys here, assume simple works
         }
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage(e);
+        if (e.key === "Enter") {
+            if (e.ctrlKey || e.shiftKey) {
+                e.preventDefault();
+                const start = e.target.selectionStart ?? text.length;
+                const end = e.target.selectionEnd ?? text.length;
+                const nextVal = text.substring(0, start) + "\n" + text.substring(end);
+                setText(nextVal);
+                setTimeout(() => {
+                    if (textareaRef.current) {
+                        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
+                        textareaRef.current.style.height = "auto";
+                        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+                    }
+                }, 0);
+            } else {
+                e.preventDefault();
+                handleSendMessage(e);
+            }
         }
     };
 

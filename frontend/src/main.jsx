@@ -23,6 +23,26 @@ if ("serviceWorker" in navigator) {
 
   // Seamless: switch chat in-place, zero reload
   navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "NOTIFICATION_REPLY_SENT") {
+      const { chatId, groupId } = event.data;
+      if (chatId) {
+        import("./store/useChatStore.js").then(({ useChatStore }) => {
+          const sel = useChatStore.getState().selectedUser;
+          if (sel && String(sel._id) === String(chatId)) {
+            useChatStore.getState().getMessages?.(chatId);
+          }
+        });
+      } else if (groupId) {
+        import("./store/useGroupStore.js").then(({ useGroupStore }) => {
+          const sel = useGroupStore.getState().selectedGroup;
+          if (sel && String(sel._id) === String(groupId)) {
+            useGroupStore.getState().getGroupMessages?.(groupId);
+          }
+        });
+      }
+      return;
+    }
+
     if (event.data?.type !== "NOTIFICATION_CLICK") return;
     const opened = openConversationFromNotification({
       chatId: event.data.chatId,
