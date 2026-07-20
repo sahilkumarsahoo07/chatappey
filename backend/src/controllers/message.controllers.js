@@ -443,6 +443,10 @@ export const sendMessage = async (req, res) => {
             }
         }
 
+        // CRITICAL: Ensure we check BOTH isScheduled AND scheduledFor
+        const shouldBeScheduled = isScheduled || !!scheduledFor;
+        let initialStatus = shouldBeScheduled ? "scheduled" : "sent";
+
         const newMessage = new Message({
             senderId: senderId,
             receiverId,
