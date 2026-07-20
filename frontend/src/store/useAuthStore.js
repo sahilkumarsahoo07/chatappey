@@ -596,6 +596,18 @@ export const useAuthStore = create((set, get) => ({
             console.log("Socket connected successfully");
             initPresence();
             get().syncLiveConversations?.();
+            // Re-declare active conversation after reconnect (server clears it on connect)
+            Promise.all([
+                import("./useChatStore"),
+                import("./useGroupStore"),
+            ]).then(([{ useChatStore }, { useGroupStore }]) => {
+                const chatId = useChatStore.getState().selectedUser?._id;
+                const groupId = useGroupStore.getState().selectedGroup?._id;
+                const activeId = chatId || groupId || null;
+                if (activeId && document.visibilityState === "visible" && document.hasFocus()) {
+                    socket.emit("chat:active", { conversationId: String(activeId) });
+                }
+            }).catch(() => {});
         });
 
         socket.on("disconnect", () => {

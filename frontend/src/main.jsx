@@ -30,20 +30,47 @@ if ("serviceWorker" in navigator) {
       const { chatId, groupId, replyText, clientMessageId } = event.data;
       if (!replyText) return;
 
-      // CRITICAL: Quick Reply is a background-only action.
-      // Re-sync SW state with the ACTUAL current app visibility.
-      // The user did NOT open the app — do NOT set activeConversationId.
-      // This prevents stale state from suppressing future push notifications.
-      import("./lib/notifications.js").then(({ syncStateWithServiceWorker }) => {
-        // Sync with the real selectedUser/selectedGroup (NOT the replied-to conversation)
-        const chatSel = useChatStore.getState().selectedUser;
-        const groupSel = useGroupStore.getState().selectedGroup;
-        const realActiveId = chatSel?._id || groupSel?._id || null;
-        // Only pass the real active conversation if the app is actually visible + focused
-        const isAppActuallyActive = document.visibilityState === "visible" && document.hasFocus();
+      const ts = () => new Date().toISOString().substring(11, 23);
+      console.log(`[${ts()}] QUICK_REPLY_STARTED`, { chatId, groupId, clientMessageId });
+
+      // CRITICAL: Quick Reply is BACKGROUND MESSAGE SEND ONLY.
+      // NEVER set activeConversationId / appVisible / windowFocused / conversationActive.
+      // NEVER refresh presence as if the user opened the app.
+      import("./lib/notifications.js").then(async ({ syncStateWithServiceWorker, beginQuickReplyGuard, endQuickReplyGuardWhenBackgrounded }) => {
+        beginQuickReplyGuard();
+        // Always clear SW active-chat state — do not pass selectedUser even if falsely visible
         syncStateWithServiceWorker({
-          activeConversationId: isAppActuallyActive ? realActiveId : null,
+          activeConversationId: null,
+          documentVisible: false,
+          windowFocused: false,
         });
+        try {
+          if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: "QUICK_REPLY_FORCE_CLEAR" });
+          }
+        } catch (_) {}
+
+        // Force clear active conversation on server. Only emit BACKGROUND when
+        // the document is actually hidden — never promote presence as "app opened".
+        try {
+          const { useAuthStore } = await import("./store/useAuthStore.js");
+          const socket = useAuthStore.getState().socket;
+          if (socket?.connected) {
+            socket.emit("chat:active", { conversationId: null });
+            if (document.visibilityState === "hidden" || !document.hasFocus()) {
+              socket.emit("presence:update", { status: "BACKGROUND" });
+            }
+          }
+        } catch (_) {}
+
+        console.log(`[${ts()}] QUICK_REPLY_CLEANUP_COMPLETED`, {
+          activeConversationId: null,
+          appVisible: false,
+          windowFocused: false,
+          documentVisibility: document.visibilityState,
+          hasFocus: document.hasFocus(),
+        });
+        endQuickReplyGuardWhenBackgrounded();
       }).catch(() => {});
 
       if (chatId) {
@@ -72,23 +99,31 @@ if ("serviceWorker" in navigator) {
           clientMessageId,
           replyFromNotification: true,
         }).then((res) => {
+          console.log(`[${ts()}] QUICK_REPLY_SUCCESS`, { chatId, clientMessageId, messageId: res.data?._id });
           const currentSel = useChatStore.getState().selectedUser;
           if (currentSel && String(currentSel._id) === String(chatId) && res.data) {
             useChatStore.getState().getMessages?.(chatId, { reconcile: true, background: true });
           }
           useChatStore.getState().refreshUsers?.();
-        }).catch((err) => console.error("Client side notification reply post error:", err));
+        }).catch((err) => {
+          console.error("Client side notification reply post error:", err);
+          console.log(`[${ts()}] QUICK_REPLY_FAILED`, { chatId, error: err?.message });
+        });
       } else if (groupId) {
         axiosInstance.post(`/groups/${encodeURIComponent(groupId)}/messages`, {
           text: replyText,
           clientMessageId,
           replyFromNotification: true,
         }).then((res) => {
+          console.log(`[${ts()}] QUICK_REPLY_SUCCESS`, { groupId, clientMessageId, messageId: res.data?._id });
           const currentSel = useGroupStore.getState().selectedGroup;
           if (currentSel && String(currentSel._id) === String(groupId) && res.data) {
             useGroupStore.getState().getGroupMessages?.(groupId);
           }
-        }).catch((err) => console.error("Client side group notification reply post error:", err));
+        }).catch((err) => {
+          console.error("Client side group notification reply post error:", err);
+          console.log(`[${ts()}] QUICK_REPLY_FAILED`, { groupId, error: err?.message });
+        });
       }
       return;
     }
@@ -154,6 +189,7 @@ if ("serviceWorker" in navigator) {
     }
   });
 }
+
 
 window.addEventListener("notification-open-chat", (e) => {
   openConversationFromNotification({

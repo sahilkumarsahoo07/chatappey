@@ -5,9 +5,16 @@ let swActiveConversationId = null;
 let swIsDocumentVisible = false;
 let swIsWindowFocused = false;
 let swLastSyncTimestamp = 0;
+// After Quick Reply, ignore SYNC that would re-arm active chat until client is truly backgrounded.
+let swIgnoreActiveConversationSync = false;
 
-// Deduplication map for handled message notifications
+// Deduplication map for handled message notifications (by messageId ONLY)
 const handledPushMessageKeys = new Set();
+
+function notifTrace(stage, meta = {}) {
+  const ts = new Date().toISOString().substring(11, 23);
+  console.log(`[${ts}] ${stage}`, meta);
+}
 
 function isMessageRecentlyHandled(key) {
   if (!key) return false;
@@ -21,6 +28,15 @@ function markMessageHandled(key) {
   setTimeout(() => {
     handledPushMessageKeys.delete(strKey);
   }, 15000);
+}
+
+function clearSwActiveChatState(reason) {
+  swActiveConversationId = null;
+  swIsDocumentVisible = false;
+  swIsWindowFocused = false;
+  swLastSyncTimestamp = Date.now();
+  swIgnoreActiveConversationSync = true;
+  notifTrace("SW_ACTIVE_CHAT_CLEARED", { reason });
 }
 
 self.addEventListener("install", (event) => {
@@ -64,10 +80,37 @@ self.addEventListener("message", (event) => {
   if (!data) return;
 
   if (data.type === "SYNC_ACTIVE_CONVERSATION") {
-    swActiveConversationId = data.activeConversationId ? String(data.activeConversationId) : null;
-    swIsDocumentVisible = !!data.documentVisible;
-    swIsWindowFocused = !!data.windowFocused;
-    swLastSyncTimestamp = data.timestamp || Date.now();
+    const incomingActive = data.activeConversationId ? String(data.activeConversationId) : null;
+    const docVisible = !!data.documentVisible;
+    const winFocused = !!data.windowFocused;
+
+    // After Quick Reply: only accept a re-arm when the client reports truly backgrounded
+    // (clears the ignore latch). Never accept activeConversationId while ignore is set.
+    if (swIgnoreActiveConversationSync) {
+      if (!docVisible || !winFocused || !incomingActive) {
+        swActiveConversationId = null;
+        swIsDocumentVisible = false;
+        swIsWindowFocused = false;
+        swLastSyncTimestamp = data.timestamp || Date.now();
+        if (!docVisible || !winFocused) {
+          swIgnoreActiveConversationSync = false;
+          notifTrace("SW_QR_IGNORE_LATCH_CLEARED", { docVisible, winFocused });
+        }
+      } else {
+        notifTrace("SW_QR_SYNC_IGNORED", {
+          attemptedActiveConversationId: incomingActive,
+          docVisible,
+          winFocused,
+        });
+        swLastSyncTimestamp = data.timestamp || Date.now();
+      }
+    } else {
+      swActiveConversationId = incomingActive;
+      swIsDocumentVisible = docVisible;
+      swIsWindowFocused = winFocused;
+      swLastSyncTimestamp = data.timestamp || Date.now();
+    }
+
     if (data.authToken) {
       setStoredAuthToken(data.authToken);
     }
@@ -75,6 +118,10 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "MARK_NOTIFICATION_HANDLED" && data.messageKey) {
     markMessageHandled(data.messageKey);
+  }
+
+  if (data.type === "QUICK_REPLY_FORCE_CLEAR") {
+    clearSwActiveChatState("client_force_clear");
   }
 });
 
@@ -104,7 +151,14 @@ self.addEventListener("push", (event) => {
   const incomingChatId = toEntityId(payloadData.chatId);
   const incomingGroupId = toEntityId(payloadData.groupId);
   const incomingId = incomingChatId || incomingGroupId;
+  // Deduplicate ONLY by messageId / clientMessageId — never by conversationId alone
   const messageKey = payloadData.messageId || payloadData.clientMessageId;
+
+  notifTrace("SW_PUSH_RECEIVED", {
+    messageId: messageKey,
+    conversationId: incomingId,
+    tag: data.tag || null,
+  });
 
   event.waitUntil(
     (async () => {
@@ -116,10 +170,10 @@ self.addEventListener("push", (event) => {
 
       // Active Chat Suppression Rule:
       // Suppress ONLY when user is actively viewing this exact conversation in a focused browser tab.
-      // CRITICAL: SW state can be stale after Quick Reply (which clears it, but timing matters).
-      // Require BOTH synced state AND a live focused/visible client window to suppress.
-      const syncFresh = swLastSyncTimestamp > 0 && (Date.now() - swLastSyncTimestamp) < 30000; // 30s staleness guard
+      // Never suppress while Quick Reply ignore latch is set (QR is background-only).
+      const syncFresh = swLastSyncTimestamp > 0 && (Date.now() - swLastSyncTimestamp) < 30000;
       const isViewingExactChat =
+        !swIgnoreActiveConversationSync &&
         incomingId &&
         swActiveConversationId &&
         String(swActiveConversationId) === String(incomingId) &&
@@ -130,20 +184,46 @@ self.addEventListener("push", (event) => {
         activeClient.focused &&
         activeClient.visibilityState === "visible";
 
+      notifTrace("SW_PUSH_DECISION", {
+        messageId: messageKey,
+        conversationId: incomingId,
+        decision: isViewingExactChat ? "SUPPRESS" : "SHOW",
+        swActiveConversationId,
+        syncFresh,
+        swIgnoreActiveConversationSync,
+        clientFocused: !!(activeClient && activeClient.focused),
+      });
+
       if (isViewingExactChat) {
-        console.log(`[SW Push Suppressed] User is actively viewing conversation ${incomingId}`);
+        notifTrace("SW_PUSH_SUPPRESSED", {
+          messageId: messageKey,
+          conversationId: incomingId,
+          reason: "ACTIVE_CONVERSATION_VISIBLE",
+        });
         return;
       }
 
-      // Deduplication check
+      // Deduplication check — messageId only
       if (messageKey && isMessageRecentlyHandled(messageKey)) {
+        notifTrace("SW_PUSH_DEDUPE", {
+          messageId: messageKey,
+          conversationId: incomingId,
+        });
         return;
       }
       if (messageKey) {
         markMessageHandled(messageKey);
       }
 
-      const notificationTag = data.tag || (incomingChatId ? `chat-${incomingChatId}` : incomingGroupId ? `group-${incomingGroupId}` : "chat-message");
+      // Conversation grouping tag (WhatsApp-style) — MUST renotify so Message 2 alerts
+      // after Message 1 / Quick Reply instead of silently replacing.
+      const notificationTag =
+        data.tag ||
+        (incomingChatId
+          ? `chat-${incomingChatId}`
+          : incomingGroupId
+            ? `group-${incomingGroupId}`
+            : "chat-message");
       const currentTitle = data.title || "New Message";
       const currentBody = data.body || "You have a new message";
 
@@ -175,21 +255,39 @@ self.addEventListener("push", (event) => {
         ...payloadData,
         count: messageCount,
         messages: messageHistory,
+        messageId: payloadData.messageId || null,
+        clientMessageId: payloadData.clientMessageId || null,
       };
+
+      notifTrace("SHOW_NOTIFICATION", {
+        messageId: messageKey,
+        conversationId: incomingId,
+        tag: notificationTag,
+        renotify: true,
+        messageCount,
+      });
 
       await self.registration.showNotification(finalTitle, {
         body: finalBody,
         icon: data.icon || "/avatar.png",
         badge: "/avatar.png",
         tag: notificationTag,
+        renotify: true,
         requireInteraction: !!data.requireInteraction,
         silent: false,
+        timestamp: Date.now(),
         actions: [
           { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },
           { action: "mark_read", title: "✓ Mark as Read" },
           { action: "open_chat", title: "💬 Open Chat" },
         ],
         data: updatedPayloadData,
+      });
+
+      notifTrace("NOTIFICATION_DISPLAYED", {
+        messageId: messageKey,
+        conversationId: incomingId,
+        tag: notificationTag,
       });
     })()
   );
@@ -229,10 +327,7 @@ self.addEventListener("notificationclick", (event) => {
 
   // Handle Mark as Read directly in background — DO NOT OPEN OR FOCUS BROWSER WINDOW
   if (userAction === "mark_read") {
-    // Mark as Read is a background-only action — clear stale state like Quick Reply
-    swActiveConversationId = null;
-    swIsDocumentVisible = false;
-    swIsWindowFocused = false;
+    clearSwActiveChatState("mark_read");
 
     event.waitUntil(
       (async () => {
@@ -278,21 +373,23 @@ self.addEventListener("notificationclick", (event) => {
 
   // Handle inline notification reply directly in background — ABSOLUTELY NEVER OPEN OR FOCUS BROWSER WINDOW
   if (userReplyText) {
+    notifTrace("QUICK_REPLY_STARTED", {
+      conversationId: chatId || groupId,
+      messageId: nData.messageId || null,
+    });
+
     event.waitUntil(
       (async () => {
         // CRITICAL: Quick Reply is a background-only action.
         // Clear stale active conversation state IMMEDIATELY so that
         // subsequent push notifications are NEVER suppressed by leftover state.
-        // The user is NOT opening or viewing any conversation — they only typed a reply.
-        swActiveConversationId = null;
-        swIsDocumentVisible = false;
-        swIsWindowFocused = false;
+        clearSwActiveChatState("quick_reply");
 
         const clientMessageId = "nr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
 
-        // 1. Fast Path: If client window is open, send via client session instantly in 0ms delay
+        // 1. Fast Path: If client window is open, send via client session instantly
         if (originClients.length > 0) {
           for (const client of originClients) {
             client.postMessage({
@@ -303,12 +400,18 @@ self.addEventListener("notificationclick", (event) => {
               clientMessageId,
             });
           }
-          // After dispatching reply, re-sync SW state from actual client visibility
-          // (don't leave stale flags — client will re-sync on next SYNC_ACTIVE_CONVERSATION)
+          notifTrace("QUICK_REPLY_MESSAGE_SENT", {
+            path: "client_postMessage",
+            conversationId: chatId || groupId,
+            clientMessageId,
+          });
+          notifTrace("QUICK_REPLY_NOTIFICATION_CLOSED", {
+            conversationId: chatId || groupId,
+          });
           return;
         }
 
-        // 2. Standalone Path: No client window open — perform direct SW background fetch with pre-warmed token
+        // 2. Standalone Path: No client window open — perform direct SW background fetch
         try {
           const apiBase = getApiBaseUrl();
           const endpoint = chatId
@@ -324,7 +427,7 @@ self.addEventListener("notificationclick", (event) => {
               headers["Authorization"] = `Bearer ${token}`;
             }
 
-            await fetch(endpoint, {
+            const res = await fetch(endpoint, {
               method: "POST",
               headers,
               credentials: "include",
@@ -334,10 +437,29 @@ self.addEventListener("notificationclick", (event) => {
                 replyFromNotification: true,
               }),
             });
+            notifTrace("QUICK_REPLY_MESSAGE_SENT", {
+              path: "sw_fetch",
+              conversationId: chatId || groupId,
+              clientMessageId,
+              status: res.status,
+            });
+            notifTrace(res.ok ? "QUICK_REPLY_SUCCESS" : "QUICK_REPLY_FAILED", {
+              conversationId: chatId || groupId,
+              clientMessageId,
+              status: res.status,
+            });
           }
         } catch (err) {
           console.error("Background notification reply fetch failed:", err);
+          notifTrace("QUICK_REPLY_FAILED", {
+            conversationId: chatId || groupId,
+            error: String(err && err.message ? err.message : err),
+          });
         }
+
+        notifTrace("QUICK_REPLY_NOTIFICATION_CLOSED", {
+          conversationId: chatId || groupId,
+        });
       })()
     );
     return;
@@ -392,3 +514,12 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+// notificationclose must NOT suppress future notifications / change presence / start cooldowns
+self.addEventListener("notificationclose", (event) => {
+  const nData = (event.notification && event.notification.data) || {};
+  notifTrace("NOTIFICATION_CLOSE", {
+    messageId: nData.messageId || null,
+    conversationId: nData.chatId || nData.groupId || null,
+    // Explicitly no state mutation — close is informational only
+  });
+});

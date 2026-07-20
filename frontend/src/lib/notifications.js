@@ -148,6 +148,7 @@ const buildNotificationOptions = (options = {}) => {
     renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
+    timestamp: options.timestamp || Date.now(),
     actions: getPlatformNotificationActions(),
     data: {
       url:
@@ -158,6 +159,8 @@ const buildNotificationOptions = (options = {}) => {
             : url,
       chatId,
       groupId,
+      messageId: options.messageId || options.data?.messageId || null,
+      clientMessageId: options.clientMessageId || options.data?.clientMessageId || null,
       peer,
       group,
     },
@@ -330,20 +333,72 @@ export const recordNotificationShown = (key) => {
 /**
  * Service Worker active conversation state synchronization
  */
+// After Quick Reply, block re-arming activeConversationId until the app is truly backgrounded.
+let quickReplyGuardActive = false;
+
+export const beginQuickReplyGuard = () => {
+  quickReplyGuardActive = true;
+  if (import.meta.env?.DEV) {
+    console.log(`[${new Date().toISOString().substring(11, 23)}] QUICK_REPLY_GUARD_ON`);
+  }
+};
+
+export const endQuickReplyGuardWhenBackgrounded = () => {
+  const cleanup = () => {
+    window.removeEventListener("visibilitychange", onBackground);
+    window.removeEventListener("blur", onBackground);
+    gestureEvts.forEach((e) => window.removeEventListener(e, onUserGesture));
+  };
+
+  const clearGuard = (reason) => {
+    if (!quickReplyGuardActive) return;
+    quickReplyGuardActive = false;
+    if (import.meta.env?.DEV) {
+      console.log(`[${new Date().toISOString().substring(11, 23)}] QUICK_REPLY_GUARD_OFF`, { reason });
+    }
+    cleanup();
+  };
+
+  const onBackground = () => {
+    if (document.visibilityState === "hidden" || !document.hasFocus()) {
+      clearGuard("background");
+    }
+  };
+
+  // Real in-app interaction after QR — release guard so normal active-chat suppress resumes.
+  // SW postMessage / axios will not fire these, so false wake from Quick Reply stays guarded.
+  const onUserGesture = () => {
+    if (document.visibilityState === "visible" && document.hasFocus()) {
+      clearGuard("user_gesture");
+    }
+  };
+
+  const gestureEvts = ["mousemove", "keydown", "touchstart", "click"];
+  window.addEventListener("visibilitychange", onBackground);
+  window.addEventListener("blur", onBackground);
+  gestureEvts.forEach((e) => window.addEventListener(e, onUserGesture, { passive: true }));
+  onBackground();
+};
+
 export const syncStateWithServiceWorker = (customState = {}) => {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
   const documentVisible = customState.documentVisible ?? (typeof document !== "undefined" ? document.visibilityState === "visible" : true);
   const windowFocused = customState.windowFocused ?? (typeof document !== "undefined" ? document.hasFocus() : true);
-  const activeConversationId = customState.activeConversationId !== undefined ? customState.activeConversationId : null;
+  let activeConversationId = customState.activeConversationId !== undefined ? customState.activeConversationId : null;
+
+  // Quick Reply guard: never re-arm active conversation while QR just ran
+  if (quickReplyGuardActive) {
+    activeConversationId = null;
+  }
 
   const token = typeof localStorage !== "undefined" ? localStorage.getItem("token") : null;
 
   const payload = {
     type: "SYNC_ACTIVE_CONVERSATION",
     activeConversationId: activeConversationId ? String(activeConversationId) : null,
-    documentVisible,
-    windowFocused,
+    documentVisible: quickReplyGuardActive ? false : documentVisible,
+    windowFocused: quickReplyGuardActive ? false : windowFocused,
     authToken: token || null,
     timestamp: Date.now(),
   };
@@ -363,7 +418,7 @@ if (typeof window !== "undefined") {
     // When app goes to background/blurs, explicitly set activeConversationId to null
     // so the SW never retains stale state that could suppress notifications.
     const isAppActive = document.visibilityState === "visible" && document.hasFocus();
-    if (isAppActive) {
+    if (isAppActive && !quickReplyGuardActive) {
       // App is active — sync real active conversation from stores
       Promise.all([
         import("../store/useChatStore.js"),
@@ -378,8 +433,8 @@ if (typeof window !== "undefined") {
         syncStateWithServiceWorker();
       });
     } else {
-      // App is backgrounded/blurred — ALWAYS clear activeConversationId
-      syncStateWithServiceWorker({ activeConversationId: null });
+      // App is backgrounded/blurred OR Quick Reply guard — ALWAYS clear activeConversationId
+      syncStateWithServiceWorker({ activeConversationId: null, documentVisible: false, windowFocused: false });
     }
   };
   window.addEventListener("visibilitychange", handleStateChange);
@@ -404,6 +459,16 @@ export function shouldShowNotification({
     return { show: false, action: "SUPPRESS", reason: "SELF_MESSAGE" };
   }
 
+  // Quick Reply just ran — treat as background. Do not suppress as "active chat".
+  if (quickReplyGuardActive) {
+    const decision = { show: true, action: "SYSTEM_NOTIFICATION", reason: "QUICK_REPLY_GUARD_BACKGROUND" };
+    console.log(`[${new Date().toISOString().substring(11, 23)}] NOTIF_DECISION`, {
+      conversationId: incomingConversationId,
+      ...decision,
+    });
+    return decision;
+  }
+
   const isSameConversation =
     incomingConversationId != null &&
     activeConversationId != null &&
@@ -414,26 +479,29 @@ export function shouldShowNotification({
   // RULE 1: User is actively viewing the exact conversation where message arrived
   if (isSameConversation && documentVisible && windowFocused && isHomePath) {
     const decision = { show: false, action: "SUPPRESS", reason: "ACTIVE_CONVERSATION_VISIBLE" };
-    if (import.meta.env?.DEV) {
-      console.log("[NotificationDecision]", decision);
-    }
+    console.log(`[${new Date().toISOString().substring(11, 23)}] NOTIF_DECISION`, {
+      conversationId: incomingConversationId,
+      ...decision,
+    });
     return decision;
   }
 
   // RULE 2: App is visible and focused, but user is looking at a different chat / screen
   if (documentVisible && windowFocused) {
     const decision = { show: true, action: "IN_APP_NOTIFICATION", reason: "DIFFERENT_CONVERSATION_FOCUSED" };
-    if (import.meta.env?.DEV) {
-      console.log("[NotificationDecision]", decision);
-    }
+    console.log(`[${new Date().toISOString().substring(11, 23)}] NOTIF_DECISION`, {
+      conversationId: incomingConversationId,
+      ...decision,
+    });
     return decision;
   }
 
   // RULE 3: App is in background, tab hidden, window blurred, or user on different page
   const decision = { show: true, action: "SYSTEM_NOTIFICATION", reason: "APP_IN_BACKGROUND_OR_BLURRED" };
-  if (import.meta.env?.DEV) {
-    console.log("[NotificationDecision]", decision);
-  }
+  console.log(`[${new Date().toISOString().substring(11, 23)}] NOTIF_DECISION`, {
+    conversationId: incomingConversationId,
+    ...decision,
+  });
   return decision;
 }
 

@@ -447,6 +447,16 @@ export const useChatStore = create((set, get) => ({
     set({ messages: optimisticList });
     persistDmThread(selectedUser._id, optimisticList, get().messagesMeta);
 
+    // Replying in an open chat means we've seen their messages — mark read so
+    // the other person gets blue ticks (mirrors WhatsApp).
+    if (
+      selectedUser?._id &&
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible"
+    ) {
+      get().markMessagesAsRead(selectedUser._id);
+    }
+
     socket.emit(
       "sendMessage",
       {
@@ -583,6 +593,17 @@ export const useChatStore = create((set, get) => ({
       let shouldMarkRead = false;
 
       if (isFromOther) {
+        console.log(`[${new Date().toISOString().substring(11, 23)}] CLIENT_MSG_RECEIVED`, {
+          messageId: newMessage._id,
+          conversationId: peerSenderId,
+          recipientId: authUser._id,
+          decision: notificationDecision.action,
+          reason: notificationDecision.reason,
+          selectedUser: currentSelectedUser?._id || null,
+          visibility: document.visibilityState,
+          focused: document.hasFocus(),
+        });
+
         if (notificationDecision.action === "SUPPRESS") {
           // Message in open chat is the notification — no sound/toast/popup
           shouldMarkRead = true;
@@ -612,6 +633,8 @@ export const useChatStore = create((set, get) => ({
                   silent: false,
                   url: `/?chat=${peerSenderId}`,
                   chatId: peerSenderId,
+                  messageId: newMessage._id,
+                  clientMessageId: newMessage.clientMessageId || null,
                   peer: {
                     _id: senderForNotify._id?._id || senderForNotify._id || peerSenderId,
                     fullName: senderForNotify.fullName,
@@ -693,11 +716,14 @@ export const useChatStore = create((set, get) => ({
         get().refreshUsers();
       }
 
-      // Mark as read only when actively viewing this conversation (WhatsApp)
+      // Mark as read only when actively viewing this conversation (WhatsApp).
+      // Use shouldMarkRead (from SUPPRESS decision) — viewingThisChat was never defined,
+      // so blue ticks never fired when a message arrived in an already-open chat.
       if (
-        viewingThisChat &&
+        shouldMarkRead &&
         isMessageForCurrentChat &&
-        sameId(newMessage.receiverId, authUser._id)
+        sameId(newMessage.receiverId, authUser._id) &&
+        currentSelectedUser?._id
       ) {
         get().markMessagesAsRead(currentSelectedUser._id);
       }

@@ -3,7 +3,7 @@ import Message from "../models/message.model.js";
 import FriendRequest from "../models/friendRequest.model.js";
 
 import cloudinary from "../lib/cloudinary.js";
-import { getReceiverSocketId, io, userSocketMap } from "../lib/socket.js";
+import { getReceiverSocketId, io, userSocketMap, clearPresenceAfterQuickReply } from "../lib/socket.js";
 import { sendPushNotification } from "../lib/webpush.js";
 import { emitToUser } from "../utils/messageStatus.utils.js";
 import mongoose from "mongoose";
@@ -329,9 +329,17 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled } = req.body;
+        const { text, image, audio, file, fileName, video, videoThumbnail, videoDuration, videoPublicId, replyTo, replyToMessage, poll, scheduledFor, isScheduled, replyFromNotification } = req.body;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
+        const t0 = Date.now();
+        const traceId = req.body.clientMessageId || `rest_${t0}`;
+        console.log(`[${new Date().toISOString().substring(11, 23)}] MESSAGE_RECEIVED id=${traceId} conversationId=${receiverId} senderId=${senderId} replyFromNotification=${!!replyFromNotification}`);
+
+        // Quick Reply = background send only. Never leave sender as "actively viewing".
+        if (replyFromNotification) {
+            clearPresenceAfterQuickReply(senderId);
+        }
 
         // Fetch sender, receiver, and original message (for reply) in parallel
         const fetchSender = User.findById(senderId).select('blockedUsers friends');
@@ -471,6 +479,7 @@ export const sendMessage = async (req, res) => {
         });
 
         await newMessage.save();
+        console.log(`[${new Date().toISOString().substring(11, 23)}] MESSAGE_SAVED id=${newMessage._id} conversationId=${receiverId} recipientId=${receiverId} elapsedMs=${Date.now() - t0}`);
 
         // Unarchive for both participants when a new message is sent (WhatsApp-style)
         await unarchiveDmChat(senderId, receiverId);
@@ -503,6 +512,7 @@ export const sendMessage = async (req, res) => {
 
             // Web Push Notification for receiver (outside browser / backgrounded)
             const bodyText = text || (imageUrl ? "📷 Photo" : video ? "🎬 Video" : audioUrl ? "🎤 Voice message" : poll ? "📊 Poll" : "📎 Attachment");
+            console.log(`[${new Date().toISOString().substring(11, 23)}] PUSH_DECISION_START id=${newMessage._id} conversationId=${senderId} recipientId=${receiverId}`);
             sendPushNotification(receiverId, {
                 title: sender.fullName || "New Message",
                 body: bodyText,

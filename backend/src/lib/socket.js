@@ -140,6 +140,39 @@ const incognitoUsers = new Set();
 // Map: userId (string) -> { status: "ONLINE_ACTIVE" | "ONLINE_IDLE" | "BACKGROUND" | "OFFLINE", lastSeen: Date, sockets: Set<string>, activeConversationId: string | null }
 const userPresenceMap = new Map();
 
+const notifTrace = (stage, meta = {}) => {
+  const ts = new Date().toISOString().substring(11, 23);
+  console.log(`[${ts}] ${stage}`, meta);
+};
+
+/**
+ * Quick Reply is a background-only send. It must NEVER leave the sender with an
+ * activeConversationId that would suppress the next inbound push.
+ * Only clear active conversation — do NOT force BACKGROUND (that desyncs the
+ * client's presence engine and can flip back to ONLINE_ACTIVE on false focus).
+ */
+export const clearPresenceAfterQuickReply = (userId) => {
+  if (!userId) return;
+  const uIdStr = String(userId);
+  const presence = userPresenceMap.get(uIdStr);
+  if (!presence) {
+    notifTrace("QUICK_REPLY_CLEANUP_COMPLETED", { recipientId: uIdStr, presence: null });
+    return;
+  }
+  notifTrace("QUICK_REPLY_CLEANUP_STARTED", {
+    recipientId: uIdStr,
+    status: presence.status,
+    activeConversationId: presence.activeConversationId || null,
+  });
+  presence.activeConversationId = null;
+  notifTrace("QUICK_REPLY_CLEANUP_COMPLETED", {
+    recipientId: uIdStr,
+    status: presence.status,
+    activeConversationId: null,
+    sockets: presence.sockets?.size || 0,
+  });
+};
+
 export const isUserActivelyViewingInSocket = (userId, conversationId) => {
   if (!userId || !conversationId) return false;
   const uIdStr = String(userId);
@@ -147,20 +180,27 @@ export const isUserActivelyViewingInSocket = (userId, conversationId) => {
   const presence = userPresenceMap.get(uIdStr);
   if (!presence) return false;
 
-  // CRITICAL: User must be ONLINE_ACTIVE with a focused/visible app.
-  // BACKGROUND and OFFLINE statuses must NEVER suppress notifications.
-  // Quick Reply from notification sets presence to BACKGROUND — never treat that as "actively viewing".
-  if (presence.status === "BACKGROUND" || presence.status === "OFFLINE") return false;
+  // CRITICAL: Only a truly focused ONLINE_ACTIVE user viewing this exact chat
+  // may suppress push. BACKGROUND / OFFLINE / ONLINE_IDLE must NEVER suppress.
+  // ONLINE_IDLE is the 60s idle timer — treating it as "actively viewing" was
+  // suppressing Message 2 after Quick Reply woke a zombie ONLINE_ACTIVE window
+  // that then flipped to ONLINE_IDLE while activeConversationId was still set.
+  if (presence.status !== "ONLINE_ACTIVE") return false;
   if (!presence.sockets || presence.sockets.size === 0) return false;
 
-  const isOnlineActive = presence.status === "ONLINE_ACTIVE" || presence.status === "ONLINE_IDLE";
-  const isViewingSameConversation = presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
+  const isViewingSameConversation =
+    presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
 
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[PresenceCheck] userId=${uIdStr} conv=${convIdStr} status=${presence.status} activeConv=${presence.activeConversationId} sockets=${presence.sockets.size} result=${isOnlineActive && isViewingSameConversation}`);
-  }
+  notifTrace("PRESENCE_CHECK", {
+    recipientId: uIdStr,
+    conversationId: convIdStr,
+    status: presence.status,
+    activeConversationId: presence.activeConversationId || null,
+    sockets: presence.sockets.size,
+    result: !!isViewingSameConversation,
+  });
 
-  return isOnlineActive && isViewingSameConversation;
+  return !!isViewingSameConversation;
 };
 
 export const getVisibleOnlineUsers = () => {
@@ -236,11 +276,16 @@ io.on("connection", async (socket) => {
         status: "ONLINE_ACTIVE",
         lastSeen: new Date(),
         sockets: new Set([socket.id]),
+        activeConversationId: null,
       });
     } else {
       const p = userPresenceMap.get(uIdStr);
       p.sockets.add(socket.id);
       p.status = "ONLINE_ACTIVE";
+      // Never carry stale activeConversationId across reconnect. Client must
+      // re-emit chat:active if the user is still viewing a conversation.
+      // Preserving it caused Message 2 push suppression after Quick Reply.
+      p.activeConversationId = null;
     }
 
     // 3. Join group rooms
@@ -314,6 +359,11 @@ io.on("connection", async (socket) => {
     const presence = userPresenceMap.get(uIdStr);
     if (presence) {
       presence.activeConversationId = conversationId ? String(conversationId) : null;
+      notifTrace("CHAT_ACTIVE_SET", {
+        recipientId: uIdStr,
+        activeConversationId: presence.activeConversationId,
+        status: presence.status,
+      });
     }
   });
 
@@ -728,7 +778,9 @@ io.on("connection", async (socket) => {
             tag: `chat-${userId}`,
             data: {
               url: `/?chat=${userId}`,
-              chatId: userId,
+              chatId: String(userId),
+              messageId: String(newMessage._id),
+              clientMessageId: newMessage.clientMessageId || clientMessageId || null,
               peer: senderUser,
             },
           }).catch((e) => console.error("Error sending Web Push notification:", e.message));
@@ -943,6 +995,8 @@ io.on("connection", async (socket) => {
             data: {
               url: `/?group=${groupId}`,
               groupId: String(groupId),
+              messageId: String(newMessage._id),
+              clientMessageId: newMessage.clientMessageId || clientMessageId || null,
               group: { _id: String(groupId), name: group.name, image: group.image },
             },
           }).catch((e) => console.error("Error sending Group Web Push notification:", e.message));

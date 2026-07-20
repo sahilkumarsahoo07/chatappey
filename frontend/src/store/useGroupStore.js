@@ -546,6 +546,16 @@ export const useGroupStore = create((set, get) => ({
 
         applyOptimistic();
 
+        // Replying in an open group means we've seen their messages
+        if (
+          !isForwarding &&
+          sameGroupId(selectedGroup?._id, groupId) &&
+          typeof document !== "undefined" &&
+          document.visibilityState === "visible"
+        ) {
+          get().markGroupMessagesAsRead(groupId);
+        }
+
         const sendViaHttp = async () => {
             const res = await axiosInstance.post(`/groups/${groupId}/messages`, {
                 ...messageData,
@@ -987,6 +997,8 @@ export const useGroupStore = create((set, get) => ({
                                     silent: false,
                                     url: `/?group=${groupId}`,
                                     groupId: String(groupId),
+                                    messageId: message._id,
+                                    clientMessageId: message.clientMessageId || null,
                                     group: {
                                         _id: String(g._id || groupId),
                                         name: g.name,

@@ -3,7 +3,7 @@ import GroupMessage from "../models/groupMessage.model.js";
 import User from "../models/user.model.js";
 import mongoose from "mongoose";
 import cloudinary from "../lib/cloudinary.js";
-import { io, getReceiverSocketId, joinUsersToGroupRoom, userSocketMap } from "../lib/socket.js";
+import { io, getReceiverSocketId, joinUsersToGroupRoom, userSocketMap, clearPresenceAfterQuickReply } from "../lib/socket.js";
 import { sendPushNotification } from "../lib/webpush.js";
 import { getPreferencesMap, isChatMuted, unarchiveGroupChatForMembers } from "../utils/chatPreference.utils.js";
 import {
@@ -637,8 +637,13 @@ export const sendGroupMessage = async (req, res) => {
             replyTo,
             replyToMessage,
             clientMessageId,
+            replyFromNotification,
         } = req.body;
         const senderId = req.user._id;
+
+        if (replyFromNotification) {
+            clearPresenceAfterQuickReply(senderId);
+        }
 
         if (clientMessageId) {
             const existing = await GroupMessage.findOne({ clientMessageId })
