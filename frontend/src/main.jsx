@@ -23,6 +23,46 @@ if ("serviceWorker" in navigator) {
 
   // Seamless: switch chat in-place, zero reload
   navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "EXECUTE_NOTIFICATION_REPLY") {
+      const { chatId, groupId, replyText, clientMessageId } = event.data;
+      if (!replyText) return;
+
+      if (chatId) {
+        import("./lib/axios.js").then(({ axiosInstance }) => {
+          axiosInstance.post(`/messages/send/${encodeURIComponent(chatId)}`, {
+            text: replyText,
+            clientMessageId,
+            replyFromNotification: true,
+          }).then(() => {
+            import("./store/useChatStore.js").then(({ useChatStore }) => {
+              const sel = useChatStore.getState().selectedUser;
+              if (sel && String(sel._id) === String(chatId)) {
+                useChatStore.getState().getMessages?.(chatId);
+              } else {
+                useChatStore.getState().refreshUsers?.();
+              }
+            });
+          }).catch((err) => console.error("Client side notification reply post error:", err));
+        });
+      } else if (groupId) {
+        import("./lib/axios.js").then(({ axiosInstance }) => {
+          axiosInstance.post(`/groups/${encodeURIComponent(groupId)}/messages`, {
+            text: replyText,
+            clientMessageId,
+            replyFromNotification: true,
+          }).then(() => {
+            import("./store/useGroupStore.js").then(({ useGroupStore }) => {
+              const sel = useGroupStore.getState().selectedGroup;
+              if (sel && String(sel._id) === String(groupId)) {
+                useGroupStore.getState().getGroupMessages?.(groupId);
+              }
+            });
+          }).catch((err) => console.error("Client side group notification reply post error:", err));
+        });
+      }
+      return;
+    }
+
     if (event.data?.type === "NOTIFICATION_REPLY_SENT") {
       const { chatId, groupId } = event.data;
       if (chatId) {

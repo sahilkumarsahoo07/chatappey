@@ -157,6 +157,13 @@ self.addEventListener("push", (event) => {
  * Click → focus existing tab and postMessage only.
  * Never call client.navigate() — that reloads and freezes the UI.
  */
+function getApiBaseUrl() {
+  if (self.location.origin.includes(":5173")) {
+    return "http://localhost:5001/api";
+  }
+  return "/api";
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
@@ -183,10 +190,11 @@ self.addEventListener("notificationclick", (event) => {
     event.waitUntil(
       (async () => {
         try {
+          const apiBase = getApiBaseUrl();
           const endpoint = chatId
-            ? `/api/messages/read/${encodeURIComponent(chatId)}`
+            ? `${apiBase}/messages/read/${encodeURIComponent(chatId)}`
             : groupId
-              ? `/api/groups/${encodeURIComponent(groupId)}/messages/read`
+              ? `${apiBase}/groups/${encodeURIComponent(groupId)}/messages/read`
               : null;
 
           if (endpoint) {
@@ -215,21 +223,38 @@ self.addEventListener("notificationclick", (event) => {
     return;
   }
 
-  // Handle inline notification reply directly in background — DO NOT OPEN OR FOCUS BROWSER WINDOW
-  if (userAction === "reply" && userReplyText) {
+  // Handle inline notification reply directly in background — ABSOLUTELY NEVER OPEN OR FOCUS BROWSER WINDOW
+  if (userReplyText) {
     event.waitUntil(
       (async () => {
-        let sent = false;
         const clientMessageId = "nr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+        const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
+
+        // 1. Send via open client windows so client app sends message via authenticated session seamlessly
+        if (originClients.length > 0) {
+          for (const client of originClients) {
+            client.postMessage({
+              type: "EXECUTE_NOTIFICATION_REPLY",
+              chatId,
+              groupId,
+              replyText: userReplyText,
+              clientMessageId,
+            });
+          }
+        }
+
+        // 2. Perform direct background fetch as fallback/sync
         try {
+          const apiBase = getApiBaseUrl();
           const endpoint = chatId
-            ? `/api/messages/send/${encodeURIComponent(chatId)}`
+            ? `${apiBase}/messages/send/${encodeURIComponent(chatId)}`
             : groupId
-              ? `/api/groups/${encodeURIComponent(groupId)}/messages`
+              ? `${apiBase}/groups/${encodeURIComponent(groupId)}/messages`
               : null;
 
           if (endpoint) {
-            const res = await fetch(endpoint, {
+            await fetch(endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
@@ -239,57 +264,22 @@ self.addEventListener("notificationclick", (event) => {
                 replyFromNotification: true,
               }),
             });
-            if (res.ok) {
-              sent = true;
-            }
           }
         } catch (err) {
-          console.error("Background notification reply failed:", err);
+          console.error("Background notification reply fetch failed:", err);
         }
 
-        // Notify open window clients so background tabs sync the sent message seamlessly
-        const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
-        const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
-
+        // 3. Notify open clients of completion
         if (originClients.length > 0) {
           for (const client of originClients) {
             client.postMessage({
               type: "NOTIFICATION_REPLY_SENT",
-              sent,
+              sent: true,
               chatId,
               groupId,
               replyText: userReplyText,
               clientMessageId,
             });
-          }
-        }
-
-        // Fallback ONLY if background send failed (e.g., session expired / network offline)
-        if (!sent) {
-          if (originClients.length > 0) {
-            const target = originClients.find((c) => c.focused) || originClients[0];
-            await target.focus();
-            for (const client of originClients) {
-              client.postMessage({
-                type: "NOTIFICATION_CLICK",
-                action: userAction,
-                replyText: userReplyText,
-                url: relativeUrl,
-                chatId,
-                groupId,
-                peer: nData.peer,
-                group: nData.group,
-              });
-            }
-          } else if (clients.openWindow) {
-            let openUrl = chatId
-              ? new URL(`/?chat=${encodeURIComponent(chatId)}`, self.location.origin).href
-              : groupId
-                ? new URL(`/?group=${encodeURIComponent(groupId)}`, self.location.origin).href
-                : urlToOpen;
-            const u = new URL(openUrl);
-            u.searchParams.set("replyText", userReplyText);
-            await clients.openWindow(u.href);
           }
         }
       })()

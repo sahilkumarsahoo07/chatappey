@@ -431,9 +431,17 @@ export const sendMessage = async (req, res) => {
             }
         }
 
-        // CRITICAL: Ensure we check BOTH isScheduled AND scheduledFor
-        const shouldBeScheduled = isScheduled || !!scheduledFor;
-        let initialStatus = shouldBeScheduled ? "scheduled" : "sent";
+        // Deduplication by clientMessageId
+        if (req.body.clientMessageId) {
+            const existingMsg = await Message.findOne({ clientMessageId: req.body.clientMessageId });
+            if (existingMsg) {
+                return res.status(200).json(
+                    typeof existingMsg.toObject === "function"
+                        ? { ...existingMsg.toObject(), serverCreatedAt: existingMsg.createdAt }
+                        : existingMsg
+                );
+            }
+        }
 
         const newMessage = new Message({
             senderId: senderId,
