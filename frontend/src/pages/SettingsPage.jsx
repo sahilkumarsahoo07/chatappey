@@ -736,7 +736,9 @@ const SettingsPage = () => {
                     </div>
                     <div className="flex-1 space-y-0.5">
                         <h3 className="text-base font-black tracking-tight">App Notifications</h3>
-                        <p className="text-[10px] text-base-content/50 font-medium max-w-md">Enable system-wide desktop alerts.</p>
+                        <p className="text-[10px] text-base-content/50 font-medium max-w-md">
+                          WhatsApp-style alerts on phone &amp; desktop — even when the app is closed. iPhone: install to Home Screen first.
+                        </p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => showBrowserNotification("Test Notification", { body: "This is a test notification from ChatAppey", url: "/" })} className="btn btn-ghost btn-xs font-black text-red-500 hover:bg-red-500/10 px-3 rounded-lg tracking-tighter">Run Test</button>

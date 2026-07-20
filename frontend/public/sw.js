@@ -1,4 +1,5 @@
 // Service Worker — show notifications + seamless click (NO page reload)
+// sw-version: 2026-07-20-mobile-whatsapp-notify
 
 // Active conversation state synchronized from client app
 let swActiveConversationId = null;
@@ -269,12 +270,13 @@ self.addEventListener("push", (event) => {
 
       await self.registration.showNotification(finalTitle, {
         body: finalBody,
-        icon: data.icon || "/avatar.png",
+        icon: "/avatar.png",
         badge: "/avatar.png",
         tag: notificationTag,
         renotify: true,
         requireInteraction: !!data.requireInteraction,
         silent: false,
+        vibrate: [200, 100, 200],
         timestamp: Date.now(),
         actions: [
           { action: "reply", title: "💬 Reply", type: "text", placeholder: "Type a reply..." },

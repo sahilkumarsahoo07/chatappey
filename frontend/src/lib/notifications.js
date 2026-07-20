@@ -14,30 +14,60 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export const subscribeToWebPush = async () => {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
-  if (Notification.permission !== "granted") return;
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+    return { ok: false, reason: "no_service_worker" };
+  }
+  if (!("PushManager" in window)) {
+    return { ok: false, reason: "no_push_manager" };
+  }
+  if (Notification.permission !== "granted") {
+    return { ok: false, reason: "permission_not_granted" };
+  }
+  // iOS Safari only delivers Web Push from a Home Screen installed PWA (iOS 16.4+)
+  if (isIOSDevice() && !isStandalonePWA()) {
+    return { ok: false, reason: "ios_install_required" };
+  }
 
   try {
     const res = await axiosInstance.get("/notifications/vapid-public-key");
     const publicKey = res.data?.publicKey;
-    if (!publicKey) return;
+    if (!publicKey) return { ok: false, reason: "no_vapid" };
 
     const registration = await navigator.serviceWorker.ready;
+    const convertedKey = urlBase64ToUint8Array(publicKey);
+
     let subscription = await registration.pushManager.getSubscription();
 
-    const convertedKey = urlBase64ToUint8Array(publicKey);
-    if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedKey,
-      });
-    }
+    // Always ensure server has the current subscription. If subscribe fails with
+    // an existing (possibly stale/VAPID-mismatched) sub, drop and recreate.
+    const saveSub = async (sub) => {
+      await axiosInstance.post("/notifications/subscribe", { subscription: sub });
+    };
 
     if (subscription) {
-      await axiosInstance.post("/notifications/subscribe", { subscription });
+      try {
+        await saveSub(subscription);
+        console.log("[Push] Re-registered existing subscription");
+        return { ok: true, subscription };
+      } catch (err) {
+        console.warn("[Push] Existing subscription rejected — recreating", err?.message || err);
+        try {
+          await subscription.unsubscribe();
+        } catch (_) {}
+        subscription = null;
+      }
     }
+
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: convertedKey,
+    });
+    await saveSub(subscription);
+    console.log("[Push] New subscription saved");
+    return { ok: true, subscription };
   } catch (err) {
     console.error("Web Push subscription error:", err);
+    return { ok: false, reason: err?.message || "subscribe_failed" };
   }
 };
 
@@ -46,12 +76,31 @@ export const isIOSDevice = () => {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 };
 
+export const isAndroidDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
+};
+
+export const isMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
 export const isStandalonePWA = () => {
   if (typeof window === "undefined") return false;
   return Boolean(
     window.navigator.standalone ||
     window.matchMedia?.("(display-mode: standalone)")?.matches
   );
+};
+
+/** Whether this browser can receive background push like WhatsApp right now */
+export const canReceiveBackgroundPush = () => {
+  if (typeof window === "undefined") return false;
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return false;
+  if (!("PushManager" in window)) return false;
+  if (isIOSDevice() && !isStandalonePWA()) return false;
+  return true;
 };
 
 const sameOriginIcon = (icon) => {
@@ -71,29 +120,46 @@ export const getNotificationPermission = () => {
 
 /**
  * Request notification permission — MUST be called from a user click/tap (button).
+ * Returns true only when permission is granted AND push subscription is saved (when possible).
  */
 export const requestNotificationPermission = async ({ showTest = false } = {}) => {
   if (!("Notification" in window)) return false;
+
+  // iOS: Web Push only works from Home Screen PWA — do not pretend Enable works in Safari tab
+  if (isIOSDevice() && !isStandalonePWA()) {
+    return false;
+  }
+
   if (Notification.permission === "granted") {
-    subscribeToWebPush().catch(() => {});
-    return true;
+    const sub = await subscribeToWebPush();
+    if (showTest && sub?.ok) {
+      await showBrowserNotification("ChatAppey Notifications Enabled!", {
+        body: "You will now receive message alerts like WhatsApp — even when the app is closed.",
+        icon: DEFAULT_ICON,
+        url: "/",
+        requireInteraction: false,
+      });
+    }
+    return !!sub?.ok || Notification.permission === "granted";
   }
   if (Notification.permission === "denied") return false;
 
   try {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-      subscribeToWebPush().catch(() => {});
+      const sub = await subscribeToWebPush();
       if (showTest) {
         await showBrowserNotification("ChatAppey Notifications Enabled!", {
-          body: "You will now receive message and call notifications",
+          body: "You will now receive message alerts like WhatsApp — even when the app is closed.",
           icon: DEFAULT_ICON,
           url: "/",
           requireInteraction: false,
         });
       }
+      refreshNotificationPermissionUI();
+      return permission === "granted" && (sub?.ok !== false);
     }
-    return permission === "granted";
+    return false;
   } catch (error) {
     console.error("Error requesting notification permission:", error);
     return false;
@@ -148,6 +214,7 @@ const buildNotificationOptions = (options = {}) => {
     renotify: true,
     requireInteraction: !!options.requireInteraction,
     silent: options.silent ?? false,
+    vibrate: options.vibrate || [200, 100, 200],
     timestamp: options.timestamp || Date.now(),
     actions: getPlatformNotificationActions(),
     data: {
@@ -198,23 +265,11 @@ const showStandardNotification = (title, options) => {
   }
 };
 
-export const isMobileDevice = () => {
-  if (typeof navigator === "undefined") return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-};
-
 export const shouldShowNotificationPrompt = () => {
   if (typeof window === "undefined" || !("Notification" in window)) return false;
   if (Notification.permission === "granted") return false;
-
-  try {
-    const dismissedUntil = localStorage.getItem("notification_prompt_dismissed_until");
-    if (dismissedUntil && Date.now() < Number(dismissedUntil)) {
-      return false;
-    }
-  } catch (_) {}
-
-  return true;
+  // Full-screen NotificationPermissionBanner already gates login — don't stack a second modal
+  return false;
 };
 
 export const dismissNotificationPromptLater = () => {

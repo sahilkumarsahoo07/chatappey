@@ -80,7 +80,8 @@ export const sendPushNotification = async (userId, payload = {}) => {
     const pushPayload = JSON.stringify({
       title: payload.title || "ChatAppey",
       body: payload.body || "You have a new message",
-      icon: payload.icon || "/avatar.png",
+      // Always use same-origin icon — remote/CDN icons often fail on iOS Web Push
+      icon: "/avatar.png",
       badge: "/avatar.png",
       tag: payload.tag || "chat-message",
       // Chat apps must renotify on same-tag replace (Message 2 after Message 1 / Quick Reply).
@@ -121,8 +122,9 @@ export const sendPushNotification = async (userId, payload = {}) => {
         });
       } catch (err) {
         // If status code is 404 or 410, subscription has expired/been revoked
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          updated = true; // Mark to filter out dead subscription
+        // 403 often means VAPID/auth mismatch — drop dead endpoint too
+        if (err.statusCode === 404 || err.statusCode === 410 || err.statusCode === 403) {
+          updated = true;
           notifTrace("PUSH_PROVIDER_GONE", {
             messageId,
             recipientId: String(userId),
