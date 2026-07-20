@@ -360,7 +360,27 @@ export const syncStateWithServiceWorker = (customState = {}) => {
 // Setup visibility & focus listeners to automatically sync SW state
 if (typeof window !== "undefined") {
   const handleStateChange = () => {
-    syncStateWithServiceWorker();
+    // When app goes to background/blurs, explicitly set activeConversationId to null
+    // so the SW never retains stale state that could suppress notifications.
+    const isAppActive = document.visibilityState === "visible" && document.hasFocus();
+    if (isAppActive) {
+      // App is active — sync real active conversation from stores
+      Promise.all([
+        import("../store/useChatStore.js"),
+        import("../store/useGroupStore.js"),
+      ]).then(([{ useChatStore }, { useGroupStore }]) => {
+        const chatSel = useChatStore.getState()?.selectedUser;
+        const groupSel = useGroupStore.getState()?.selectedGroup;
+        syncStateWithServiceWorker({
+          activeConversationId: chatSel?._id || groupSel?._id || null,
+        });
+      }).catch(() => {
+        syncStateWithServiceWorker();
+      });
+    } else {
+      // App is backgrounded/blurred — ALWAYS clear activeConversationId
+      syncStateWithServiceWorker({ activeConversationId: null });
+    }
   };
   window.addEventListener("visibilitychange", handleStateChange);
   window.addEventListener("focus", handleStateChange);

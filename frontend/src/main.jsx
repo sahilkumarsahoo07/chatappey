@@ -30,6 +30,22 @@ if ("serviceWorker" in navigator) {
       const { chatId, groupId, replyText, clientMessageId } = event.data;
       if (!replyText) return;
 
+      // CRITICAL: Quick Reply is a background-only action.
+      // Re-sync SW state with the ACTUAL current app visibility.
+      // The user did NOT open the app — do NOT set activeConversationId.
+      // This prevents stale state from suppressing future push notifications.
+      import("./lib/notifications.js").then(({ syncStateWithServiceWorker }) => {
+        // Sync with the real selectedUser/selectedGroup (NOT the replied-to conversation)
+        const chatSel = useChatStore.getState().selectedUser;
+        const groupSel = useGroupStore.getState().selectedGroup;
+        const realActiveId = chatSel?._id || groupSel?._id || null;
+        // Only pass the real active conversation if the app is actually visible + focused
+        const isAppActuallyActive = document.visibilityState === "visible" && document.hasFocus();
+        syncStateWithServiceWorker({
+          activeConversationId: isAppActuallyActive ? realActiveId : null,
+        });
+      }).catch(() => {});
+
       if (chatId) {
         // Optimistic UI update: append immediately if this chat is open
         const sel = useChatStore.getState().selectedUser;

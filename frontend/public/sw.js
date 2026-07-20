@@ -115,13 +115,20 @@ self.addEventListener("push", (event) => {
       const activeClient = originClients.find((c) => c.focused || c.visibilityState === "visible");
 
       // Active Chat Suppression Rule:
-      // If user is actively viewing this exact conversation in browser tab, SUPPRESS Web Push notification
+      // Suppress ONLY when user is actively viewing this exact conversation in a focused browser tab.
+      // CRITICAL: SW state can be stale after Quick Reply (which clears it, but timing matters).
+      // Require BOTH synced state AND a live focused/visible client window to suppress.
+      const syncFresh = swLastSyncTimestamp > 0 && (Date.now() - swLastSyncTimestamp) < 30000; // 30s staleness guard
       const isViewingExactChat =
         incomingId &&
         swActiveConversationId &&
         String(swActiveConversationId) === String(incomingId) &&
-        (swIsDocumentVisible || (activeClient && activeClient.visibilityState === "visible")) &&
-        (swIsWindowFocused || (activeClient && activeClient.focused));
+        syncFresh &&
+        swIsDocumentVisible &&
+        swIsWindowFocused &&
+        activeClient &&
+        activeClient.focused &&
+        activeClient.visibilityState === "visible";
 
       if (isViewingExactChat) {
         console.log(`[SW Push Suppressed] User is actively viewing conversation ${incomingId}`);
@@ -222,6 +229,11 @@ self.addEventListener("notificationclick", (event) => {
 
   // Handle Mark as Read directly in background — DO NOT OPEN OR FOCUS BROWSER WINDOW
   if (userAction === "mark_read") {
+    // Mark as Read is a background-only action — clear stale state like Quick Reply
+    swActiveConversationId = null;
+    swIsDocumentVisible = false;
+    swIsWindowFocused = false;
+
     event.waitUntil(
       (async () => {
         try {
@@ -268,6 +280,14 @@ self.addEventListener("notificationclick", (event) => {
   if (userReplyText) {
     event.waitUntil(
       (async () => {
+        // CRITICAL: Quick Reply is a background-only action.
+        // Clear stale active conversation state IMMEDIATELY so that
+        // subsequent push notifications are NEVER suppressed by leftover state.
+        // The user is NOT opening or viewing any conversation — they only typed a reply.
+        swActiveConversationId = null;
+        swIsDocumentVisible = false;
+        swIsWindowFocused = false;
+
         const clientMessageId = "nr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
@@ -283,6 +303,8 @@ self.addEventListener("notificationclick", (event) => {
               clientMessageId,
             });
           }
+          // After dispatching reply, re-sync SW state from actual client visibility
+          // (don't leave stale flags — client will re-sync on next SYNC_ACTIVE_CONVERSATION)
           return;
         }
 
