@@ -31,6 +31,31 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(clients.claim());
 });
 
+let swAuthToken = null;
+
+async function getStoredAuthToken() {
+  if (swAuthToken) return swAuthToken;
+  try {
+    const cache = await caches.open("sw-auth-cache");
+    const res = await cache.match("/sw-token");
+    if (res) {
+      const token = await res.text();
+      swAuthToken = token;
+      return token;
+    }
+  } catch (_) {}
+  return null;
+}
+
+async function setStoredAuthToken(token) {
+  if (!token) return;
+  swAuthToken = token;
+  try {
+    const cache = await caches.open("sw-auth-cache");
+    await cache.put("/sw-token", new Response(token));
+  } catch (_) {}
+}
+
 self.addEventListener("message", (event) => {
   const data = event.data;
   if (!data) return;
@@ -40,6 +65,9 @@ self.addEventListener("message", (event) => {
     swIsDocumentVisible = !!data.documentVisible;
     swIsWindowFocused = !!data.windowFocused;
     swLastSyncTimestamp = data.timestamp || Date.now();
+    if (data.authToken) {
+      setStoredAuthToken(data.authToken);
+    }
   }
 });
 
@@ -198,9 +226,15 @@ self.addEventListener("notificationclick", (event) => {
               : null;
 
           if (endpoint) {
+            const token = await getStoredAuthToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+              headers["Authorization"] = `Bearer ${token}`;
+            }
+
             await fetch(endpoint, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               credentials: "include",
             });
           }
@@ -254,9 +288,15 @@ self.addEventListener("notificationclick", (event) => {
               : null;
 
           if (endpoint) {
+            const token = await getStoredAuthToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) {
+              headers["Authorization"] = `Bearer ${token}`;
+            }
+
             await fetch(endpoint, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               credentials: "include",
               body: JSON.stringify({
                 text: userReplyText,

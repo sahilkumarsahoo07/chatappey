@@ -329,11 +329,14 @@ export const syncStateWithServiceWorker = (customState = {}) => {
   const windowFocused = customState.windowFocused ?? (typeof document !== "undefined" ? document.hasFocus() : true);
   const activeConversationId = customState.activeConversationId !== undefined ? customState.activeConversationId : null;
 
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("token") : null;
+
   const payload = {
     type: "SYNC_ACTIVE_CONVERSATION",
     activeConversationId: activeConversationId ? String(activeConversationId) : null,
     documentVisible,
     windowFocused,
+    authToken: token || null,
     timestamp: Date.now(),
   };
 
