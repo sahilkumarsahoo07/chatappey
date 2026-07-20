@@ -510,6 +510,8 @@ export const sendMessage = async (req, res) => {
                 data: {
                     url: `/?chat=${senderId}`,
                     chatId: String(senderId),
+                    messageId: String(newMessage._id),
+                    clientMessageId: newMessage.clientMessageId || null,
                     peer: sender,
                 },
             }).catch((e) => console.error("Error sending REST Web Push notification:", e.message));

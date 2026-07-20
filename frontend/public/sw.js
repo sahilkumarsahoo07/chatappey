@@ -72,6 +72,10 @@ self.addEventListener("message", (event) => {
       setStoredAuthToken(data.authToken);
     }
   }
+
+  if (data.type === "MARK_NOTIFICATION_HANDLED" && data.messageKey) {
+    markMessageHandled(data.messageKey);
+  }
 });
 
 function toEntityId(value) {

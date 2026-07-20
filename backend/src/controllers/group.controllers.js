@@ -788,6 +788,8 @@ export const sendGroupMessage = async (req, res) => {
                     data: {
                         url: `/?group=${groupId}`,
                         groupId: String(groupId),
+                        messageId: String(newMessage._id),
+                        clientMessageId: newMessage.clientMessageId || null,
                         group: { _id: String(groupId), name: group.name, image: group.image },
                     },
                 }).catch((e) => console.error("Error sending REST Group Web Push notification:", e.message));

@@ -314,6 +314,14 @@ export const recordNotificationShown = (key) => {
   if (!key) return;
   const strKey = String(key);
   recentNotificationKeys.add(strKey);
+  try {
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: "MARK_NOTIFICATION_HANDLED",
+        messageKey: strKey,
+      });
+    }
+  } catch (_) {}
   setTimeout(() => {
     recentNotificationKeys.delete(strKey);
   }, 10000);
