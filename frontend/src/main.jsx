@@ -4,6 +4,9 @@ import "./index.css";
 import App from "./App.jsx";
 import { BrowserRouter } from "react-router-dom";
 import { openConversationFromNotification } from "./lib/openFromNotification.js";
+import { axiosInstance } from "./lib/axios.js";
+import { useChatStore } from "./store/useChatStore.js";
+import { useGroupStore } from "./store/useGroupStore.js";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -28,37 +31,29 @@ if ("serviceWorker" in navigator) {
       if (!replyText) return;
 
       if (chatId) {
-        import("./lib/axios.js").then(({ axiosInstance }) => {
-          axiosInstance.post(`/messages/send/${encodeURIComponent(chatId)}`, {
-            text: replyText,
-            clientMessageId,
-            replyFromNotification: true,
-          }).then(() => {
-            import("./store/useChatStore.js").then(({ useChatStore }) => {
-              const sel = useChatStore.getState().selectedUser;
-              if (sel && String(sel._id) === String(chatId)) {
-                useChatStore.getState().getMessages?.(chatId);
-              } else {
-                useChatStore.getState().refreshUsers?.();
-              }
-            });
-          }).catch((err) => console.error("Client side notification reply post error:", err));
-        });
+        axiosInstance.post(`/messages/send/${encodeURIComponent(chatId)}`, {
+          text: replyText,
+          clientMessageId,
+          replyFromNotification: true,
+        }).then(() => {
+          const sel = useChatStore.getState().selectedUser;
+          if (sel && String(sel._id) === String(chatId)) {
+            useChatStore.getState().getMessages?.(chatId);
+          } else {
+            useChatStore.getState().refreshUsers?.();
+          }
+        }).catch((err) => console.error("Client side notification reply post error:", err));
       } else if (groupId) {
-        import("./lib/axios.js").then(({ axiosInstance }) => {
-          axiosInstance.post(`/groups/${encodeURIComponent(groupId)}/messages`, {
-            text: replyText,
-            clientMessageId,
-            replyFromNotification: true,
-          }).then(() => {
-            import("./store/useGroupStore.js").then(({ useGroupStore }) => {
-              const sel = useGroupStore.getState().selectedGroup;
-              if (sel && String(sel._id) === String(groupId)) {
-                useGroupStore.getState().getGroupMessages?.(groupId);
-              }
-            });
-          }).catch((err) => console.error("Client side group notification reply post error:", err));
-        });
+        axiosInstance.post(`/groups/${encodeURIComponent(groupId)}/messages`, {
+          text: replyText,
+          clientMessageId,
+          replyFromNotification: true,
+        }).then(() => {
+          const sel = useGroupStore.getState().selectedGroup;
+          if (sel && String(sel._id) === String(groupId)) {
+            useGroupStore.getState().getGroupMessages?.(groupId);
+          }
+        }).catch((err) => console.error("Client side group notification reply post error:", err));
       }
       return;
     }

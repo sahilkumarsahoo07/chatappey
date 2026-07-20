@@ -47,6 +47,9 @@ async function getStoredAuthToken() {
   return null;
 }
 
+// Pre-warm token in memory on Service Worker startup
+getStoredAuthToken();
+
 async function setStoredAuthToken(token) {
   if (!token) return;
   swAuthToken = token;
@@ -265,7 +268,7 @@ self.addEventListener("notificationclick", (event) => {
         const windowClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const originClients = windowClients.filter((c) => c.url.startsWith(self.location.origin));
 
-        // 1. Send via open client windows so client app sends message via authenticated session seamlessly
+        // 1. Fast Path: If client window is open, send via client session instantly in 0ms delay
         if (originClients.length > 0) {
           for (const client of originClients) {
             client.postMessage({
@@ -276,9 +279,10 @@ self.addEventListener("notificationclick", (event) => {
               clientMessageId,
             });
           }
+          return;
         }
 
-        // 2. Perform direct background fetch as fallback/sync
+        // 2. Standalone Path: No client window open — perform direct SW background fetch with pre-warmed token
         try {
           const apiBase = getApiBaseUrl();
           const endpoint = chatId
@@ -307,20 +311,6 @@ self.addEventListener("notificationclick", (event) => {
           }
         } catch (err) {
           console.error("Background notification reply fetch failed:", err);
-        }
-
-        // 3. Notify open clients of completion
-        if (originClients.length > 0) {
-          for (const client of originClients) {
-            client.postMessage({
-              type: "NOTIFICATION_REPLY_SENT",
-              sent: true,
-              chatId,
-              groupId,
-              replyText: userReplyText,
-              clientMessageId,
-            });
-          }
         }
       })()
     );
