@@ -25,8 +25,16 @@ export const sendPushNotification = async (userId, payload = {}) => {
   const incomingGroupId = payloadData.groupId;
   const incomingConversationId = incomingChatId || incomingGroupId;
 
-  // Server-side active conversation suppression check
-  if (incomingConversationId && isUserActivelyViewingInSocket(userId, incomingConversationId)) {
+  // Server-side active conversation suppression check.
+  // isUserActivelyViewingInSocket already rejects BACKGROUND/OFFLINE users,
+  // so Quick Reply (which keeps app backgrounded) will NOT suppress here.
+  const isActivelyViewing = incomingConversationId && isUserActivelyViewingInSocket(userId, incomingConversationId);
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[WebPush Decision] userId=${userId} conversation=${incomingConversationId} isActivelyViewing=${isActivelyViewing} title="${payload.title}"`);
+  }
+
+  if (isActivelyViewing) {
     console.log(`[WebPush Suppressed] User ${userId} is actively chatting in conversation ${incomingConversationId}`);
     return;
   }

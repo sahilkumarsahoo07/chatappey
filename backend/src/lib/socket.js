@@ -147,8 +147,20 @@ export const isUserActivelyViewingInSocket = (userId, conversationId) => {
   const presence = userPresenceMap.get(uIdStr);
   if (!presence) return false;
 
-  const isOnlineActive = (presence.status === "ONLINE_ACTIVE" || presence.status === "ONLINE_IDLE") && presence.sockets?.size > 0;
-  return isOnlineActive && presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
+  // CRITICAL: User must be ONLINE_ACTIVE with a focused/visible app.
+  // BACKGROUND and OFFLINE statuses must NEVER suppress notifications.
+  // Quick Reply from notification sets presence to BACKGROUND — never treat that as "actively viewing".
+  if (presence.status === "BACKGROUND" || presence.status === "OFFLINE") return false;
+  if (!presence.sockets || presence.sockets.size === 0) return false;
+
+  const isOnlineActive = presence.status === "ONLINE_ACTIVE" || presence.status === "ONLINE_IDLE";
+  const isViewingSameConversation = presence.activeConversationId && String(presence.activeConversationId) === convIdStr;
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[PresenceCheck] userId=${uIdStr} conv=${convIdStr} status=${presence.status} activeConv=${presence.activeConversationId} sockets=${presence.sockets.size} result=${isOnlineActive && isViewingSameConversation}`);
+  }
+
+  return isOnlineActive && isViewingSameConversation;
 };
 
 export const getVisibleOnlineUsers = () => {
@@ -265,11 +277,22 @@ io.on("connection", async (socket) => {
     const oldStatus = presence.status;
     presence.status = status;
 
-    if (status === "BACKGROUND" && oldStatus !== "BACKGROUND") {
-      const now = new Date();
-      presence.lastSeen = now;
-      if (!incognitoUsers.has(uIdStr)) {
-        User.findByIdAndUpdate(uIdStr, { lastLogout: now }).catch(() => {});
+    // CRITICAL FIX: When user goes to BACKGROUND, clear activeConversationId.
+    // The user is no longer actively viewing any conversation.
+    // This prevents stale activeConversationId from suppressing push notifications
+    // after Quick Reply (which keeps the app backgrounded).
+    if (status === "BACKGROUND") {
+      if (presence.activeConversationId && process.env.NODE_ENV !== "production") {
+        console.log(`[Presence] User ${uIdStr} went BACKGROUND — clearing activeConversationId (was: ${presence.activeConversationId})`);
+      }
+      presence.activeConversationId = null;
+
+      if (oldStatus !== "BACKGROUND") {
+        const now = new Date();
+        presence.lastSeen = now;
+        if (!incognitoUsers.has(uIdStr)) {
+          User.findByIdAndUpdate(uIdStr, { lastLogout: now }).catch(() => {});
+        }
       }
     }
 
