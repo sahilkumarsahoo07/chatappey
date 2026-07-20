@@ -240,24 +240,20 @@ export const showBrowserNotification = async (title, options = {}) => {
   }
 
   const notificationOptions = buildNotificationOptions(options);
-  const mobile = isMobileDevice();
-
-  // On Mobile or backgrounded tab, Service Worker registration.showNotification is mandatory
-  if (mobile || document.hidden) {
-    if ("serviceWorker" in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        if (registration && registration.showNotification) {
-          await registration.showNotification(title, notificationOptions);
-          return null;
-        }
-      } catch (err) {
-        console.error("[notify] Service worker showNotification failed:", err);
+  // Prefer Service Worker showNotification whenever available so notification actions (reply text input) work
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      if (registration && registration.showNotification) {
+        await registration.showNotification(title, notificationOptions);
+        return null;
       }
+    } catch (err) {
+      console.error("[notify] Service worker showNotification failed:", err);
     }
   }
 
-  // Fallback or active desktop tab
+  // Fallback if Service Worker is not registered
   return showStandardNotification(title, notificationOptions);
 };
 

@@ -165,8 +165,9 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     const chatId = params.get("chat");
     const groupId = params.get("group");
+    const replyText = params.get("replyText");
     if (chatId || groupId) {
-      applyConversationSwitch({ chatId, groupId });
+      applyConversationSwitch({ chatId, groupId, replyText });
       window.history.replaceState({}, document.title, "/");
       return;
     }

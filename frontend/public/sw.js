@@ -110,11 +110,18 @@ self.addEventListener("notificationclick", (event) => {
 
       // App not open — open home with deep link (notification click = user gesture)
       if (clients.openWindow) {
-        const openUrl = chatId
+        let openUrl = chatId
           ? new URL(`/?chat=${encodeURIComponent(chatId)}`, self.location.origin).href
           : groupId
             ? new URL(`/?group=${encodeURIComponent(groupId)}`, self.location.origin).href
             : urlToOpen;
+
+        if (userReplyText) {
+          const u = new URL(openUrl);
+          u.searchParams.set("replyText", userReplyText);
+          openUrl = u.href;
+        }
+
         return clients.openWindow(openUrl);
       }
     })

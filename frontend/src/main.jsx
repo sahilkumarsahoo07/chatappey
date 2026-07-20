@@ -30,6 +30,7 @@ if ("serviceWorker" in navigator) {
       url: event.data.url,
       peer: event.data.peer,
       group: event.data.group,
+      replyText: event.data.replyText,
     });
     // Auth / route not ready — keep pending for App flush
     if (!opened) {
@@ -42,6 +43,7 @@ if ("serviceWorker" in navigator) {
             url: event.data.url,
             peer: event.data.peer,
             group: event.data.group,
+            replyText: event.data.replyText,
           })
         );
       } catch (_) {
@@ -58,5 +60,6 @@ window.addEventListener("notification-open-chat", (e) => {
     url: e.detail?.url,
     peer: e.detail?.peer,
     group: e.detail?.group,
+    replyText: e.detail?.replyText,
   });
 });

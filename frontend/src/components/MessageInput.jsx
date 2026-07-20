@@ -110,11 +110,15 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         const handleFocus = (e) => {
             const replyText = e.detail?.replyText;
             if (replyText) {
-                setText((prev) => (prev ? `${prev} ${replyText}` : replyText));
+                setText(replyText);
+                setTimeout(() => {
+                    sendHandlerRef.current?.(null, { text: replyText });
+                }, 200);
+            } else {
+                setTimeout(() => {
+                    textareaRef.current?.focus();
+                }, 100);
             }
-            setTimeout(() => {
-                textareaRef.current?.focus();
-            }, 100);
         };
         window.addEventListener("focus-chat-input", handleFocus);
         return () => window.removeEventListener("focus-chat-input", handleFocus);
