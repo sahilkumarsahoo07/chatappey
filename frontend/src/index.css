@@ -142,6 +142,34 @@ body,
 }
 
 @plugin "daisyui/theme" {
+    name: "teams-light";
+    color-scheme: light;
+    --color-primary: #5B5FC7;
+    --color-secondary: #EBEBEB;
+    --color-accent: #4F52B2;
+    --color-neutral: #242424;
+    --color-base-100: #F3F2F1;
+    --color-base-200: #FFFFFF;
+    --color-base-300: #E0E0E0;
+    --color-base-content: #242424;
+    --color-primary-content: #FFFFFF;
+}
+
+@plugin "daisyui/theme" {
+    name: "teams-dark";
+    color-scheme: dark;
+    --color-primary: #7A7DF0;
+    --color-secondary: #3D3D3D;
+    --color-accent: #5B5FC7;
+    --color-neutral: #F5F5F5;
+    --color-base-100: #292929;
+    --color-base-200: #1F1F1F;
+    --color-base-300: #3D3D3D;
+    --color-base-content: #F5F5F5;
+    --color-primary-content: #FFFFFF;
+}
+
+@plugin "daisyui/theme" {
     name: "synth";
     color-scheme: dark;
     --color-primary: #FF1493;

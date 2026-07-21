@@ -39,6 +39,8 @@ export const THEMES = [
     "grape",
     "midnight",
     "whatsapp",
+    "teams-light",
+    "teams-dark",
     "synth",
     "solarized",
 ];

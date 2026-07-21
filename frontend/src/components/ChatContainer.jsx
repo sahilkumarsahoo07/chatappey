@@ -668,7 +668,7 @@ const ChatContainer = () => {
                       )}
 
                     {message.status !== 'scheduled' && editingMessageId !== message._id && (
-                      <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${message.senderId === authUser._id ? 'text-primary-content/70' : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
+                      <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${isMyMessage ? (isWhatsApp ? 'text-[#111b21]/60' : 'text-primary-content/70') : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
                         {message.isEdited && !isMessageDeleted(message) && <span className="mr-0.5 opacity-80">Edited</span>}
                         <span>{formatMessageTime(message.createdAt)}</span>
                         {message.senderId === authUser._id && (
