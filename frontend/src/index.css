@@ -44,7 +44,87 @@ body,
         winter,
         dim,
         nord,
-        sunset;
+        sunset,
+        abyss {
+            "color-scheme": "dark";
+            "primary": "#0B84A5";
+            "secondary": "#8A2BE2";
+            "accent": "#FF4500";
+            "neutral": "#1C242C";
+            "base-100": "#0D1117";
+        },
+        obsidian {
+            "color-scheme": "dark";
+            "primary": "#7B8898";
+            "secondary": "#4B5563";
+            "accent": "#9CA3AF";
+            "neutral": "#1F2937";
+            "base-100": "#0F1115";
+        },
+        neon {
+            "color-scheme": "dark";
+            "primary": "#39FF14";
+            "secondary": "#FF00FF";
+            "accent": "#00FFFF";
+            "neutral": "#1A1A1A";
+            "base-100": "#000000";
+        },
+        crimson {
+            "color-scheme": "dark";
+            "primary": "#DC143C";
+            "secondary": "#8B0000";
+            "accent": "#FF6347";
+            "neutral": "#2D1B1E";
+            "base-100": "#1A0F11";
+        },
+        matrix {
+            "color-scheme": "dark";
+            "primary": "#00FF41";
+            "secondary": "#008F11";
+            "accent": "#003B00";
+            "neutral": "#0D1A0D";
+            "base-100": "#000000";
+        },
+        grape {
+            "color-scheme": "dark";
+            "primary": "#6B21A8";
+            "secondary": "#9333EA";
+            "accent": "#C084FC";
+            "neutral": "#2E1065";
+            "base-100": "#170824";
+        },
+        midnight {
+            "color-scheme": "dark";
+            "primary": "#1E3A8A";
+            "secondary": "#2563EB";
+            "accent": "#3B82F6";
+            "neutral": "#1E1E2F";
+            "base-100": "#0B0F19";
+        },
+        hacker {
+            "color-scheme": "dark";
+            "primary": "#32CD32";
+            "secondary": "#228B22";
+            "accent": "#00FF00";
+            "neutral": "#111111";
+            "base-100": "#050505";
+        },
+        synth {
+            "color-scheme": "dark";
+            "primary": "#FF1493";
+            "secondary": "#00BFFF";
+            "accent": "#FFD700";
+            "neutral": "#2B1B3D";
+            "base-100": "#120B21";
+        },
+        solarized {
+            "color-scheme": "dark";
+            "primary": "#268BD2";
+            "secondary": "#2AA198";
+            "accent": "#CB4B16";
+            "neutral": "#073642";
+            "base-100": "#002B36";
+        };
 }
 
 /* ============================================

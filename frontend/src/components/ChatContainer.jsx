@@ -395,11 +395,11 @@ const ChatContainer = () => {
                 <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
               </div>
             </div>
-            <div className="chat-header mb-1 flex items-center gap-1">
-              <time className="text-xs opacity-50 ml-1">{formatMessageTime(message.createdAt)}</time>
-              {message.isEdited && !isMessageDeleted(message) && <span className="text-[10px] opacity-40 italic">(edited)</span>}
+            <div className="chat-image avatar ml-2 md:ml-3 self-end mb-1">
+              <div className="size-8 md:size-9 rounded-full border">
+                <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
+              </div>
             </div>
-
             <SwipeableMessageBubble
               isMine={message.senderId === authUser._id}
               disabled={isMessageDeleted(message) || message.status === "scheduled"}
@@ -417,7 +417,7 @@ const ChatContainer = () => {
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
-            <div className={`chat-bubble flex flex-col relative w-fit max-w-full ${message.senderId === authUser._id ? 'chat-bubble-primary' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
+            <div className={`chat-bubble flex flex-col relative w-fit max-w-full !px-2 !pt-1.5 !pb-1 !min-h-0 ${message.senderId === authUser._id ? 'chat-bubble-primary' : 'bg-base-200 text-base-content'} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
               {isMessageDeleted(message) ? (
                 <>
                   <DeletedMessageBubble
@@ -426,10 +426,14 @@ const ChatContainer = () => {
                     isMyMessage={message.senderId === authUser._id}
                   />
                   {message.senderId === authUser._id && (
-                    <div className="status-container mt-1 self-end">
-                      {message.status === "read" ? <CheckCheck className="w-4 h-4 tick-read message-status-icon text-blue-500" /> :
-                        message.status === "delivered" ? <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" /> :
-                          <Check className="w-4 h-4 tick-sent message-status-icon" />}
+                    <div className="flex items-center justify-end gap-1 mt-1 text-[10.5px] opacity-70">
+                      {message.isEdited && <span className="italic">(edited)</span>}
+                      <span>{formatMessageTime(message.createdAt)}</span>
+                      <span className="flex items-center ml-0.5">
+                        {message.status === "read" ? <CheckCheck className="w-4 h-4 text-[#53bdeb]" /> :
+                          message.status === "delivered" ? <CheckCheck className="w-4 h-4" /> :
+                            <Check className="w-4 h-4" />}
+                      </span>
                     </div>
                   )}
                 </>
@@ -544,9 +548,9 @@ const ChatContainer = () => {
               {message.text && !message.audio && (
                 <div className="relative">
                   {message.isForwarded && (
-                    <div className="forwarded-badge mb-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
+                    <div className="forwarded-badge mb-1 text-[11px] opacity-70 flex items-center gap-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
                   )}
-                  <div className="relative">
+                  <div className="relative px-0.5 pb-0.5">
                     {editingMessageId === message._id ? (
                       <MessageEditField
                         initialText={message.text}
@@ -558,10 +562,12 @@ const ChatContainer = () => {
                         isMyMessage={message.senderId === authUser._id}
                       />
                     ) : (
-                      <p className="text-sm md:text-base whitespace-pre-wrap">
+                      <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
                         {searchQuery && message.text
                           ? highlightText(message.text, searchQuery, searchActiveId === message._id)
                           : message.text}
+                        {/* Inline spacer to let time wrap nicely if short text */}
+                        <span className="inline-block w-[70px] h-1 md:w-[75px]"></span>
                       </p>
                     )}
                   </div>
@@ -591,12 +597,18 @@ const ChatContainer = () => {
                   </div>
                 )}
 
-              {message.senderId === authUser._id && (
-                <div className="status-container mt-1 self-end">
-                  {message.status === "read" ? <CheckCheck className="w-4 h-4 tick-read message-status-icon text-blue-500" /> :
-                    message.status === "delivered" ? <CheckCheck className="w-4 h-4 tick-delivered message-status-icon" /> :
-                      message.status === "scheduled" ? <Clock className="w-3 h-3 opacity-50" /> :
-                        <Check className="w-4 h-4 tick-sent message-status-icon" />}
+              {message.status !== 'scheduled' && (
+                <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${message.senderId === authUser._id ? 'text-primary-content/70' : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
+                  {message.isEdited && !isMessageDeleted(message) && <span className="italic mr-0.5">(edited)</span>}
+                  <span>{formatMessageTime(message.createdAt)}</span>
+                  {message.senderId === authUser._id && (
+                    <span className="flex items-center ml-0.5 -mr-0.5">
+                      {message.status === "read" ? <CheckCheck className="w-[15px] h-[15px] text-[#53bdeb]" /> :
+                        message.status === "delivered" ? <CheckCheck className="w-[15px] h-[15px]" /> :
+                          message.status === "scheduled" ? <Clock className="w-3 h-3 opacity-50" /> :
+                            <Check className="w-[15px] h-[15px]" />}
+                    </span>
+                  )}
                 </div>
               )}
               </>
