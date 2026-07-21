@@ -621,7 +621,7 @@ const ChatContainer = () => {
                               <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
                                 {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
                                 {/* Inline spacer to let time wrap nicely if short text */}
-                                <span className="inline-block w-[70px] h-1 md:w-[75px]"></span>
+                                <span className={`inline-block h-1 ${message.isEdited ? 'w-[105px] md:w-[110px]' : 'w-[70px] md:w-[75px]'}`}></span>
                               </p>
 
                               {/* YouTube Preview */}
@@ -663,7 +663,7 @@ const ChatContainer = () => {
 
                     {message.status !== 'scheduled' && editingMessageId !== message._id && (
                       <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${message.senderId === authUser._id ? 'text-primary-content/70' : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
-                        {message.isEdited && !isMessageDeleted(message) && <span className="italic mr-0.5">(edited)</span>}
+                        {message.isEdited && !isMessageDeleted(message) && <span className="mr-0.5 opacity-80">Edited</span>}
                         <span>{formatMessageTime(message.createdAt)}</span>
                         {message.senderId === authUser._id && (
                           <span className="flex items-center ml-0.5 -mr-0.5">
