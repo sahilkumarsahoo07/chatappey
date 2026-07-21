@@ -417,7 +417,11 @@ const ChatContainer = () => {
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
-            <div className={`chat-bubble flex flex-col relative w-fit max-w-full !px-2 !pt-1.5 !pb-1 !min-h-0 ${message.senderId === authUser._id ? 'chat-bubble-primary' : 'bg-base-200 text-base-content'} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
+            <div className={`flex flex-col relative w-fit max-w-full px-2 pt-1.5 pb-1 min-w-[85px] shadow-sm
+              ${message.senderId === authUser._id 
+                ? 'bg-primary text-primary-content rounded-2xl rounded-tr-[4px]' 
+                : 'bg-base-200 text-base-content rounded-2xl rounded-tl-[4px] border border-base-content/5'} 
+              ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
               {isMessageDeleted(message) ? (
                 <>
                   <DeletedMessageBubble
@@ -441,7 +445,7 @@ const ChatContainer = () => {
               <>
               {message.replyToMessage && (
                 <div 
-                  className="mb-1.5 flex overflow-hidden rounded-lg bg-base-content/5 hover:bg-base-content/10 transition-colors cursor-pointer relative border-l-4 border-primary"
+                  className={`mb-1.5 flex overflow-hidden rounded-lg transition-colors cursor-pointer relative border-l-[4px] ${message.senderId === authUser._id ? 'bg-primary-content/10 hover:bg-primary-content/20 border-primary-content/50' : 'bg-base-content/5 hover:bg-base-content/10 border-primary'}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     const element = document.getElementById(`msg-${message.replyTo}`);
@@ -455,10 +459,10 @@ const ChatContainer = () => {
                   }}
                 >
                   <div className="flex-1 min-w-0 py-1.5 px-2.5 flex flex-col justify-center">
-                    <p className="text-xs font-bold text-primary truncate leading-tight mb-0.5">
+                    <p className={`text-xs font-bold truncate leading-tight mb-0.5 ${message.senderId === authUser._id ? 'text-primary-content' : 'text-primary'}`}>
                       {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
                     </p>
-                    <p className="text-xs opacity-75 truncate leading-tight">
+                    <p className={`text-xs truncate leading-tight ${message.senderId === authUser._id ? 'opacity-90 text-primary-content' : 'opacity-75'}`}>
                       {message.replyToMessage.text || (message.replyToMessage.image ? "📷 Photo" : message.replyToMessage.video ? "🎥 Video" : message.replyToMessage.audio ? "🎵 Audio" : message.replyToMessage.file ? "📄 Document" : "")}
                     </p>
                   </div>
