@@ -313,12 +313,14 @@ export const buildGroupChatActions = ({
   isAdmin,
   isPinned,
   isStarred,
+  authUserId,
   onReply,
   onInfo,
   onStar,
   onPin,
   onCopy,
   onForward,
+  onEdit,
   onDelete,
 }) => {
   const deleted = isMessageDeleted(message);
@@ -371,12 +373,25 @@ export const buildGroupChatActions = ({
       onClick: onPin,
     });
   }
-  if (!message.image && message.text) {
+  if (!message.image && !message.audio && !message.poll && message.text) {
     actions.push({
       id: "copy",
       label: "Copy",
       icon: <Copy className="w-4 h-4" />,
       onClick: onCopy,
+    });
+  }
+  
+  if (
+    onEdit &&
+    (message.senderId?._id || message.senderId) === authUserId &&
+    Date.now() - new Date(message.createdAt).getTime() < 5 * 60 * 1000
+  ) {
+    actions.push({
+      id: "edit",
+      label: "Edit",
+      icon: <Pencil className="w-4 h-4" />,
+      onClick: onEdit,
     });
   }
   actions.push({

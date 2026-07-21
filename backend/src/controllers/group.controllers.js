@@ -232,11 +232,14 @@ export const updateGroup = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        const isAdmin = group.admin.toString() === userId.toString() ||
-            group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
+        const isOwner = group.admin.toString() === userId.toString();
+        const isAdmin = isOwner || group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
+        
+        // If editing is restricted, only admins can edit. Otherwise, any member can edit.
+        const canEdit = group.editInfoRestricted ? isAdmin : true;
 
-        if (!isAdmin) {
-            return res.status(403).json({ error: "Only admins can update group" });
+        if (!canEdit) {
+            return res.status(403).json({ error: "Only admins can update group info" });
         }
 
         let imageUrl = group.image;
@@ -277,6 +280,15 @@ export const updateGroup = async (req, res) => {
         group.image = imageUrl;
         if (req.body.announcementOnly !== undefined) {
             group.announcementOnly = req.body.announcementOnly;
+        }
+        if (req.body.editInfoRestricted !== undefined) {
+            group.editInfoRestricted = req.body.editInfoRestricted;
+        }
+        if (req.body.addMembersRestricted !== undefined) {
+            group.addMembersRestricted = req.body.addMembersRestricted;
+        }
+        if (req.body.disappearingMessagesDuration !== undefined) {
+            group.disappearingMessagesDuration = req.body.disappearingMessagesDuration;
         }
 
         await group.save();
@@ -353,10 +365,12 @@ export const addMembers = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        const isAdmin = group.admin.toString() === userId.toString() ||
-            group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
+        const isOwner = group.admin.toString() === userId.toString();
+        const isAdmin = isOwner || group.members.some(m => (m.user?._id || m.user || m).toString() === userId.toString() && m.role === "admin");
 
-        if (!isAdmin) {
+        const canAddMembers = group.addMembersRestricted ? isAdmin : true;
+
+        if (!canAddMembers) {
             return res.status(403).json({ error: "Only admins can add members" });
         }
 
@@ -722,6 +736,11 @@ export const sendGroupMessage = async (req, res) => {
             }
         }
 
+        let expiresAt = undefined;
+        if (group.disappearingMessagesDuration > 0) {
+            expiresAt = new Date(Date.now() + group.disappearingMessagesDuration * 60 * 60 * 1000); // duration in hours
+        }
+
         const newMessage = new GroupMessage({
             groupId,
             senderId,
@@ -743,7 +762,8 @@ export const sendGroupMessage = async (req, res) => {
             replyTo: validReplyTo,
             replyToMessage: replyToMessageData,
             clientMessageId: clientMessageId || null,
-            poll: poll || undefined
+            poll: poll || undefined,
+            expiresAt
         });
 
         await newMessage.save();
@@ -1371,6 +1391,49 @@ export const voteGroupPoll = async (req, res) => {
         res.status(200).json(message);
     } catch (error) {
         console.error("Error in voteGroupPoll:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+export const editGroupMessage = async (req, res) => {
+    try {
+        const { groupId, messageId } = req.params;
+        const { text } = req.body;
+        const userId = req.user._id;
+
+        const message = await GroupMessage.findById(messageId);
+        if (!message) return res.status(404).json({ error: "Message not found" });
+
+        if (message.senderId.toString() !== userId.toString()) {
+            return res.status(403).json({ error: "Unauthorized" });
+        }
+
+        // 5 MINUTE EDIT LIMIT
+        const fiveMinutesInMs = 5 * 60 * 1000;
+        const timeElapsed = Date.now() - new Date(message.createdAt).getTime();
+
+        if (timeElapsed > fiveMinutesInMs) {
+            return res.status(403).json({ error: "Edit time limit exceeded (5 minutes)" });
+        }
+
+        message.text = text;
+        message.isEdited = true;
+        await message.save();
+
+        const group = await Group.findById(groupId);
+        if (group) {
+            group.members.forEach(member => {
+                const memberId = member.user || member;
+                const socketId = getReceiverSocketId(memberId.toString());
+                if (socketId) {
+                    io.to(socketId).emit("group:messageUpdated", message);
+                }
+            });
+        }
+
+        res.status(200).json(message);
+    } catch (error) {
+        console.error("Error in editGroupMessage: ", error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 };

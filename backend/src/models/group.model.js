@@ -62,6 +62,18 @@ const groupSchema = new mongoose.Schema(
         announcementOnly: {
             type: Boolean,
             default: false
+        },
+        editInfoRestricted: {
+            type: Boolean,
+            default: false
+        },
+        addMembersRestricted: {
+            type: Boolean,
+            default: false
+        },
+        disappearingMessagesDuration: {
+            type: Number,
+            default: 0
         }
     },
     { timestamps: true }

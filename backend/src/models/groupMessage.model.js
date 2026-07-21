@@ -113,6 +113,7 @@ const groupMessageSchema = new mongoose.Schema(
       ],
     },
     scheduledFor: { type: Date },
+    expiresAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -123,6 +124,7 @@ groupMessageSchema.index({ groupId: 1, "readReceipts.userId": 1 });
 groupMessageSchema.index({ groupId: 1, status: 1, createdAt: -1 });
 groupMessageSchema.index({ groupId: 1, clientMessageId: 1 }, { sparse: true });
 groupMessageSchema.index({ clientMessageId: 1 }, { sparse: true });
+groupMessageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const GroupMessage = mongoose.model("GroupMessage", groupMessageSchema);
 export default GroupMessage;

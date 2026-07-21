@@ -806,6 +806,40 @@ export const useGroupStore = create((set, get) => ({
         }
     },
 
+    editGroupMessage: async (groupId, messageId, newText) => {
+        const { groupMessages, groups } = get();
+        const prevMessages = groupMessages;
+        const prevGroups = groups;
+        
+        set({
+            groupMessages: groupMessages.map(msg => 
+                String(msg._id) === String(messageId) 
+                    ? { ...msg, text: newText, isEdited: true }
+                    : msg
+            ),
+            groups: groups.map(g => {
+                if (String(g._id) !== String(groupId)) return g;
+                const lm = g.lastMessage;
+                if (!lm || String(lm._id) !== String(messageId)) return g;
+                return {
+                    ...g,
+                    lastMessage: {
+                        ...lm,
+                        text: newText,
+                    }
+                };
+            })
+        });
+
+        try {
+            await axiosInstance.put(`/groups/${groupId}/messages/${messageId}/edit`, { text: newText });
+        } catch (error) {
+            set({ groupMessages: prevMessages, groups: prevGroups });
+            toast.error(error.response?.data?.error || "Failed to edit message");
+            throw error;
+        }
+    },
+
     // Subscribe to group socket events
     subscribeToGroupEvents: () => {
         const socket = useAuthStore.getState().socket;
@@ -1112,6 +1146,33 @@ export const useGroupStore = create((set, get) => ({
                     ),
                 });
             }
+        });
+
+        // Message edited in group
+        socket.on("group:messageUpdated", (message) => {
+            const { selectedGroup, groupMessages, groups } = get();
+            const open = selectedGroup && String(selectedGroup._id) === String(message.groupId);
+
+            set({
+                groupMessages: open
+                    ? groupMessages.map((msg) =>
+                        String(msg._id) === String(message._id) ? { ...msg, ...message } : msg
+                      )
+                    : groupMessages,
+                groups: groups.map((g) => {
+                    if (String(g._id) !== String(message.groupId)) return g;
+                    const lm = g.lastMessage;
+                    if (!lm) return g;
+                    if (String(lm._id) !== String(message._id) && String(lm.createdAt) !== String(message.createdAt)) return g;
+                    return {
+                        ...g,
+                        lastMessage: {
+                            ...lm,
+                            text: message.text,
+                        },
+                    };
+                }),
+            });
         });
 
         // Someone read group messages — update Message Info + ticks live

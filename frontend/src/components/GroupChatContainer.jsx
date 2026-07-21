@@ -75,6 +75,7 @@ const GroupChatContainer = () => {
         scrollTargetIndex: s.scrollTargetIndex,
         scrollTargetKey: s.scrollTargetKey,
         setScrollTarget: s.setScrollTarget,
+        editGroupMessage: s.editGroupMessage,
     })));
     const { users, setSelectedUser, setReplyingToMessage } = useChatStore(useShallow((s) => ({
         users: s.users,
@@ -150,6 +151,7 @@ const GroupChatContainer = () => {
     // Menu state
     const [anchorEl, setAnchorEl] = useState(null);
     const [openMenuId, setOpenMenuId] = useState(null);
+    const [editingMessageId, setEditingMessageId] = useState(null);
     const [deleteDialogMessageId, setDeleteDialogMessageId] = useState(null);
     const [forwardDialogMessageId, setForwardDialogMessageId] = useState(null);
     const [forwardSearchQuery, setForwardSearchQuery] = useState("");
@@ -329,8 +331,12 @@ const GroupChatContainer = () => {
 
     const handlePinMessage = async (messageId) => {
         setOpenMenuId(null);
-        if (selectedGroup.pinnedMessage?._id === messageId) {
-            await unpinMessage(selectedGroup._id);
+        const isCurrentlyPinned = selectedGroup?.pinnedMessages?.some(
+            m => (m._id || m) === messageId
+        ) || selectedGroup?.pinnedMessage?._id === messageId;
+
+        if (isCurrentlyPinned) {
+            await unpinMessage(selectedGroup._id, messageId);
         } else {
             await pinMessage(selectedGroup._id, messageId);
         }
@@ -370,7 +376,7 @@ const GroupChatContainer = () => {
         ? buildGroupChatActions({
             message: menuMessage,
             isAdmin,
-            isPinned: selectedGroup?.pinnedMessage?._id === menuMessage._id,
+            isPinned: selectedGroup?.pinnedMessages?.some(m => (m._id || m) === menuMessage._id) || selectedGroup?.pinnedMessage?._id === menuMessage._id,
             isStarred: isStarred(menuMessage._id),
             onReply: () => handleSwipeReply(menuMessage),
             onStar: () => toggleStar(menuMessage._id, "group", selectedGroup._id, isStarred(menuMessage._id)),
@@ -382,6 +388,7 @@ const GroupChatContainer = () => {
             onPin: () => handlePinMessage(menuMessage._id),
             onCopy: () => handleCopyText(menuMessage.text),
             onForward: () => setForwardDialogMessageId(menuMessage._id),
+            onEdit: () => setEditingMessageId(menuMessage._id),
             onDelete: () => setDeleteDialogMessageId(menuMessage._id),
         })
         : [];
@@ -630,11 +637,32 @@ const GroupChatContainer = () => {
                                         </div>
                                     )}
                                     {message.text && !message.audio && (
-                                        <p className="whitespace-pre-wrap break-words">
-                                            {searchQuery
-                                                ? highlightText(message.text, searchQuery, searchActiveId === message._id)
-                                                : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
-                                        </p>
+                                        <div className="relative">
+                                            {message.isForwarded && (
+                                                <div className="forwarded-badge mb-1 text-[11px] opacity-70 flex items-center gap-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
+                                            )}
+                                            <div className="relative px-0.5 pb-0.5">
+                                                {editingMessageId === message._id ? (
+                                                    <MessageEditField
+                                                        initialText={message.text}
+                                                        onSave={(newText) => {
+                                                            editGroupMessage(selectedGroup._id, message._id, newText);
+                                                            setEditingMessageId(null);
+                                                        }}
+                                                        onCancel={() => setEditingMessageId(null)}
+                                                        isMyMessage={isMyMessage}
+                                                    />
+                                                ) : (
+                                                    <>
+                                                        <p className="whitespace-pre-wrap break-words">
+                                                            {searchQuery
+                                                                ? highlightText(message.text, searchQuery, searchActiveId === message._id)
+                                                                : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
                                     )}
                                     <div
                                         className={`flex items-center justify-end gap-1 mt-1 ${
