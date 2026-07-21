@@ -474,11 +474,11 @@ const ChatContainer = () => {
                 style={{
                   borderRadius: authUser?.bubbleStyle
                     ? (message.senderId === authUser._id
-                      ? `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'}`
-                      : `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px')}`)
+                      ? `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'}`
+                      : `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px')}`)
                     : (message.senderId === authUser._id
-                      ? (isLastInGroup ? '18px 18px 0px 18px' : '18px 18px 18px 18px')
-                      : (isLastInGroup ? '18px 18px 18px 0px' : '18px 18px 18px 18px'))
+                      ? (isLastInGroup ? '8px 8px 0px 8px' : '8px 8px 8px 8px')
+                      : (isLastInGroup ? '8px 8px 8px 0px' : '8px 8px 8px 8px'))
                 }}>
                 {isMessageDeleted(message) ? (
                   <>
