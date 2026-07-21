@@ -260,6 +260,23 @@ export const useAuthStore = create((set, get) => ({
             // Clear all data & reset all stores
             await get().clearAllUserData();
 
+            // Unregister Service Workers and Push Subscriptions
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const registration of registrations) {
+                        const subscription = await registration.pushManager?.getSubscription();
+                        if (subscription) {
+                            await subscription.unsubscribe();
+                        }
+                        await registration.unregister();
+                    }
+                    console.log("Service worker and push subscriptions cleared on logout");
+                } catch (e) {
+                    console.error("Error clearing service worker on logout:", e);
+                }
+            }
+
             toast.success("Logged out successfully");
         }
     },
@@ -277,6 +294,23 @@ export const useAuthStore = create((set, get) => ({
 
             // Clear all data & reset all stores
             await get().clearAllUserData();
+
+            // Unregister Service Workers and Push Subscriptions
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const registration of registrations) {
+                        const subscription = await registration.pushManager?.getSubscription();
+                        if (subscription) {
+                            await subscription.unsubscribe();
+                        }
+                        await registration.unregister();
+                    }
+                    console.log("Service worker and push subscriptions cleared on global logout");
+                } catch (e) {
+                    console.error("Error clearing service worker on global logout:", e);
+                }
+            }
 
             toast.success("Logged out from all devices");
         }

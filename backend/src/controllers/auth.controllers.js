@@ -154,7 +154,8 @@ export const logoutGlobal = async (req, res) => {
         // Increment tokenVersion to invalidate all current tokens
         await User.findByIdAndUpdate(userId, {
             $inc: { tokenVersion: 1 },
-            lastLogout: logoutTime
+            lastLogout: logoutTime,
+            $set: { pushSubscriptions: [] }
         });
 
         io.emit("user-logged-out", { userId, lastLogout: logoutTime });
