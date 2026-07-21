@@ -23,6 +23,7 @@ import VirtualMessageList from "./chat/VirtualMessageList";
 import VoiceMessagePlayer from "./chat/VoiceMessagePlayer";
 import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
 import DeleteMessageSheet from "./chat/DeleteMessageSheet";
+import MessageEditField from "./MessageEditField";
 import DeletedMessageBubble from "./chat/DeletedMessageBubble";
 import GroupMessageInfoDialog from "./chat/GroupMessageInfoDialog";
 import { isMessageDeleted } from "../lib/messageDelete";
@@ -54,6 +55,7 @@ const GroupChatContainer = () => {
         scrollTargetIndex,
         scrollTargetKey,
         setScrollTarget,
+        editGroupMessage,
     } = useGroupStore(useShallow((s) => ({
         selectedGroup: s.selectedGroup,
         groupMessages: s.groupMessages,
@@ -654,10 +656,11 @@ const GroupChatContainer = () => {
                                                     />
                                                 ) : (
                                                     <>
-                                                        <p className="whitespace-pre-wrap break-words">
+                                                        <p className="text-[15px] md:text-base whitespace-pre-wrap break-words leading-[1.3]">
                                                             {searchQuery
                                                                 ? highlightText(message.text, searchQuery, searchActiveId === message._id)
                                                                 : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
+                                                            <span className={`inline-block h-1 ${message.isEdited ? 'w-[125px] md:w-[130px]' : 'w-[70px] md:w-[75px]'}`}></span>
                                                         </p>
                                                     </>
                                                 )}
@@ -669,6 +672,11 @@ const GroupChatContainer = () => {
                                             isMyMessage ? "text-primary-content/70" : "text-base-content/50"
                                         }`}
                                     >
+                                        {message.isEdited && (
+                                            <span className="text-[10px] leading-none opacity-70 italic mr-0.5">
+                                                Edited
+                                            </span>
+                                        )}
                                         <time className="text-[10px] leading-none">
                                             {formatMessageTime(message.createdAt)}
                                         </time>
@@ -796,7 +804,7 @@ const GroupChatContainer = () => {
                     <button
                         type="button"
                         onClick={jumpToLatest}
-                        className="absolute bottom-20 right-4 z-30 flex items-center justify-center w-10 h-10 rounded-full bg-base-100 text-base-content border border-base-content/10 shadow-lg hover:bg-base-200 active:scale-95 transition-all"
+                        className="absolute bottom-16 md:bottom-20 right-4 z-30 flex items-center justify-center w-10 h-10 rounded-full bg-base-100/70 md:bg-base-100 text-base-content border border-base-content/10 shadow-lg hover:bg-base-200 active:scale-95 transition-all"
                         aria-label="Scroll to bottom"
                     >
                         <ChevronDown className="w-5 h-5" />

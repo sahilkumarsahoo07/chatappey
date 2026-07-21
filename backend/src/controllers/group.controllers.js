@@ -152,7 +152,8 @@ export const getMyGroups = async (req, res) => {
                     groupId: group._id,
                     senderId: { $ne: userId },
                     readBy: { $ne: userId },
-                    createdAt: { $gte: joinedAt }
+                    createdAt: { $gte: joinedAt },
+                    messageType: { $ne: "system" }
                 });
 
                 return {
