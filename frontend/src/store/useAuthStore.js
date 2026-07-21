@@ -249,6 +249,9 @@ export const useAuthStore = create((set, get) => ({
     logout: async () => {
         try {
             await axiosInstance.post("/auth/logout");
+        } catch (error) {
+            console.error("Server logout failed, forcing local logout:", error);
+        } finally {
             set({ authUser: null });
 
             // Disconnect socket first to stop listening
@@ -258,14 +261,15 @@ export const useAuthStore = create((set, get) => ({
             await get().clearAllUserData();
 
             toast.success("Logged out successfully");
-        } catch (error) {
-            toast.error(error.response?.data?.message || "Failed to logout");
         }
     },
 
     logoutGlobal: async () => {
         try {
             await axiosInstance.post("/auth/logout-global");
+        } catch (error) {
+            console.error("Server global logout failed, forcing local logout:", error);
+        } finally {
             set({ authUser: null });
 
             // Disconnect socket first
@@ -275,8 +279,6 @@ export const useAuthStore = create((set, get) => ({
             await get().clearAllUserData();
 
             toast.success("Logged out from all devices");
-        } catch (error) {
-            toast.error(error.response?.data?.message || "Failed to logout globally");
         }
     },
 
