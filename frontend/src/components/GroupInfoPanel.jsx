@@ -21,6 +21,7 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
     const [memberSearchQuery, setMemberSearchQuery] = useState("");
     const [anchorEl, setAnchorEl] = useState(null);
     const [menuMember, setMenuMember] = useState(null);
+    const [previewImage, setPreviewImage] = useState(null);
 
     const isOwner = selectedGroup?.admin?._id === authUser?._id;
     const members = selectedGroup?.members || [];
@@ -39,12 +40,23 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         }
     }, [selectedGroup]);
 
-    const handleImageChange = (e) => {
+    const handleImageChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
             const reader = new FileReader();
-            reader.onloadend = () => {
-                setEditImage(reader.result);
+            reader.onloadend = async () => {
+                if (isEditing) {
+                    setEditImage(reader.result);
+                } else {
+                    try {
+                        const toastId = toast.loading("Updating group photo...");
+                        await updateGroup(selectedGroup._id, { image: reader.result });
+                        toast.success("Group photo updated!", { id: toastId });
+                    } catch (error) {
+                        toast.error("Failed to update photo");
+                        console.error("Failed to update group image:", error);
+                    }
+                }
             };
             reader.readAsDataURL(file);
         }
@@ -59,7 +71,9 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                 image: editImage !== selectedGroup.image ? editImage : undefined
             });
             setIsEditing(false);
+            toast.success("Group name updated");
         } catch (error) {
+            toast.error("Failed to update group");
             console.error("Failed to update group:", error);
         }
     };
@@ -187,14 +201,15 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                                 <img
                                     src={isEditing ? editImage : selectedGroup.image}
                                     alt={selectedGroup.name}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => setPreviewImage(isEditing ? editImage : selectedGroup.image)}
                                 />
                             ) : (
                                 <Users className="w-10 h-10 text-primary" />
                             )}
                         </div>
-                        {isEditing && isAdmin && (
-                            <label className="absolute bottom-0 right-0 btn btn-circle btn-sm btn-primary cursor-pointer">
+                        {isAdmin && (
+                            <label className="absolute bottom-0 right-0 btn btn-circle btn-sm btn-primary cursor-pointer shadow-md hover:scale-105 transition-transform">
                                 <Camera className="w-4 h-4" />
                                 <input
                                     type="file"
@@ -467,6 +482,27 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                     )}
                 </div>
             </div>
+
+            {/* Fullscreen Image Preview */}
+            {previewImage && (
+                <div
+                    className="fixed inset-0 bg-black/95 flex items-center justify-center z-[100] animate-in fade-in duration-200"
+                    onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
+                >
+                    <button
+                        onClick={() => setPreviewImage(null)}
+                        className="absolute top-4 right-4 btn btn-ghost btn-circle text-white hover:bg-white/20 z-10"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                    <img
+                        src={previewImage}
+                        alt="Group profile preview"
+                        className="max-w-[95vw] max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
+            )}
         </div>,
         document.body
     );
