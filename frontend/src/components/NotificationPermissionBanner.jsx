@@ -249,16 +249,14 @@ export default function NotificationPermissionBanner() {
               : "Turn on notifications"}
         </button>
 
-        {!denied && (
-          <button
-            type="button"
-            onClick={handleSnooze}
-            disabled={enabling}
-            className="btn btn-ghost btn-sm mt-3 text-base-content/60 w-full"
-          >
-            Not now
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleSnooze}
+          disabled={enabling}
+          className="btn btn-ghost btn-sm mt-3 text-base-content/60 w-full"
+        >
+          {denied ? "Continue without notifications" : "Not now"}
+        </button>
 
         {denied && (
           <button
