@@ -481,6 +481,25 @@
     background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png") !important;
     background-repeat: repeat;
     background-size: 350px;
+    background-attachment: fixed !important;
+}
+
+[data-theme="whatsapp"] .chat-end .chat-bubble {
+    background-color: #DCF8C6 !important;
+    color: #111b21 !important;
+}
+
+[data-theme="whatsapp"] .chat-start .chat-bubble {
+    background-color: #FFFFFF !important;
+    color: #111b21 !important;
+}
+
+[data-theme="whatsapp"] .chat-end .chat-bubble-wa::before {
+    background-color: #DCF8C6 !important;
+}
+
+[data-theme="whatsapp"] .chat-start .chat-bubble-wa::before {
+    background-color: #FFFFFF !important;
 }
 
 [data-theme="whatsapp"] .chat-bubble {

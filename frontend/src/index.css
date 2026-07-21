@@ -130,15 +130,15 @@ body,
 @plugin "daisyui/theme" {
     name: "whatsapp";
     color-scheme: light;
-    --color-primary: #DCF8C6;
-    --color-secondary: #005c4b;
+    --color-primary: #075E54;
+    --color-secondary: #128C7E;
     --color-accent: #25D366;
     --color-neutral: #111b21;
-    --color-base-100: #E5DDD5;
+    --color-base-100: #ECE5DD;
     --color-base-200: #FFFFFF;
-    --color-base-300: #d1d7db;
+    --color-base-300: #F0F2F5;
     --color-base-content: #111b21;
-    --color-primary-content: #111b21;
+    --color-primary-content: #FFFFFF;
 }
 
 @plugin "daisyui/theme" {
