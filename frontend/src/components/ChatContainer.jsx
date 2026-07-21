@@ -41,6 +41,45 @@ const getYouTubeVideoId = (text) => {
   return match ? match[1] : null;
 };
 
+const YouTubePreview = ({ ytId }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  if (isPlaying) {
+    return (
+      <div className="mt-2 rounded-lg overflow-hidden relative pt-[56.25%] w-full min-w-[240px] md:min-w-[280px] bg-black">
+        <iframe
+          className="absolute top-0 left-0 w-full h-full border-0"
+          src={`https://www.youtube.com/embed/${ytId}?autoplay=1`}
+          title="YouTube video player"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        ></iframe>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="mt-2 rounded-lg overflow-hidden relative pt-[56.25%] w-full min-w-[240px] md:min-w-[280px] bg-black/10 dark:bg-black/40 cursor-pointer group"
+      onClick={() => setIsPlaying(true)}
+    >
+      <img 
+        src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} 
+        alt="YouTube thumbnail" 
+        className="absolute top-0 left-0 w-full h-full object-cover group-hover:opacity-90 transition-opacity"
+        loading="lazy"
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-12 h-12 bg-black/70 rounded-full flex items-center justify-center group-hover:bg-red-600 transition-colors shadow-lg backdrop-blur-sm">
+          <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ChatContainer = () => {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deletePopupMessageId, setDeletePopupMessageId] = useState(null);
@@ -591,17 +630,7 @@ const ChatContainer = () => {
                         {(() => {
                           const ytId = getYouTubeVideoId(message.text);
                           if (ytId && !isMessageDeleted(message)) {
-                            return (
-                              <div className="mt-2 rounded-lg overflow-hidden relative pt-[56.25%] w-full min-w-[240px] md:min-w-[280px] bg-black/10 dark:bg-black/40">
-                                <iframe
-                                  className="absolute top-0 left-0 w-full h-full border-0"
-                                  src={`https://www.youtube.com/embed/${ytId}`}
-                                  title="YouTube video player"
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                  allowFullScreen
-                                ></iframe>
-                              </div>
-                            );
+                            return <YouTubePreview ytId={ytId} />;
                           }
                           return null;
                         })()}
