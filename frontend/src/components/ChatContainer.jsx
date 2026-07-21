@@ -436,7 +436,8 @@ const ChatContainer = () => {
               ) : (
               <>
               {message.replyToMessage && (
-                <div className={`mb-2 p-2 rounded-lg bg-black/10 dark:bg-black/20 border-l-4 border-secondary cursor-pointer hover:bg-black/20 dark:hover:bg-black/30 transition-colors`}
+                <div 
+                  className="mb-1.5 flex overflow-hidden rounded-lg bg-base-content/5 hover:bg-base-content/10 transition-colors cursor-pointer relative border-l-4 border-primary"
                   onClick={(e) => {
                     e.stopPropagation();
                     const element = document.getElementById(`msg-${message.replyTo}`);
@@ -449,11 +450,26 @@ const ChatContainer = () => {
                     }
                   }}
                 >
-                  <p className="text-xs font-bold opacity-80 mb-0.5 text-secondary-content">{message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}</p>
-                  <div className="flex items-center gap-2">
-                    {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && <img src={message.replyToMessage.image} alt="Thumbnail" className="w-8 h-8 rounded object-cover" loading="lazy" onLoad={handleImageLoad} />}
-                    <p className="text-xs opacity-70 truncate max-w-[150px]">{message.replyToMessage.text || (message.replyToMessage.image ? "Photo" : "")}</p>
+                  <div className="flex-1 min-w-0 py-1.5 px-2.5 flex flex-col justify-center">
+                    <p className="text-xs font-bold text-primary truncate leading-tight mb-0.5">
+                      {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
+                    </p>
+                    <p className="text-xs opacity-75 truncate leading-tight">
+                      {message.replyToMessage.text || (message.replyToMessage.image ? "📷 Photo" : message.replyToMessage.video ? "🎥 Video" : message.replyToMessage.audio ? "🎵 Audio" : message.replyToMessage.file ? "📄 Document" : "")}
+                    </p>
                   </div>
+                  
+                  {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && (
+                    <div className="w-12 h-auto shrink-0 relative bg-base-300">
+                      <img 
+                        src={message.replyToMessage.image} 
+                        alt="Thumbnail" 
+                        className="absolute inset-0 w-full h-full object-cover" 
+                        loading="lazy" 
+                        onLoad={handleImageLoad} 
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -557,19 +573,21 @@ const ChatContainer = () => {
               {message.status !== 'scheduled' &&
                 message.senderId !== authUser._id &&
                 !message.reactions?.some(r => r.userId === authUser._id) && (
-                  <div className={`absolute bottom-full mb-1 ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
-                      hidden md:flex items-center gap-1 p-1 bg-base-100/90 backdrop-blur-sm rounded-full shadow-lg border border-base-200 
+                  <div className={`absolute bottom-full ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
+                      hidden md:flex pb-1.5
                       opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 pointer-events-none group-hover:pointer-events-auto`}
                   >
-                    {['👍', '❤️', '😂', '😮', '😢', '😡'].map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={(e) => { e.stopPropagation(); sendReaction(message._id, emoji); }}
-                        className="hover:scale-125 transition-transform px-1 text-sm"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                    <div className="flex items-center gap-1 p-1 bg-base-100/90 backdrop-blur-sm rounded-full shadow-lg border border-base-200">
+                      {['👍', '❤️', '😂', '😮', '😢', '😡'].map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={(e) => { e.stopPropagation(); sendReaction(message._id, emoji); }}
+                          className="hover:scale-125 transition-transform px-1 text-sm"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
