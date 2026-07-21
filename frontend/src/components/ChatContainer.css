@@ -446,7 +446,8 @@
 .chat-bubble-wa::before {
     content: '';
     position: absolute;
-    top: 0;
+    bottom: 0;
+    transform: scaleY(-1);
     background-color: inherit;
 }
 
