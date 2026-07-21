@@ -452,15 +452,15 @@
 }
 
 .chat-end .chat-bubble-wa::before {
-    right: -20px;
+    right: -7px;
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M8 0L0 0L0 13C0 13 1 4 8 0Z'/%3E%3C/svg%3E");
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M8 0L0 0L0 13C0 13 1 4 8 0Z'/%3E%3C/svg%3E");
     mask-size: contain;
     -webkit-mask-size: contain;
     mask-repeat: no-repeat;
     -webkit-mask-repeat: no-repeat;
-    width: 26px;
-    height: 26px;
+    width: 8px;
+    height: 13px;
 }
 
 .chat-start .chat-bubble-wa::before {
@@ -476,12 +476,16 @@
 }
 
 /* WhatsApp Theme Specific Overrides (Fully Same to Same) */
-[data-theme="whatsapp"] .messages-container {
+[data-theme="whatsapp"] .chat-area-wrapper {
     background-color: #E5DDD5 !important;
     background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png") !important;
     background-repeat: repeat;
     background-size: 350px;
-    background-attachment: fixed !important;
+}
+
+[data-theme="whatsapp"] .messages-container {
+    background-color: transparent !important;
+    background-image: none !important;
 }
 
 [data-theme="whatsapp"] .chat-end .chat-bubble {

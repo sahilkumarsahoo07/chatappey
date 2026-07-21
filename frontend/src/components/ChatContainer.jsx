@@ -424,6 +424,14 @@ const ChatContainer = () => {
     const isFirstInGroup = index === 0 || showDateSeparator || sortedMessages[index - 1].senderId !== message.senderId;
     const isLastInGroup = index === sortedMessages.length - 1 || sortedMessages[index + 1].senderId !== message.senderId || getMessageDateKey(sortedMessages[index + 1].createdAt) !== currentDateKey;
 
+    // Hardcode WhatsApp authentic colors when active, else fallback to primary theme colors
+    const isWhatsApp = theme === 'whatsapp';
+    const isMyMessage = message.senderId === authUser._id;
+    let bubbleBgColor = isMyMessage ? "bg-primary text-primary-content" : "bg-base-200 text-base-content";
+    if (isWhatsApp) {
+      bubbleBgColor = isMyMessage ? "bg-[#DCF8C6] text-[#111b21]" : "bg-[#FFFFFF] text-[#111b21]";
+    }
+
     return (
       <div key={message.optimisticId || message._id} className={`${isLastInGroup ? 'mb-4' : 'mb-[2px]'} max-w-full min-w-0 box-border`}>
         {showDateSeparator && (
@@ -436,14 +444,14 @@ const ChatContainer = () => {
           <div className="text-center text-xs opacity-50 my-1">🕒 Scheduled for {new Date(message.scheduledFor || 0).toLocaleString()}</div>
         )}
 
-        <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
+        <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${isMyMessage ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
           <div className={`chat-image avatar mx-1 md:mx-2 self-end mb-1 ${!isLastInGroup ? 'invisible' : ''}`}>
             <div className="size-7 md:size-8 rounded-full shadow-sm">
               <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
             </div>
           </div>
           <SwipeableMessageBubble
-            isMine={message.senderId === authUser._id}
+            isMine={isMyMessage}
             disabled={isMessageDeleted(message) || message.status === "scheduled"}
             onReply={() => setReplyingToMessage(message)}
             onLongPress={(el) => {
@@ -459,11 +467,9 @@ const ChatContainer = () => {
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
-              <div className={`flex flex-col relative w-fit max-w-full px-3 pt-1.5 pb-2.5 min-w-[85px] shadow-sm
+              <div className={`flex flex-col relative w-fit max-w-full px-3 pt-1.5 pb-2.5 min-w-[85px] shadow-sm ${bubbleBgColor}
               ${isLastInGroup ? 'chat-bubble-wa' : ''}
-              ${message.senderId === authUser._id
-                  ? 'bg-primary text-primary-content'
-                  : 'bg-base-200 text-base-content border border-base-content/5'} 
+              ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''}
               ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
                 style={{
                   borderRadius: authUser?.bubbleStyle
@@ -621,7 +627,7 @@ const ChatContainer = () => {
                               <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
                                 {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
                                 {/* Inline spacer to let time wrap nicely if short text */}
-                                <span className={`inline-block h-1 ${message.isEdited ? 'w-[105px] md:w-[110px]' : 'w-[70px] md:w-[75px]'}`}></span>
+                                <span className={`inline-block h-1 ${message.isEdited ? 'w-[125px] md:w-[130px]' : 'w-[70px] md:w-[75px]'}`}></span>
                               </p>
 
                               {/* YouTube Preview */}
