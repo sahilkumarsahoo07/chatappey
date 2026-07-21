@@ -1435,11 +1435,20 @@ export const useChatStore = create((set, get) => ({
   },
 
   editMessage: async (messageId, text) => {
+    const prevMessages = get().messages;
+    
+    // Optimistic Update
+    set({
+      messages: prevMessages.map(m => 
+        m._id === messageId ? { ...m, text, isEdited: true } : m
+      )
+    });
+
     try {
       const res = await axiosInstance.put(`/messages/${messageId}/edit`, { text });
       set({ messages: get().messages.map(m => m._id === messageId ? res.data : m) });
-      toast.success("Message edited");
     } catch (error) {
+      set({ messages: prevMessages });
       toast.error("Failed to edit message");
     }
   },

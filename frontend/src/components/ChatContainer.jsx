@@ -661,7 +661,7 @@ const ChatContainer = () => {
                         </div>
                       )}
 
-                    {message.status !== 'scheduled' && (
+                    {message.status !== 'scheduled' && editingMessageId !== message._id && (
                       <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${message.senderId === authUser._id ? 'text-primary-content/70' : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
                         {message.isEdited && !isMessageDeleted(message) && <span className="italic mr-0.5">(edited)</span>}
                         <span>{formatMessageTime(message.createdAt)}</span>
