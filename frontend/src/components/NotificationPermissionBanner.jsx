@@ -22,6 +22,14 @@ export default function NotificationPermissionBanner() {
   const [permission, setPermission] = useState(() => getNotificationPermission());
   const [enabling, setEnabling] = useState(false);
   const [standalone, setStandalone] = useState(() => isStandalonePWA());
+  const [snoozed, setSnoozed] = useState(() => {
+    try {
+      const snoozedUntil = localStorage.getItem("notification_banner_snoozed_until");
+      return snoozedUntil && Date.now() < parseInt(snoozedUntil, 10);
+    } catch (e) {
+      return false;
+    }
+  });
 
   const iosNeedsInstall = isIOSDevice() && !standalone;
   const pushReady = canReceiveBackgroundPush();
@@ -35,9 +43,23 @@ export default function NotificationPermissionBanner() {
     refreshPermission();
     window.addEventListener(PERM_EVENT, refreshPermission);
     document.addEventListener("visibilitychange", refreshPermission);
+
+    // Periodically check if snooze has expired so the banner returns automatically
+    const interval = setInterval(() => {
+      try {
+        const snoozedUntil = localStorage.getItem("notification_banner_snoozed_until");
+        if (snoozedUntil && Date.now() >= parseInt(snoozedUntil, 10)) {
+          setSnoozed(false);
+          // Optional: clear it so we don't keep parsing old data
+          localStorage.removeItem("notification_banner_snoozed_until");
+        }
+      } catch (e) {}
+    }, 15000); // Check every 15s
+
     return () => {
       window.removeEventListener(PERM_EVENT, refreshPermission);
       document.removeEventListener("visibilitychange", refreshPermission);
+      clearInterval(interval);
     };
   }, [refreshPermission]);
 
@@ -78,8 +100,16 @@ export default function NotificationPermissionBanner() {
     }
   };
 
+  const handleSnooze = () => {
+    try {
+      localStorage.setItem("notification_banner_snoozed_until", Date.now() + 20 * 60 * 1000); // 20 mins
+    } catch (e) {}
+    setSnoozed(true);
+    toast("We'll remind you in 20 minutes", { icon: "⏰" });
+  };
+
   // Notifications on and push capable — no gate
-  if (permission === "granted" && (pushReady || !isIOSDevice())) {
+  if (snoozed || (permission === "granted" && (pushReady || !isIOSDevice()))) {
     return null;
   }
   if (permission === "unsupported") {
@@ -143,6 +173,14 @@ export default function NotificationPermissionBanner() {
             className="btn btn-primary btn-lg w-full rounded-2xl font-bold shadow-lg shadow-primary/25"
           >
             I installed it — continue
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleSnooze}
+            className="btn btn-ghost btn-sm mt-3 text-base-content/60 w-full"
+          >
+            Not now
           </button>
         </div>
       </div>
@@ -211,11 +249,22 @@ export default function NotificationPermissionBanner() {
               : "Turn on notifications"}
         </button>
 
+        {!denied && (
+          <button
+            type="button"
+            onClick={handleSnooze}
+            disabled={enabling}
+            className="btn btn-ghost btn-sm mt-3 text-base-content/60 w-full"
+          >
+            Not now
+          </button>
+        )}
+
         {denied && (
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="btn btn-ghost btn-sm mt-3 text-base-content/50"
+            className="btn btn-ghost btn-sm mt-3 text-base-content/50 w-full"
           >
             I allowed it — refresh page
           </button>
