@@ -52,7 +52,7 @@ body,
         matrix,
         grape,
         midnight,
-        hacker,
+        whatsapp,
         synth,
         solarized;
 }
@@ -128,13 +128,13 @@ body,
 }
 
 @plugin "daisyui/theme" {
-    name: "hacker";
+    name: "whatsapp";
     color-scheme: dark;
-    --color-primary: #32CD32;
-    --color-secondary: #228B22;
-    --color-accent: #00FF00;
-    --color-neutral: #111111;
-    --color-base-100: #050505;
+    --color-primary: #00a884;
+    --color-secondary: #005c4b;
+    --color-accent: #25D366;
+    --color-neutral: #222e35;
+    --color-base-100: #111b21;
 }
 
 @plugin "daisyui/theme" {

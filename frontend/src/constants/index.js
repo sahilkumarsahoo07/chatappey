@@ -38,7 +38,7 @@ export const THEMES = [
     "matrix",
     "grape",
     "midnight",
-    "hacker",
+    "whatsapp",
     "synth",
     "solarized",
 ];

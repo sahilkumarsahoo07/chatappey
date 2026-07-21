@@ -33,7 +33,7 @@ const SETTINGS_TABS = [
 
 const THEME_GROUPS = {
     "Classic": ["light", "dark", "cupcake", "bumblebee", "emerald", "corporate", "lofi", "winter", "nord"],
-    "Dark Mode": ["black", "luxury", "dracula", "night", "coffee", "dim", "sunset", "forest", "abyss", "obsidian", "neon", "crimson", "matrix", "grape", "midnight", "hacker", "synth", "solarized"],
+    "Dark Mode": ["black", "luxury", "dracula", "night", "coffee", "dim", "sunset", "forest", "abyss", "obsidian", "neon", "crimson", "matrix", "grape", "midnight", "whatsapp", "synth", "solarized"],
     "Colorful": ["synthwave", "retro", "cyberpunk", "valentine", "halloween", "garden", "aqua", "pastel", "fantasy", "wireframe", "cmyk", "autumn", "business", "acid", "lemonade"]
 };
 

@@ -392,11 +392,6 @@ const ChatContainer = () => {
           )}
 
           <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
-            <div className="chat-image avatar ml-2 md:ml-3">
-              <div className="size-8 md:size-10 rounded-full border">
-                <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
-              </div>
-            </div>
             <div className="chat-image avatar ml-2 md:ml-3 self-end mb-1">
               <div className="size-8 md:size-9 rounded-full border">
                 <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
@@ -426,7 +421,6 @@ const ChatContainer = () => {
                 : 'bg-base-200 text-base-content border border-base-content/5'} 
               ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
               style={{
-                backgroundColor: message.senderId === authUser._id ? 'var(--fallback-p,oklch(var(--p)/1))' : 'var(--fallback-b2,oklch(var(--b2)/1))',
                 borderRadius: authUser?.bubbleStyle 
                   ? (message.senderId === authUser._id 
                       ? `${isFirstInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'}`
