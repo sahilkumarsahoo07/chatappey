@@ -378,9 +378,10 @@ const ChatContainer = () => {
       const previousDateKey = index > 0 ? getMessageDateKey(sortedMessages[index - 1].createdAt) : null;
       const showDateSeparator = currentDateKey !== previousDateKey;
       const isFirstInGroup = index === 0 || showDateSeparator || sortedMessages[index - 1].senderId !== message.senderId;
+      const isLastInGroup = index === sortedMessages.length - 1 || sortedMessages[index + 1].senderId !== message.senderId || getMessageDateKey(sortedMessages[index + 1].createdAt) !== currentDateKey;
 
       return (
-        <div key={message.optimisticId || message._id} className="mb-4 max-w-full min-w-0 box-border">
+        <div key={message.optimisticId || message._id} className={`${isLastInGroup ? 'mb-4' : 'mb-[2px]'} max-w-full min-w-0 box-border`}>
           {showDateSeparator && (
             <div className="flex justify-center my-4">
               <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">{formatDateSeparator(message.createdAt)}</div>
@@ -392,8 +393,8 @@ const ChatContainer = () => {
           )}
 
           <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${message.senderId === authUser._id ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
-            <div className="chat-image avatar ml-2 md:ml-3 self-end mb-1">
-              <div className="size-8 md:size-9 rounded-full border">
+            <div className={`chat-image avatar mx-1 md:mx-2 self-end mb-1 ${!isLastInGroup ? 'invisible' : ''}`}>
+              <div className="size-7 md:size-8 rounded-full shadow-sm">
                 <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
               </div>
             </div>

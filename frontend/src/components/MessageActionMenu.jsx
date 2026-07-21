@@ -139,7 +139,7 @@ const MessageActionMenu = ({
   ) : (
     <div className="fixed inset-0 z-[120]" onClick={onClose}>
       <div
-        className="absolute min-w-[200px] max-w-[240px] rounded-2xl bg-base-100/95 backdrop-blur-xl border border-base-200/80 shadow-[0_12px_40px_rgba(0,0,0,0.16)] overflow-hidden animate-[msgMenuIn_0.16s_ease-out]"
+        className="absolute min-w-[200px] max-w-[240px] rounded-2xl bg-base-100/95 backdrop-blur-xl border border-base-content/15 shadow-xl overflow-hidden animate-[msgMenuIn_0.16s_ease-out]"
         style={{ top: position.top, left: position.left }}
         onClick={(e) => e.stopPropagation()}
       >

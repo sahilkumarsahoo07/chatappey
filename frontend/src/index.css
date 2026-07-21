@@ -135,6 +135,10 @@ body,
     --color-accent: #25D366;
     --color-neutral: #222e35;
     --color-base-100: #111b21;
+    --color-base-200: #202c33;
+    --color-base-300: #2a3942;
+    --color-base-content: #e9edef;
+    --color-primary-content: #e9edef;
 }
 
 @plugin "daisyui/theme" {
