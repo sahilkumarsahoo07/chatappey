@@ -56,7 +56,8 @@ const MessageActionMenu = ({
     }
     const rect = anchorEl.getBoundingClientRect();
     const menuWidth = 220;
-    const menuHeight = 56 + actions.length * 48 + (showReactions ? 56 : 0);
+    // Accurate desktop height estimation to prevent overlapping
+    const menuHeight = 12 + actions.length * 40 + (showReactions ? 50 : 0);
     let top = rect.bottom + 8;
     let left = isMine ? rect.right - menuWidth : rect.left;
 
@@ -65,6 +66,7 @@ const MessageActionMenu = ({
       left = window.innerWidth - menuWidth - 12;
     }
     if (top + menuHeight > window.innerHeight - 12) {
+      // Position above the anchor if it doesn't fit below
       top = Math.max(12, rect.top - menuHeight - 8);
     }
     return { top, left };

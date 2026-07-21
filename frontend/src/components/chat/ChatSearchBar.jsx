@@ -26,6 +26,31 @@ export function highlightText(text, query, isActive = false) {
   );
 }
 
+export function parseMessageText(text, query, isActive = false) {
+  if (!text) return text;
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-info hover:underline break-all underline-offset-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {query ? highlightText(part, query, isActive) : part}
+        </a>
+      );
+    }
+    return query ? highlightText(part, query, isActive) : part;
+  });
+}
+
 const ChatSearchBar = memo(function ChatSearchBar({
   messages,
   onActiveMatchChange,

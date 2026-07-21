@@ -22,7 +22,8 @@ import MessageActionMenu, {
   buildPrivateChatActions,
 } from "./MessageActionMenu";
 import SwipeableMessageBubble from "./SwipeableMessageBubble";
-import ChatSearchBar, { highlightText } from "./chat/ChatSearchBar";
+import ChatSearchBar, { highlightText, parseMessageText } from "./chat/ChatSearchBar";
+import { BUBBLE_STYLES } from "../constants/appearance";
 import VideoMessage from "./chat/VideoMessage";
 import VirtualMessageList from "./chat/VirtualMessageList";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
@@ -376,6 +377,7 @@ const ChatContainer = () => {
       const currentDateKey = getMessageDateKey(message.createdAt);
       const previousDateKey = index > 0 ? getMessageDateKey(sortedMessages[index - 1].createdAt) : null;
       const showDateSeparator = currentDateKey !== previousDateKey;
+      const isFirstInGroup = index === 0 || showDateSeparator || sortedMessages[index - 1].senderId !== message.senderId;
 
       return (
         <div key={message.optimisticId || message._id} className="mb-4 max-w-full min-w-0 box-border">
@@ -418,10 +420,21 @@ const ChatContainer = () => {
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
             <div className={`flex flex-col relative w-fit max-w-full px-2 pt-1.5 pb-1 min-w-[85px] shadow-sm
+              ${isFirstInGroup ? 'chat-bubble-wa' : ''}
               ${message.senderId === authUser._id 
-                ? 'bg-primary text-primary-content rounded-2xl rounded-tr-[4px]' 
-                : 'bg-base-200 text-base-content rounded-2xl rounded-tl-[4px] border border-base-content/5'} 
-              ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}>
+                ? 'bg-primary text-primary-content' 
+                : 'bg-base-200 text-base-content border border-base-content/5'} 
+              ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
+              style={{
+                backgroundColor: message.senderId === authUser._id ? 'var(--fallback-p,oklch(var(--p)/1))' : 'var(--fallback-b2,oklch(var(--b2)/1))',
+                borderRadius: authUser?.bubbleStyle 
+                  ? (message.senderId === authUser._id 
+                      ? `${isFirstInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'}`
+                      : `${isFirstInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '18px'}`)
+                  : (message.senderId === authUser._id 
+                      ? (isFirstInGroup ? '18px 0px 18px 18px' : '18px 18px 18px 18px') 
+                      : (isFirstInGroup ? '0px 18px 18px 18px' : '18px 18px 18px 18px'))
+              }}>
               {isMessageDeleted(message) ? (
                 <>
                   <DeletedMessageBubble
@@ -567,9 +580,7 @@ const ChatContainer = () => {
                       />
                     ) : (
                       <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
-                        {searchQuery && message.text
-                          ? highlightText(message.text, searchQuery, searchActiveId === message._id)
-                          : message.text}
+                        {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
                         {/* Inline spacer to let time wrap nicely if short text */}
                         <span className="inline-block w-[70px] h-1 md:w-[75px]"></span>
                       </p>
