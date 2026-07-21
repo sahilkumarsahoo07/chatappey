@@ -441,6 +441,7 @@
     animation: highlight 2s ease-out;
     border-radius: 0.75rem;
 }
+
 /* WhatsApp-style tails */
 .chat-bubble-wa::before {
     content: '';
@@ -448,17 +449,19 @@
     top: 0;
     background-color: inherit;
 }
+
 .chat-end .chat-bubble-wa::before {
-    right: -7px;
+    right: -20px;
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M8 0L0 0L0 13C0 13 1 4 8 0Z'/%3E%3C/svg%3E");
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M8 0L0 0L0 13C0 13 1 4 8 0Z'/%3E%3C/svg%3E");
     mask-size: contain;
     -webkit-mask-size: contain;
     mask-repeat: no-repeat;
     -webkit-mask-repeat: no-repeat;
-    width: 8px;
-    height: 13px;
+    width: 26px;
+    height: 26px;
 }
+
 .chat-start .chat-bubble-wa::before {
     left: -7px;
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M0 0L8 0L8 13C8 13 7 4 0 0Z'/%3E%3C/svg%3E");
@@ -470,4 +473,3 @@
     width: 8px;
     height: 13px;
 }
-
