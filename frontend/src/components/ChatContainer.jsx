@@ -810,8 +810,8 @@ const ChatContainer = () => {
             <>
               {isTyping && (
                 <div className="chat chat-start mb-2">
-                  <div className="chat-image avatar ml-2 md:ml-3">
-                    <div className="size-8 md:size-10 rounded-full border">
+                  <div className="chat-image avatar ml-2 md:ml-3 self-end mb-1">
+                    <div className="size-7 md:size-8 rounded-full shadow-sm">
                       <img src={selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
                     </div>
                   </div>
