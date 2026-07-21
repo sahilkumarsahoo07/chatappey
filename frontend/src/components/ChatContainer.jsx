@@ -232,6 +232,21 @@ const ChatContainer = () => {
     isLoadingOlder,
   ]);
 
+  // Auto-scroll to bottom when typing indicator appears if we are already at the bottom
+  useEffect(() => {
+    if (isTyping && isAtBottomRef.current) {
+      setScrollEpoch((n) => n + 1);
+      
+      // Additional fallback to ensure it scrolls past the typing indicator
+      const timeoutId = setTimeout(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+      }, 50);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isTyping]);
+
   // Optimized: Check blocked status with caching
   useEffect(() => {
     const checkStatus = async () => {
@@ -448,7 +463,11 @@ const ChatContainer = () => {
                   alt="Attachment"
                   loading="lazy"
                   decoding="async"
-                  className={`max-w-[200px] md:max-w-[280px] rounded-xl mb-2 ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
+                  className={`rounded-xl mb-2 transition-opacity ${
+                    message.image.toLowerCase().includes('.gif') 
+                      ? 'w-[200px] md:w-[260px] h-auto object-cover bg-black/5 dark:bg-white/5' 
+                      : 'max-w-[200px] md:max-w-[280px] cursor-pointer hover:opacity-90'
+                  }`}
                   onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
                   onLoad={handleImageLoad}
                 />
