@@ -35,6 +35,12 @@ import DeleteMessageSheet from "./chat/DeleteMessageSheet";
 import DeletedMessageBubble from "./chat/DeletedMessageBubble";
 import { isMessageDeleted } from "../lib/messageDelete";
 
+const getYouTubeVideoId = (text) => {
+  if (!text) return null;
+  const match = text.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+};
+
 const ChatContainer = () => {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deletePopupMessageId, setDeletePopupMessageId] = useState(null);
@@ -574,11 +580,32 @@ const ChatContainer = () => {
                         isMyMessage={message.senderId === authUser._id}
                       />
                     ) : (
-                      <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
-                        {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
-                        {/* Inline spacer to let time wrap nicely if short text */}
-                        <span className="inline-block w-[70px] h-1 md:w-[75px]"></span>
-                      </p>
+                      <>
+                        <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
+                          {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
+                          {/* Inline spacer to let time wrap nicely if short text */}
+                          <span className="inline-block w-[70px] h-1 md:w-[75px]"></span>
+                        </p>
+                        
+                        {/* YouTube Preview */}
+                        {(() => {
+                          const ytId = getYouTubeVideoId(message.text);
+                          if (ytId && !isMessageDeleted(message)) {
+                            return (
+                              <div className="mt-2 rounded-lg overflow-hidden relative pt-[56.25%] w-full min-w-[240px] md:min-w-[280px] bg-black/10 dark:bg-black/40">
+                                <iframe
+                                  className="absolute top-0 left-0 w-full h-full border-0"
+                                  src={`https://www.youtube.com/embed/${ytId}`}
+                                  title="YouTube video player"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowFullScreen
+                                ></iframe>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </>
                     )}
                   </div>
                 </div>
