@@ -151,6 +151,12 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
             toast.error("Please select an image file");
             return;
         }
+        
+        const maxImageBytes = 25 * 1024 * 1024; // 25MB
+        if (file.size > maxImageBytes) {
+            toast.error("Image must be under 25MB");
+            return;
+        }
 
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -197,6 +203,12 @@ const MessageInput = ({ onSend, isGroupChat = false, isAdmin = false, announceme
         if (isRestricted) return;
         const file = e.target.files[0];
         if (!file) return;
+
+        const maxFileBytes = 25 * 1024 * 1024; // 25MB
+        if (file.size > maxFileBytes) {
+            toast.error("File must be under 25MB");
+            return;
+        }
 
         const reader = new FileReader();
         reader.onloadend = () => {

@@ -509,15 +509,14 @@
 [data-theme="whatsapp"] .chat-bubble {
     box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13) !important;
     border: none !important;
-    border-radius: 7.5px !important;
 }
 
 [data-theme="whatsapp"] .chat-start .chat-bubble-wa {
-    border-top-left-radius: 0px !important;
+    border-radius: 8px 8px 8px 0px !important;
 }
 
 [data-theme="whatsapp"] .chat-end .chat-bubble-wa {
-    border-bottom-right-radius: 0px !important;
+    border-radius: 8px 8px 0px 8px !important;
 }
 
 /* Microsoft Teams Theme Specific Overrides */

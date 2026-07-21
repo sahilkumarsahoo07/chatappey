@@ -107,6 +107,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true
   },
+  maxHttpBufferSize: 50 * 1024 * 1024, // 50 MB to allow HD image payloads
 });
 
 export function getReceiverSocketId(userId) {
