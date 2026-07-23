@@ -184,22 +184,39 @@ export const useGroupVibeStore = create((set, get) => ({
       };
     });
 
-    try {
-      const data = await createGroupVibeApi(groupId, formData);
-      const serverVibe = data.vibe;
+      try {
+        const data = await createGroupVibeApi(groupId, formData);
+        const serverVibe = data.vibe;
 
-      // Replace temp vibe with server vibe
-      set((state) => {
-        const currentList = state.groupVibesMap[groupId] || [];
-        const replacedList = currentList.map((v) => (v._id === tempId ? serverVibe : v));
-        return {
-          groupVibesMap: { ...state.groupVibesMap, [groupId]: replacedList },
-          isSubmitting: false,
-        };
-      });
+        // Replace temp vibe with server vibe & deduplicate
+        set((state) => {
+          const currentList = state.groupVibesMap[groupId] || [];
+          const alreadyHasServerVibe = currentList.some((v) => String(v._id) === String(serverVibe._id));
 
-      toast.success("Group Vibe posted! 🚀");
-      return serverVibe;
+          let newList;
+          if (alreadyHasServerVibe) {
+            newList = currentList.filter((v) => v._id !== tempId);
+          } else {
+            newList = currentList.map((v) => (v._id === tempId ? serverVibe : v));
+          }
+
+          // Deduplicate by _id
+          const seenIds = new Set();
+          const dedupedList = newList.filter((v) => {
+            const idStr = String(v._id);
+            if (seenIds.has(idStr)) return false;
+            seenIds.add(idStr);
+            return true;
+          });
+
+          return {
+            groupVibesMap: { ...state.groupVibesMap, [groupId]: dedupedList },
+            isSubmitting: false,
+          };
+        });
+
+        toast.success("Group Vibe posted! 🚀");
+        return serverVibe;
     } catch (e) {
       toast.error(e.response?.data?.error || "Failed to post Group Vibe");
 
@@ -330,14 +347,30 @@ export const useGroupVibeStore = create((set, get) => ({
 
   // Delete Vibe (Optimistic)
   deleteVibe: async (groupId, vibeId) => {
+    if (!groupId || !vibeId) return;
+
     let deletedVibe = null;
 
     set((state) => {
       const currentList = state.groupVibesMap[groupId] || [];
-      deletedVibe = currentList.find((v) => v._id === vibeId);
-      const updatedList = currentList.filter((v) => v._id !== vibeId);
+      deletedVibe = currentList.find((v) => String(v._id) === String(vibeId));
+      const updatedList = currentList.filter((v) => String(v._id) !== String(vibeId));
 
-      return { groupVibesMap: { ...state.groupVibesMap, [groupId]: updatedList } };
+      const summary = state.summaries[groupId];
+      const remainingCount = updatedList.length;
+      const newSummary = summary
+        ? {
+            ...summary,
+            totalCount: remainingCount,
+            hasUnseen: remainingCount > 0 ? summary.hasUnseen : false,
+            unseenCount: remainingCount > 0 ? summary.unseenCount : 0,
+          }
+        : { totalCount: remainingCount, unseenCount: 0, hasUnseen: false };
+
+      return {
+        groupVibesMap: { ...state.groupVibesMap, [groupId]: updatedList },
+        summaries: { ...state.summaries, [groupId]: newSummary },
+      };
     });
 
     try {
@@ -350,16 +383,18 @@ export const useGroupVibeStore = create((set, get) => ({
         if (remaining.length === 0) {
           get().setViewerOpen(false);
         } else if (activeVibeIndex >= remaining.length) {
-          get().setActiveVibeIndex(remaining.length - 1);
+          get().setActiveVibeIndex(Math.max(0, remaining.length - 1));
         }
       }
     } catch (e) {
-      toast.error("Failed to delete Group Vibe");
+      toast.error(e.response?.data?.error || "Failed to delete Group Vibe");
       // Rollback
       if (deletedVibe) {
         set((state) => {
           const currentList = state.groupVibesMap[groupId] || [];
-          return { groupVibesMap: { ...state.groupVibesMap, [groupId]: [...currentList, deletedVibe] } };
+          return {
+            groupVibesMap: { ...state.groupVibesMap, [groupId]: [...currentList, deletedVibe] },
+          };
         });
       }
     }
@@ -399,22 +434,39 @@ export const useGroupVibeStore = create((set, get) => ({
 
     set((state) => {
       const currentList = state.groupVibesMap[groupId] || [];
-      // Idempotency check: don't add if already present (e.g. from optimistic creation or duplicate socket)
-      if (currentList.some((v) => v._id === vibe._id)) return state;
-
-      const updatedList = [...currentList, vibe];
       const authUser = useAuthStore.getState().authUser;
-      const isMine = String(vibe.creator?._id) === String(authUser?._id);
+      const isMine = String(vibe.creator?._id || vibe.creatorId?._id || vibe.creatorId) === String(authUser?._id);
+
+      // Filter out any temp vibes if this is created by us
+      let list = currentList;
+      if (isMine) {
+        list = list.filter((v) => !String(v._id).startsWith("temp_"));
+      }
+
+      // Check if real vibe is already present
+      if (list.some((v) => String(v._id) === String(vibe._id))) return state;
+
+      const updatedList = [...list, vibe];
+
+      // Deduplicate list by _id
+      const seenIds = new Set();
+      const dedupedList = updatedList.filter((v) => {
+        const idStr = String(v._id);
+        if (seenIds.has(idStr)) return false;
+        seenIds.add(idStr);
+        return true;
+      });
 
       const summary = state.summaries[groupId] || { totalCount: 0, unseenCount: 0, hasUnseen: false, latestAt: vibe.createdAt };
       const newUnseenCount = isMine ? summary.unseenCount : summary.unseenCount + 1;
 
       return {
-        groupVibesMap: { ...state.groupVibesMap, [groupId]: updatedList },
+        groupVibesMap: { ...state.groupVibesMap, [groupId]: dedupedList },
         summaries: {
           ...state.summaries,
           [groupId]: {
-            totalCount: summary.totalCount + 1,
+            ...summary,
+            totalCount: dedupedList.length,
             unseenCount: newUnseenCount,
             hasUnseen: newUnseenCount > 0,
             latestAt: vibe.createdAt,
@@ -429,9 +481,23 @@ export const useGroupVibeStore = create((set, get) => ({
 
     set((state) => {
       const currentList = state.groupVibesMap[groupId] || [];
-      const updatedList = currentList.filter((v) => v._id !== vibeId);
+      const updatedList = currentList.filter((v) => String(v._id) !== String(vibeId));
 
-      return { groupVibesMap: { ...state.groupVibesMap, [groupId]: updatedList } };
+      const summary = state.summaries[groupId];
+      const remainingCount = updatedList.length;
+      const newSummary = summary
+        ? {
+            ...summary,
+            totalCount: remainingCount,
+            hasUnseen: remainingCount > 0 ? summary.hasUnseen : false,
+            unseenCount: remainingCount > 0 ? summary.unseenCount : 0,
+          }
+        : { totalCount: remainingCount, unseenCount: 0, hasUnseen: false };
+
+      return {
+        groupVibesMap: { ...state.groupVibesMap, [groupId]: updatedList },
+        summaries: { ...state.summaries, [groupId]: newSummary },
+      };
     });
 
     const { activeViewerGroupId, groupVibesMap, activeVibeIndex } = get();

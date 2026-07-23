@@ -48,10 +48,23 @@ export const GroupVibeViewerModal = () => {
   const touchStartY = useRef(null);
   const progressTimerRef = useRef(null);
 
-  const vibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
+  const rawVibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
+
+  // Deduplicate and filter out deleted/invalid vibes for clean viewer segments
+  const vibes = React.useMemo(() => {
+    const seen = new Set();
+    return rawVibes.filter((v) => {
+      if (!v || !v._id || v.deleted) return false;
+      const idStr = String(v._id);
+      if (seen.has(idStr)) return false;
+      seen.add(idStr);
+      return true;
+    });
+  }, [rawVibes]);
+
   const currentVibe = vibes[activeVibeIndex];
 
-  const isCreator = currentVibe && String(currentVibe.creator?._id) === String(authUser?._id);
+  const isCreator = currentVibe && String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser?._id);
 
   // Audio & Progress Sync Engine
   useEffect(() => {
