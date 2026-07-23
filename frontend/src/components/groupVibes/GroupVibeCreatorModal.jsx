@@ -38,16 +38,15 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
 
   const fileInputRef = useRef(null);
 
-  if (!isCreatorOpen && !propsGroupId) return null;
-
   useEffect(() => {
+    if (!isCreatorOpen && !propsGroupId) return;
     return () => {
       audioManager.stop();
       if (previewUrl && previewUrl.startsWith("blob:")) {
         URL.revokeObjectURL(previewUrl);
       }
     };
-  }, [previewUrl]);
+  }, [previewUrl, isCreatorOpen, propsGroupId]);
 
   // Handle media file selection
   const handleFileChange = (e) => {
@@ -73,6 +72,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
 
   // Music playback preview in creator
   useEffect(() => {
+    if (!isCreatorOpen && !propsGroupId) return;
     if (selectedSong?.audioUrl && !isAudioMuted) {
       audioManager.play({
         id: `creator_music_${selectedSong.id}`,
@@ -86,7 +86,9 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     } else {
       audioManager.stop();
     }
-  }, [selectedSong, clipStart, isAudioMuted]);
+  }, [selectedSong, clipStart, isAudioMuted, isCreatorOpen, propsGroupId]);
+
+  if (!isCreatorOpen && !propsGroupId) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
