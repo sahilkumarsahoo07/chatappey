@@ -18,11 +18,11 @@ const BACKGROUND_GRADIENTS = [
 ];
 
 export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsGroupName, onClose: propsOnClose }) => {
-  const { isCreatorOpen, creatorGroupId, setCreatorOpen, createGroupVibe, isSubmitting } = useGroupVibeStore();
+  const { isCreatorOpen, creatorTargetGroupId, setCreatorOpen, createGroupVibe, isSubmitting } = useGroupVibeStore();
   const { groups } = useGroupStore();
   const { openPicker, selectedSong, clearSong, clipStart, clipDuration } = useStoryMusicStore();
 
-  const activeGroupId = propsGroupId || creatorGroupId;
+  const activeGroupId = propsGroupId || creatorTargetGroupId;
   const activeGroup = groups.find((g) => g._id === activeGroupId);
   const activeGroupName = propsGroupName || activeGroup?.name || "Group";
 
@@ -37,6 +37,37 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   const [isAudioMuted, setIsAudioMuted] = useState(false);
 
   const fileInputRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [musicPos, setMusicPos] = useState({ x: 50, y: 25 });
+  const isDraggingMusic = useRef(false);
+  const dragStartRef = useRef({ pageX: 0, pageY: 0, startX: 50, startY: 25 });
+
+  const handleMusicPointerDown = (e) => {
+    e.stopPropagation();
+    isDraggingMusic.current = true;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    dragStartRef.current = { pageX: clientX, pageY: clientY, startX: musicPos.x, startY: musicPos.y };
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDraggingMusic.current || !canvasRef.current) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const rect = canvasRef.current.getBoundingClientRect();
+
+    const deltaXPercent = ((clientX - dragStartRef.current.pageX) / rect.width) * 100;
+    const deltaYPercent = ((clientY - dragStartRef.current.pageY) / rect.height) * 100;
+
+    const newX = Math.max(15, Math.min(85, dragStartRef.current.startX + deltaXPercent));
+    const newY = Math.max(15, Math.min(85, dragStartRef.current.startY + deltaYPercent));
+
+    setMusicPos({ x: newX, y: newY });
+  };
+
+  const handlePointerUp = () => {
+    isDraggingMusic.current = false;
+  };
 
   useEffect(() => {
     if (!isCreatorOpen && !propsGroupId) return;
@@ -118,6 +149,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
         sourceUrl: selectedSong.sourceUrl || "",
         clipStart,
         clipDuration,
+        position: musicPos,
       };
       formData.append("music", JSON.stringify(musicPayload));
     }
@@ -129,11 +161,11 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
       text,
       music: selectedSong
         ? {
-            title: selectedSong.title,
-            artist: selectedSong.artist,
-            artwork: selectedSong.artwork || selectedSong.thumbnail,
-            audioUrl: selectedSong.audioUrl,
-          }
+          title: selectedSong.title,
+          artist: selectedSong.artist,
+          artwork: selectedSong.artwork || selectedSong.thumbnail,
+          audioUrl: selectedSong.audioUrl,
+        }
         : null,
     };
 
@@ -276,9 +308,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             <button
               type="button"
               onClick={() => setMode("media")}
-              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                mode === "media" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
-              }`}
+              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${mode === "media" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
+                }`}
             >
               <Image className="w-4 h-4" />
               Media
@@ -286,9 +317,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             <button
               type="button"
               onClick={() => setMode("text")}
-              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                mode === "text" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
-              }`}
+              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${mode === "text" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
+                }`}
             >
               <Type className="w-4 h-4" />
               Text
@@ -310,11 +340,10 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             <button
               type="button"
               onClick={() => openPicker()}
-              className={`p-2.5 rounded-xl flex items-center gap-1 text-xs font-medium transition-all ${
-                selectedSong
+              className={`p-2.5 rounded-xl flex items-center gap-1 text-xs font-medium transition-all ${selectedSong
                   ? "bg-rose-500 text-white animate-pulse"
                   : "bg-base-300 hover:bg-base-100"
-              }`}
+                }`}
             >
               <Music className="w-4 h-4" />
               {selectedSong ? "Change Music" : "Add Music"}

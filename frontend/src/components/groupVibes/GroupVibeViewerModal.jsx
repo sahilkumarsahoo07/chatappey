@@ -270,8 +270,15 @@ export const GroupVibeViewerModal = () => {
 
           {/* Music Sticker Overlay */}
           {currentVibe.music?.title && (
-            <div className="absolute top-24 inset-x-4 flex justify-center z-20 pointer-events-none">
-              <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white shadow-lg">
+            <div
+              className="absolute z-20 pointer-events-none transition-all duration-150"
+              style={{
+                left: `${currentVibe.music.position?.x ?? 50}%`,
+                top: `${currentVibe.music.position?.y ?? 24}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-black/75 backdrop-blur-md border border-white/20 text-white shadow-xl">
                 <Music className="w-4 h-4 text-rose-400 animate-spin-slow" />
                 <div className="text-left leading-none">
                   <p className="text-xs font-bold truncate max-w-[160px]">{currentVibe.music.title}</p>

@@ -126,6 +126,10 @@ export const createGroupVibe = async (req, res) => {
             clipDuration: Math.min(60, Math.max(5, Number(raw.clipDuration) || 15)),
             originalAudioVolume: Math.min(100, Math.max(0, Number(raw.originalAudioVolume) ?? 100)),
             musicVolume: Math.min(100, Math.max(0, Number(raw.musicVolume) ?? 100)),
+            position: {
+              x: Number(raw.position?.x) || 50,
+              y: Number(raw.position?.y) || 25,
+            },
             sticker: {
               x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
               y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
