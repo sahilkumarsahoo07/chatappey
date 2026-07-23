@@ -457,7 +457,7 @@ export const removeMember = async (req, res) => {
             return res.status(403).json({ error: "Only group owner can remove other admins" });
         }
 
-        group.members = group.members.filter(m => m.user.toString() !== memberToRemove);
+        group.members = group.members.filter(m => (m.user?._id || m.user || m).toString() !== memberToRemove);
         await group.save();
 
         const adminUser = await User.findById(userId);

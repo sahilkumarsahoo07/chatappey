@@ -946,8 +946,15 @@ export const useGroupStore = create((set, get) => ({
             toast.info("You have been removed from a group");
         });
 
-        // Member left
+        // Member left or removed
         socket.on("group:memberLeft", ({ group }) => {
+            set({
+                groups: get().groups.map(g => g._id === group._id ? group : g),
+                selectedGroup: get().selectedGroup?._id === group._id ? group : get().selectedGroup
+            });
+        });
+
+        socket.on("group:memberRemoved", ({ group }) => {
             set({
                 groups: get().groups.map(g => g._id === group._id ? group : g),
                 selectedGroup: get().selectedGroup?._id === group._id ? group : get().selectedGroup

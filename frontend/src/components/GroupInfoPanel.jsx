@@ -738,25 +738,29 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                         <div className="py-2 mb-4">
                             <ListItem title={`Message ${(menuMember.user?.fullName || menuMember.fullName).split(' ')[0]}`} />
                             <ListItem title="View profile" />
-                            {!isAdmin ? (
-                                <>
-                                    <ListItem title="Voice call" />
-                                    <ListItem title="Video call" />
-                                </>
-                            ) : (
-                                <>
-                                    {isOwner && menuMember?.role !== "admin" && (
-                                        <ListItem title="Make group admin" onClick={() => handleUpdateRole(menuMember.user?._id || menuMember._id, "admin")} />
-                                    )}
-                                    {isOwner && menuMember?.role === "admin" && (
-                                        <ListItem title="Dismiss as admin" onClick={() => handleUpdateRole(menuMember.user?._id || menuMember._id, "member")} />
-                                    )}
-                                    {isOwner && menuMember?.role === "admin" && (
-                                        <ListItem title="Transfer ownership" onClick={() => handleTransferOwnership(menuMember.user?._id || menuMember._id)} />
-                                    )}
-                                    <ListItem title="Remove from group" destructive onClick={() => handleRemoveMember(menuMember.user?._id || menuMember._id)} />
-                                </>
-                            )}
+                            {(() => {
+                                const targetId = menuMember.user?._id || menuMember._id;
+                                const isTargetOwner = (selectedGroup.admin?._id || selectedGroup.admin)?.toString() === targetId.toString();
+                                const isTargetAdmin = menuMember.role === "admin" || isTargetOwner;
+                                const canRemoveTarget = !isTargetOwner && (isOwner || (isAdmin && !isTargetAdmin));
+
+                                return (
+                                    <>
+                                        {isOwner && !isTargetAdmin && (
+                                            <ListItem title="Make group admin" onClick={() => handleUpdateRole(targetId, "admin")} />
+                                        )}
+                                        {isOwner && isTargetAdmin && !isTargetOwner && (
+                                            <ListItem title="Dismiss as admin" onClick={() => handleUpdateRole(targetId, "member")} />
+                                        )}
+                                        {isOwner && isTargetAdmin && !isTargetOwner && (
+                                            <ListItem title="Transfer ownership" onClick={() => handleTransferOwnership(targetId)} />
+                                        )}
+                                        {canRemoveTarget && (
+                                            <ListItem title="Remove from group" destructive onClick={() => handleRemoveMember(targetId)} />
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
