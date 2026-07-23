@@ -223,16 +223,35 @@ export const useGroupStore = create((set, get) => ({
 
     // Remove member from group
     removeMember: async (groupId, userId) => {
+        // Optimistic UI Update
+        const previousGroups = get().groups;
+        const previousSelectedGroup = get().selectedGroup;
+        
+        const groupToUpdate = previousGroups.find(g => g._id === groupId);
+        if (groupToUpdate) {
+            const updatedMembers = groupToUpdate.members.filter(m => (m.user?._id || m.user || m).toString() !== userId.toString());
+            const optimisticGroup = { ...groupToUpdate, members: updatedMembers };
+            set({
+                groups: previousGroups.map(g => g._id === groupId ? optimisticGroup : g),
+                selectedGroup: previousSelectedGroup?._id === groupId ? optimisticGroup : previousSelectedGroup
+            });
+        }
+
         try {
             const res = await axiosInstance.delete(`/groups/${groupId}/members/${userId}`);
             const updatedGroup = res.data;
+            // Sync with backend truth
             set({
                 groups: get().groups.map(g => g._id === groupId ? updatedGroup : g),
                 selectedGroup: get().selectedGroup?._id === groupId ? updatedGroup : get().selectedGroup
             });
-            toast.success("Member removed successfully!");
             return updatedGroup;
         } catch (error) {
+            // Revert on failure
+            set({
+                groups: previousGroups,
+                selectedGroup: previousSelectedGroup
+            });
             toast.error(error.response?.data?.error || "Failed to remove member");
             throw error;
         }
