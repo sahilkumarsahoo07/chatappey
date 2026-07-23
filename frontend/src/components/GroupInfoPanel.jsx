@@ -38,6 +38,15 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
     const [showStarred, setShowStarred] = useState(false);
     const [showPinned, setShowPinned] = useState(false);
     const [showDisappearing, setShowDisappearing] = useState(false);
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: "",
+        message: "",
+        confirmText: "Confirm",
+        isDanger: true,
+        iconType: "remove",
+        onConfirm: null
+    });
 
     const isOwner = selectedGroup?.admin?._id === authUser?._id;
     const members = selectedGroup?.members || [];
@@ -100,16 +109,28 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         }
     };
 
-    const handleTransferOwnership = async (userId) => {
+    const handleTransferOwnership = (targetUserId) => {
         setMenuMember(null);
-        if (!confirm("Are you sure you want to transfer group ownership? You will no longer be the owner.")) return;
+        const memberObj = members.find(m => (m.user?._id || m.user || m).toString() === targetUserId.toString());
+        const name = memberObj?.user?.fullName || memberObj?.fullName || "this member";
 
-        try {
-            await updateGroup(selectedGroup._id, { admin: userId });
-            toast.success("Ownership transferred successfully!");
-        } catch (error) {
-            console.error("Failed to transfer ownership:", error);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Transfer Group Ownership?",
+            message: `Make ${name} the new primary owner of "${selectedGroup?.name}"? You will remain a member but lose primary owner privileges.`,
+            confirmText: "Transfer Ownership",
+            isDanger: false,
+            iconType: "transfer",
+            onConfirm: async () => {
+                try {
+                    await updateGroup(selectedGroup._id, { admin: targetUserId });
+                    toast.success(`Ownership transferred to ${name}`);
+                } catch (error) {
+                    console.error("Failed to transfer ownership:", error);
+                    toast.error("Failed to transfer ownership");
+                }
+            }
+        });
     };
 
     const handleAddMembers = async () => {
@@ -124,15 +145,28 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         }
     };
 
-    const handleRemoveMember = async (userId) => {
+    const handleRemoveMember = (targetUserId) => {
         setMenuMember(null);
-        if (!confirm("Remove this member from the group?")) return;
+        const memberObj = members.find(m => (m.user?._id || m.user || m).toString() === targetUserId.toString());
+        const name = memberObj?.user?.fullName || memberObj?.fullName || "this member";
 
-        try {
-            await removeMember(selectedGroup._id, userId);
-        } catch (error) {
-            console.error("Failed to remove member:", error);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: `Remove ${name.split(' ')[0]}?`,
+            message: `Are you sure you want to remove ${name} from "${selectedGroup?.name}"? They will no longer be able to send or receive messages in this group.`,
+            confirmText: "Remove Member",
+            isDanger: true,
+            iconType: "remove",
+            onConfirm: async () => {
+                try {
+                    await removeMember(selectedGroup._id, targetUserId);
+                    toast.success(`${name} removed from group`);
+                } catch (error) {
+                    console.error("Failed to remove member:", error);
+                    toast.error("Failed to remove member");
+                }
+            }
+        });
     };
 
     const handleUpdateRole = async (userId, newRole) => {
@@ -144,15 +178,27 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
         }
     };
 
-    const handleLeaveGroup = async () => {
-        if (!confirm("Are you sure you want to leave this group?")) return;
-
-        try {
-            await leaveGroup(selectedGroup._id);
-            onClose();
-        } catch (error) {
-            console.error("Failed to leave group:", error);
-        }
+    const handleLeaveGroup = () => {
+        const isSoleMember = members.length === 1;
+        setConfirmModal({
+            isOpen: true,
+            title: isSoleMember ? "Leave and delete group?" : `Exit "${selectedGroup?.name}"?`,
+            message: isSoleMember 
+                ? "You are the only member in this group. Leaving will permanently delete this group and all its message history."
+                : `Are you sure you want to exit "${selectedGroup?.name}"? You will no longer be able to send or receive messages here.`,
+            confirmText: isSoleMember ? "Delete & Exit" : "Exit Group",
+            isDanger: true,
+            iconType: "leave",
+            onConfirm: async () => {
+                try {
+                    await leaveGroup(selectedGroup._id);
+                    onClose();
+                } catch (error) {
+                    console.error("Failed to leave group:", error);
+                    toast.error("Failed to leave group");
+                }
+            }
+        });
     };
 
     const handleInviteLink = () => {
@@ -766,16 +812,45 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                 </div>
             )}
 
-            {/* Delete Group Confirmation Modal */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
-                    <div className="bg-base-100 w-full max-w-sm rounded-3xl p-7 z-10 animate-in zoom-in-95 shadow-2xl">
-                        <h3 className="text-xl font-medium mb-3">Delete group?</h3>
-                        <p className="opacity-70 text-[15px] mb-8 leading-relaxed">Are you sure you want to permanently delete this group? This action cannot be undone.</p>
-                        <div className="flex justify-end gap-3">
-                            <button className="btn btn-ghost rounded-full" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-                            <button className="btn btn-error rounded-full px-6" onClick={handleDeleteGroup}>Delete</button>
+            {/* Custom Confirmation Modal */}
+            {confirmModal.isOpen && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+                    <div 
+                        className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-200" 
+                        onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} 
+                    />
+                    <div className="bg-base-100 border border-base-200/50 w-full max-w-sm rounded-3xl p-6 z-10 animate-in zoom-in-95 duration-200 shadow-2xl text-center">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 border ${
+                            confirmModal.isDanger 
+                                ? "bg-error/10 text-error border-error/20" 
+                                : "bg-primary/10 text-primary border-primary/20"
+                        }`}>
+                            {confirmModal.iconType === "remove" && <UserMinus className="w-7 h-7" />}
+                            {confirmModal.iconType === "leave" && <LogOut className="w-7 h-7" />}
+                            {confirmModal.iconType === "transfer" && <ShieldCheck className="w-7 h-7" />}
+                            {confirmModal.iconType === "delete" && <Trash2 className="w-7 h-7" />}
+                        </div>
+                        <h3 className="text-xl font-semibold text-base-content mb-2">{confirmModal.title}</h3>
+                        <p className="text-sm text-base-content/70 leading-relaxed mb-6 px-1">{confirmModal.message}</p>
+                        <div className="flex items-center gap-3">
+                            <button 
+                                className="btn btn-ghost flex-1 rounded-full text-base-content/70 hover:bg-base-200" 
+                                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                className={`btn flex-1 rounded-full shadow-md text-white ${
+                                    confirmModal.isDanger ? "btn-error" : "btn-primary"
+                                }`} 
+                                onClick={async () => {
+                                    const action = confirmModal.onConfirm;
+                                    setConfirmModal({ ...confirmModal, isOpen: false });
+                                    if (action) await action();
+                                }}
+                            >
+                                {confirmModal.confirmText}
+                            </button>
                         </div>
                     </div>
                 </div>

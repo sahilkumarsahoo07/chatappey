@@ -21,6 +21,7 @@ import CallHistoryPage from './pages/CallHistoryPage';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AdminPage from './pages/AdminPage';
+import JoinGroupPage from './pages/JoinGroupPage';
 import { useAuthStore } from './store/useAuthStore';
 import { useChatStore } from './store/useChatStore';
 import { useGroupStore } from './store/useGroupStore';
@@ -216,6 +217,7 @@ function App() {
         <Route path='/otp' element={<Otp />} />
         <Route path='/profile' element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
         <Route path='/admin' element={authUser?.role === 'admin' ? <AdminPage /> : <Navigate to="/" />} />
+        <Route path='/join/:groupId' element={<JoinGroupPage />} />
       </Routes>
 
       <Toaster

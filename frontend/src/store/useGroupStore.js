@@ -253,6 +253,43 @@ export const useGroupStore = create((set, get) => ({
         }
     },
 
+    // Get group preview for invite link
+    getGroupPreview: async (groupId) => {
+        try {
+            const res = await axiosInstance.get(`/groups/${groupId}/preview`);
+            return res.data;
+        } catch (error) {
+            console.error("Failed to fetch group preview:", error);
+            throw error;
+        }
+    },
+
+    // Join group via invite link
+    joinGroupViaInvite: async (groupId) => {
+        try {
+            const res = await axiosInstance.post(`/groups/${groupId}/join-invite`);
+            const { group } = res.data;
+            const currentGroups = get().groups;
+            const exists = currentGroups.some(g => g._id === group._id);
+            
+            set({
+                groups: exists ? currentGroups.map(g => g._id === group._id ? group : g) : [group, ...currentGroups],
+                selectedGroup: group
+            });
+            return group;
+        } catch (error) {
+            console.error("Failed to join group via invite:", error);
+            throw error;
+        }
+    },
+
+    selectGroupById: (groupId) => {
+        const found = get().groups.find(g => g._id === groupId);
+        if (found) {
+            set({ selectedGroup: found });
+        }
+    },
+
     // Update member role (admin only)
     updateMemberRole: async (groupId, userId, role) => {
         try {

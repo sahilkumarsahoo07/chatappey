@@ -1463,3 +1463,93 @@ export const editGroupMessage = async (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 };
+
+// Get group preview for invite links
+export const getGroupPreview = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const group = await Group.findById(groupId)
+            .populate("admin", "fullName profilePic")
+            .populate("members.user", "fullName profilePic");
+
+        if (!group) {
+            return res.status(404).json({ error: "Group link is invalid or expired" });
+        }
+
+        const userId = req.user?._id?.toString();
+        const isMember = userId ? group.members.some(m => (m.user?._id || m.user || m).toString() === userId) : false;
+
+        res.status(200).json({
+            _id: group._id,
+            name: group.name,
+            groupPic: group.groupPic,
+            description: group.description,
+            membersCount: group.members.length,
+            admin: group.admin,
+            isMember,
+            previewMembers: group.members.slice(0, 5).map(m => m.user)
+        });
+    } catch (error) {
+        console.error("Error in getGroupPreview:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+// Join group via invite link
+export const joinGroupViaInvite = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const userId = req.user._id;
+
+        const group = await Group.findById(groupId);
+        if (!group) {
+            return res.status(404).json({ error: "Group not found or invite link expired" });
+        }
+
+        const isAlreadyMember = group.members.some(
+            m => (m.user?._id || m.user || m).toString() === userId.toString()
+        );
+
+        if (isAlreadyMember) {
+            const fullGroup = await Group.findById(groupId)
+                .populate("admin", "fullName profilePic")
+                .populate("members.user", "fullName profilePic");
+            return res.status(200).json({ message: "Already a member", group: fullGroup });
+        }
+
+        group.members.push({
+            user: userId,
+            role: "member",
+            joinedAt: new Date()
+        });
+
+        await group.save();
+
+        const newMemberUser = await User.findById(userId);
+        await sendSystemMessage(groupId, `${newMemberUser.fullName} joined using this group's invite link`);
+
+        // Connect user socket to group room
+        joinUsersToGroupRoom([userId], groupId);
+
+        const updatedGroup = await Group.findById(groupId)
+            .populate("admin", "fullName profilePic")
+            .populate("members.user", "fullName profilePic");
+
+        // Notify existing members
+        updatedGroup.members.forEach(member => {
+            const socketId = getReceiverSocketId(member.user._id.toString());
+            if (socketId) {
+                io.to(socketId).emit("group:memberAdded", {
+                    group: updatedGroup,
+                    newMember: newMemberUser
+                });
+            }
+        });
+
+        res.status(200).json({ message: "Joined group successfully", group: updatedGroup });
+    } catch (error) {
+        console.error("Error in joinGroupViaInvite:", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+

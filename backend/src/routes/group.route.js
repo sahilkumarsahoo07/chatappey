@@ -20,10 +20,16 @@ import {
     unpinMessage,
     getGroupMessageInfo,
     voteGroupPoll,
-    editGroupMessage
+    editGroupMessage,
+    getGroupPreview,
+    joinGroupViaInvite
 } from "../controllers/group.controllers.js";
 
 const router = express.Router();
+
+// Group invite links
+router.get("/:groupId/preview", protectRoute, getGroupPreview);
+router.post("/:groupId/join-invite", protectRoute, joinGroupViaInvite);
 
 // Group CRUD
 router.post("/create", protectRoute, createGroup);
