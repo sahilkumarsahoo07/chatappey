@@ -29,7 +29,7 @@ const MessageReactions = ({ messageId, reactions = [], senderId }) => {
     };
 
     return (
-        <div className={`absolute -bottom-3 ${senderId === authUser?._id ? 'left-2' : 'right-2'} flex flex-wrap gap-1 z-20`}>
+        <div className={`absolute -bottom-5 ${senderId === authUser?._id ? 'left-2' : 'right-2'} flex flex-wrap gap-1 z-20`}>
             {Object.entries(groupedReactions).map(([emoji, userIds]) => {
                 const hasReacted = userIds.includes(authUser?._id);
                 const usersList = userIds.map(id => getUserName(id)).join(', ');

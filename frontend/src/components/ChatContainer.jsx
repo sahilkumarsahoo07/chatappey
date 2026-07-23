@@ -433,7 +433,7 @@ const ChatContainer = () => {
     }
 
     return (
-      <div key={message.optimisticId || message._id} className={`${isLastInGroup ? 'mb-4' : 'mb-[2px]'} max-w-full min-w-0 box-border`}>
+      <div key={message.optimisticId || message._id} className={`${isLastInGroup ? (message.reactions?.length > 0 ? 'mb-7' : 'mb-4') : (message.reactions?.length > 0 ? 'mb-7' : 'mb-[2px]')} max-w-full min-w-0 box-border`}>
         {showDateSeparator && (
           <div className="flex justify-center my-4">
             <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">{formatDateSeparator(message.createdAt)}</div>

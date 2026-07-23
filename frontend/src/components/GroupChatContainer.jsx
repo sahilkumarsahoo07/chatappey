@@ -33,6 +33,45 @@ import "./ChatContainer.css";
 
 const EMPTY_MEMBERS = [];
 
+const formatSystemMessageText = (text, authUser) => {
+    if (!text) return "";
+    let str = text;
+    const myName = authUser?.fullName;
+
+    if (myName) {
+        if (str === `${myName} left the group`) {
+            return "You left";
+        }
+        if (str.startsWith(`${myName} created group`)) {
+            return str.replace(`${myName} created group`, "You created group");
+        }
+        if (str.startsWith(`${myName} added `)) {
+            return str.replace(`${myName} added `, "You added ");
+        }
+        if (str.endsWith(` added ${myName}`)) {
+            return str.replace(` added ${myName}`, " added You");
+        }
+        if (str.startsWith(`${myName} removed `)) {
+            return str.replace(`${myName} removed `, "You removed ");
+        }
+        if (str.endsWith(` removed ${myName}`)) {
+            return str.replace(` removed ${myName}`, " removed You");
+        }
+        if (str.startsWith(`${myName} changed`)) {
+            return str.replace(`${myName} changed`, "You changed");
+        }
+        if (str === `${myName} is now an admin`) {
+            return "You are now an admin";
+        }
+    }
+
+    if (str.endsWith(" left the group")) {
+        return str.replace(" left the group", " left");
+    }
+
+    return str;
+};
+
 const GroupChatContainer = () => {
     const {
         selectedGroup,
@@ -472,12 +511,12 @@ const GroupChatContainer = () => {
 
         if (message.messageType === "system") {
             return (
-                <div className="mb-2">
+                <div className="mb-2.5">
                     {DateSeparator}
                     {UnreadDivider}
-                    <div className="flex justify-center my-2">
-                        <div className="bg-base-300/30 text-base-content/60 px-4 py-1.5 rounded-lg text-[11px] font-medium backdrop-blur-sm border border-base-content/5 shadow-sm">
-                            {message.text}
+                    <div className="flex justify-center my-1.5 px-4 select-none">
+                        <div className="bg-base-200/90 dark:bg-base-300/80 text-base-content/75 dark:text-base-content/70 px-3.5 py-1 rounded-lg text-[11px] sm:text-xs font-medium backdrop-blur-sm border border-base-content/5 shadow-xs text-center max-w-[85%] sm:max-w-[75%] inline-block leading-snug">
+                            {formatSystemMessageText(message.text, authUser)}
                         </div>
                     </div>
                 </div>

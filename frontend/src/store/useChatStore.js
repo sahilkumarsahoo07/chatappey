@@ -1404,25 +1404,29 @@ export const useChatStore = create((set, get) => ({
 
   // NEW ACTIONS
   sendReaction: async (messageId, emoji) => {
+    const prevMessages = get().messages;
     try {
       haptic("react");
+
+      // Optimistic update
+      set({
+        messages: prevMessages.map((msg) => {
+          if (msg._id !== messageId) return msg;
+          const reactions = [...(msg.reactions || [])];
+          const myId = useAuthStore.getState().authUser?._id;
+          const idx = reactions.findIndex(
+            (r) => (r.userId?._id || r.userId) === myId
+          );
+          if (idx >= 0) {
+            if (reactions[idx].emoji === emoji) reactions.splice(idx, 1);
+            else reactions[idx] = { ...reactions[idx], emoji };
+          } else reactions.push({ userId: myId, emoji });
+          return { ...msg, reactions };
+        }),
+      });
+
       const queued = await reactOrQueue(messageId, emoji);
       if (queued.queued) {
-        set({
-          messages: get().messages.map((msg) => {
-            if (msg._id !== messageId) return msg;
-            const reactions = [...(msg.reactions || [])];
-            const myId = useAuthStore.getState().authUser?._id;
-            const idx = reactions.findIndex(
-              (r) => (r.userId?._id || r.userId) === myId
-            );
-            if (idx >= 0) {
-              if (reactions[idx].emoji === emoji) reactions.splice(idx, 1);
-              else reactions[idx] = { ...reactions[idx], emoji };
-            } else reactions.push({ userId: myId, emoji });
-            return { ...msg, reactions };
-          }),
-        });
         return;
       }
       const res = await axiosInstance.post(`/messages/${messageId}/reaction`, { emoji });
@@ -1430,6 +1434,7 @@ export const useChatStore = create((set, get) => ({
         messages: get().messages.map(msg => msg._id === messageId ? res.data : msg)
       });
     } catch (error) {
+      set({ messages: prevMessages });
       toast.error("Failed to react");
     }
   },

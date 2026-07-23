@@ -717,7 +717,7 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
 
                     {/* 10. EXIT AND REPORT */}
                     <div className="bg-base-100 py-3 mb-8">
-                        {!isOwner && <ListItem icon={LogOut} title="Exit group" destructive onClick={handleLeaveGroup} />}
+                        <ListItem icon={LogOut} title="Exit group" destructive onClick={handleLeaveGroup} />
                         <ListItem icon={AlertTriangle} title="Report group" destructive />
                         {isOwner && (
                             <ListItem icon={Trash2} title="Delete group" destructive onClick={() => setShowDeleteConfirm(true)} />

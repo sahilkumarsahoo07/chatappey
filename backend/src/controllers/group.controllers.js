@@ -504,17 +504,41 @@ export const leaveGroup = async (req, res) => {
             return res.status(404).json({ error: "Group not found" });
         }
 
-        if (group.admin.toString() === userId.toString()) {
-            return res.status(400).json({
-                error: "Admin cannot leave. Transfer admin role or delete the group."
-            });
+        const remainingMembers = group.members.filter(
+            m => (m.user?._id || m.user || m).toString() !== userId.toString()
+        );
+
+        // If no remaining members, delete group
+        if (remainingMembers.length === 0) {
+            await GroupMessage.deleteMany({ groupId });
+            await Group.findByIdAndDelete(groupId);
+
+            return res.status(200).json({ message: "Left group and group deleted" });
         }
 
-        group.members = group.members.filter(m => m.user.toString() !== userId.toString());
+        group.members = remainingMembers;
+        const userWhoLeft = await User.findById(userId);
+
+        // If primary admin is leaving, transfer admin role to another member
+        let newAdminUser = null;
+        if (group.admin.toString() === userId.toString()) {
+            let newAdminMember = remainingMembers.find(m => m.role === "admin");
+            if (!newAdminMember) {
+                newAdminMember = remainingMembers[0];
+                newAdminMember.role = "admin";
+            }
+            const newAdminId = newAdminMember.user?._id || newAdminMember.user || newAdminMember;
+            group.admin = newAdminId;
+            newAdminUser = await User.findById(newAdminId);
+        }
+
         await group.save();
 
-        const userWhoLeft = await User.findById(userId);
+        // System messages for member leaving & new admin promotion
         await sendSystemMessage(groupId, `${userWhoLeft.fullName} left the group`);
+        if (newAdminUser) {
+            await sendSystemMessage(groupId, `${newAdminUser.fullName} is now an admin`);
+        }
 
         const updatedGroup = await Group.findById(groupId)
             .populate("admin", "fullName profilePic")
@@ -522,7 +546,8 @@ export const leaveGroup = async (req, res) => {
 
         // Notify remaining members
         updatedGroup.members.forEach(member => {
-            const socketId = getReceiverSocketId(member.user._id.toString());
+            const memberId = member.user?._id || member.user || member;
+            const socketId = getReceiverSocketId(memberId.toString());
             if (socketId) {
                 io.to(socketId).emit("group:memberLeft", {
                     group: updatedGroup,
