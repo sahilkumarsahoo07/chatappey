@@ -81,7 +81,10 @@ export const GroupVibeViewerModal = () => {
     if (!isViewerOpen || !currentVibe) return;
 
     setProgress(0);
-    const durationSec = Math.max(3, currentVibe.duration || 5);
+    const durationSec = Math.max(
+      3,
+      currentVibe.music?.clipDuration || currentVibe.duration || (currentVibe.music ? 15 : 5)
+    );
     const durationMs = durationSec * 1000;
     const intervalMs = 50;
     const increment = (intervalMs / durationMs) * 100;

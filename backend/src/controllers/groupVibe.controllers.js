@@ -146,7 +146,7 @@ export const createGroupVibe = async (req, res) => {
                 : "classic",
             },
           };
-          if (mediaType === "photo" && music.clipDuration) {
+          if (music.clipDuration) {
             duration = music.clipDuration;
           }
         }
@@ -182,7 +182,7 @@ export const createGroupVibe = async (req, res) => {
       groupId,
       userId,
       viewedAt: now,
-    }).catch(() => {});
+    }).catch(() => { });
 
     const responsePayload = {
       _id: populated._id,
@@ -656,7 +656,7 @@ export const deleteGroupVibe = async (req, res) => {
       destroyCloudinaryAsset(
         vibe.publicId,
         vibe.mediaType === "video" ? "video" : "image"
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     io.to(String(groupId)).emit("group:vibe:deleted", {

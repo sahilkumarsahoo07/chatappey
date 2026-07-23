@@ -238,10 +238,13 @@ export const useStoryMusicStore = create((set, get) => ({
     if (song) get().pushPlayed(song);
   },
 
-  setClip: ({ startOffset, clipDuration }) => {
+  setClip: (patch) => {
+    const current = get();
+    const nextStart = patch.startOffset !== undefined ? Math.max(0, Number(patch.startOffset) || 0) : current.startOffset;
+    const nextDuration = patch.clipDuration !== undefined ? Math.min(60, Math.max(5, Number(patch.clipDuration) || 30)) : current.clipDuration;
     set({
-      startOffset: Math.max(0, Number(startOffset) || 0),
-      clipDuration: Math.min(60, Math.max(30, Number(clipDuration) || 30)),
+      startOffset: nextStart,
+      clipDuration: nextDuration,
     });
   },
 
