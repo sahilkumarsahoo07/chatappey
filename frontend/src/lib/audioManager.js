@@ -114,7 +114,7 @@ class AudioManager {
     if (this.currentAudio && Number.isFinite(seconds) && seconds >= 0) {
       const applySeek = () => {
         try {
-          if (this.currentAudio && this.currentAudio.duration >= seconds) {
+          if (this.currentAudio) {
             this.currentAudio.currentTime = seconds;
           }
         } catch (e) {

@@ -26,7 +26,15 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   const activeGroup = groups.find((g) => g._id === activeGroupId);
   const activeGroupName = propsGroupName || activeGroup?.name || "Group";
 
-  const handleClose = propsOnClose || (() => setCreatorOpen(false, null));
+  const handleClose = () => {
+    audioManager.stop();
+    clearSong();
+    if (propsOnClose) {
+      propsOnClose();
+    } else {
+      setCreatorOpen(false, null);
+    }
+  };
 
   const [mode, setMode] = useState("media"); // 'media' | 'text'
   const [file, setFile] = useState(null);
@@ -41,6 +49,19 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   const [musicPos, setMusicPos] = useState({ x: 50, y: 25 });
   const isDraggingMusic = useRef(false);
   const dragStartRef = useRef({ pageX: 0, pageY: 0, startX: 50, startY: 25 });
+
+  // Clean state when modal opens or closes
+  useEffect(() => {
+    if (isCreatorOpen || propsGroupId) {
+      setFile(null);
+      setPreviewUrl(null);
+      setText("");
+      setMode("media");
+    } else {
+      clearSong();
+      audioManager.stop();
+    }
+  }, [isCreatorOpen, propsGroupId]);
 
   const handleMusicPointerDown = (e) => {
     e.stopPropagation();
@@ -119,6 +140,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   // Music playback preview in creator
   useEffect(() => {
     if (!isCreatorOpen && !propsGroupId) return;
+    const startSec = Number(selectedSong?.clipStart ?? selectedSong?.startOffset ?? clipStart ?? 0);
     if (selectedSong?.audioUrl && !isAudioMuted) {
       audioManager.play({
         id: `creator_music_${selectedSong.id}`,
@@ -126,8 +148,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
         volume: 0.8,
         loop: true,
       });
-      if (clipStart > 0) {
-        audioManager.seek(clipStart);
+      if (startSec > 0) {
+        audioManager.seek(startSec);
       }
     } else {
       audioManager.stop();
@@ -155,6 +177,9 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     formData.append("caption", text);
 
     if (selectedSong) {
+      const activeClipStart = Number(selectedSong.clipStart ?? selectedSong.startOffset ?? clipStart ?? 0);
+      const activeClipDuration = Number(selectedSong.clipDuration ?? clipDuration ?? 15);
+
       const musicPayload = {
         id: selectedSong.id,
         title: selectedSong.title,
@@ -162,8 +187,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
         artwork: selectedSong.artwork || selectedSong.thumbnail || "",
         audioUrl: selectedSong.audioUrl || "",
         sourceUrl: selectedSong.sourceUrl || "",
-        clipStart: Number(clipStart) || 0,
-        clipDuration: Number(clipDuration) || 15,
+        clipStart: activeClipStart,
+        clipDuration: activeClipDuration,
         originalAudioVolume: 100,
         musicVolume: 100,
         position: musicPos || { x: 50, y: 25 },
@@ -189,6 +214,9 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
           artist: selectedSong.artist,
           artwork: selectedSong.artwork || selectedSong.thumbnail,
           audioUrl: selectedSong.audioUrl,
+          sourceUrl: selectedSong.sourceUrl,
+          clipStart: Number(selectedSong.clipStart ?? selectedSong.startOffset ?? clipStart ?? 0),
+          clipDuration: Number(selectedSong.clipDuration ?? clipDuration ?? 15),
         }
         : null,
     };
@@ -303,9 +331,13 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
                 </div>
                 <button
                   type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     clearSong();
+                    audioManager.stop();
                   }}
                   className="text-white/60 hover:text-white p-1 rounded-full hover:bg-white/20 transition-colors"
                 >

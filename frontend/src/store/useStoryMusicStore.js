@@ -253,6 +253,7 @@ export const useStoryMusicStore = create((set, get) => ({
     const song = {
       ...previewSong,
       startOffset,
+      clipStart: startOffset,
       clipDuration,
       sticker: {
         x: 0.5,
@@ -277,7 +278,8 @@ export const useStoryMusicStore = create((set, get) => ({
     return song;
   },
 
-  clearSelected: () => set({ selectedSong: null }),
+  clearSelected: () => set({ selectedSong: null, previewSong: null }),
+  clearSong: () => set({ selectedSong: null, previewSong: null }),
 
   updateSelectedSticker: (patch) => {
     const cur = get().selectedSong;

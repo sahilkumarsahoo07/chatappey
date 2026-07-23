@@ -103,6 +103,8 @@ export const GroupVibeViewerModal = () => {
       const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
       const playAudioWithFallback = () => {
+        const startSec = Number(currentVibe.music.clipStart ?? currentVibe.music.startOffset ?? 0);
+
         audioManager.play({
           id: `vibe_music_${currentVibe._id}`,
           url: streamProxyUrl,
@@ -116,12 +118,15 @@ export const GroupVibeViewerModal = () => {
                 volume: 0.9,
                 loop: true,
               });
+              if (startSec > 0) {
+                audioManager.seek(startSec);
+              }
             }
           },
         });
 
-        if (currentVibe.music.clipStart > 0) {
-          audioManager.seek(currentVibe.music.clipStart);
+        if (startSec > 0) {
+          audioManager.seek(startSec);
         }
       };
 
