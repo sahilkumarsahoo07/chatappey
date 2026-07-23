@@ -74,6 +74,14 @@ const groupSchema = new mongoose.Schema(
         disappearingMessagesDuration: {
             type: Number,
             default: 0
+        },
+        addVibesRestricted: {
+            type: Boolean,
+            default: false
+        },
+        vibesDisabled: {
+            type: Boolean,
+            default: false
         }
     },
     { timestamps: true }

@@ -13,7 +13,12 @@ import { useShallow } from "zustand/react/shallow";
 import { Dialog, DialogTitle, DialogContent } from "@mui/material";
 import toast from "react-hot-toast";
 
+import { GroupVibeAvatarRing } from "./groupVibes/GroupVibeAvatarRing";
+import { Sparkles } from "lucide-react";
+import { useGroupVibeStore } from "../store/useGroupVibeStore";
+
 const GroupChatHeader = ({ onSearchOpen }) => {
+    const { setCreatorOpen } = useGroupVibeStore();
     const { selectedGroup, clearSelectedGroup, unpinMessage, typingUsers, recordingUsers, setScrollTarget, groupMessages } =
         useGroupStore(
             useShallow((s) => ({
@@ -111,17 +116,12 @@ const GroupChatHeader = ({ onSearchOpen }) => {
                         onClick={() => setShowInfo(true)}
                         className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded-xl px-1 py-1 hover:bg-base-200/60 active:scale-[0.995] transition-all"
                     >
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-primary/15 flex items-center justify-center shrink-0 ring-1 ring-base-300/60">
-                            {selectedGroup.image ? (
-                                <img
-                                    src={selectedGroup.image}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                />
-                            ) : (
-                                <Users className="w-5 h-5 text-primary" />
-                            )}
-                        </div>
+                        <GroupVibeAvatarRing
+                            groupId={selectedGroup._id}
+                            groupName={selectedGroup.name}
+                            groupImage={selectedGroup.image}
+                            size={40}
+                        />
 
                         <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-[15px] sm:text-base text-base-content truncate leading-tight">
@@ -146,6 +146,14 @@ const GroupChatHeader = ({ onSearchOpen }) => {
                     </button>
 
                     <div className="flex items-center shrink-0 gap-0.5">
+                        <button
+                            type="button"
+                            onClick={() => setCreatorOpen(true, selectedGroup._id)}
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all"
+                            title="Add Group Vibe"
+                        >
+                            <Sparkles size={18} strokeWidth={2} />
+                        </button>
                         {onSearchOpen && (
                             <button
                                 type="button"

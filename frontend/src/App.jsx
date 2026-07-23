@@ -41,6 +41,10 @@ import NotificationPermissionBanner from './components/NotificationPermissionBan
 import NotificationPromptModal from './components/NotificationPromptModal';
 import { CreateStatusModal } from './components/status';
 import { useStatusStore } from './store/useStatusStore';
+import { useGroupVibeStore } from './store/useGroupVibeStore';
+import { GroupVibeCreatorModal } from './components/groupVibes/GroupVibeCreatorModal';
+import { GroupVibeViewerModal } from './components/groupVibes/GroupVibeViewerModal';
+import { GroupVibeArchiveModal } from './components/groupVibes/GroupVibeArchiveModal';
 import { useVisualViewportKeyboard } from './hooks/useVisualViewportKeyboard';
 import { useComposerLayout } from './hooks/useComposerLayout';
 
@@ -124,6 +128,30 @@ function App() {
       return () => unsubscribeFromStatusEvents();
     }
   }, [authUser, socket, subscribeToStatusEvents, unsubscribeFromStatusEvents]);
+
+  // Live Group Vibes updates (created / deleted / viewed / reaction)
+  useEffect(() => {
+    if (!authUser || !socket) return;
+
+    const handleCreated = (data) => useGroupVibeStore.getState().handleSocketVibeCreated(data);
+    const handleDeleted = (data) => useGroupVibeStore.getState().handleSocketVibeDeleted(data);
+    const handleViewed = (data) => useGroupVibeStore.getState().handleSocketVibeViewed(data);
+    const handleReaction = (data) => useGroupVibeStore.getState().handleSocketVibeReaction(data);
+
+    socket.on("group:vibe:created", handleCreated);
+    socket.on("group:vibe:deleted", handleDeleted);
+    socket.on("group:vibe:viewed", handleViewed);
+    socket.on("group:vibe:reaction", handleReaction);
+
+    useGroupVibeStore.getState().fetchGroupVibesSummary();
+
+    return () => {
+      socket.off("group:vibe:created", handleCreated);
+      socket.off("group:vibe:deleted", handleDeleted);
+      socket.off("group:vibe:viewed", handleViewed);
+      socket.off("group:vibe:reaction", handleReaction);
+    };
+  }, [authUser, socket]);
 
   useEffect(() => {
     // Check for token in URL (from Google OAuth)
@@ -239,6 +267,10 @@ function App() {
           <Suspense fallback={null}>
             <StatusViewer />
           </Suspense>
+          {/* Group Vibes Modals */}
+          <GroupVibeCreatorModal />
+          <GroupVibeViewerModal />
+          <GroupVibeArchiveModal />
         </>
       )}
     </div>

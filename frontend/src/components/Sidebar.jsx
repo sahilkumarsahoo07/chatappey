@@ -9,6 +9,7 @@ import { Search, MessageCircle, Edit, X, Check, CheckCheck, Users, Plus, CircleD
 import defaultImg from '../public/avatar.png'
 import SidebarChatRow from "./SidebarChatRow";
 import StatusRingList from "./status/StatusRingList";
+import { GroupVibeAvatarRing } from "./groupVibes/GroupVibeAvatarRing";
 import { useStatusStore } from "../store/useStatusStore";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { Archive, BellOff } from "lucide-react";
@@ -671,17 +672,12 @@ const Sidebar = () => {
                                 >
                                     {/* Group Avatar */}
                                     <div className="relative flex-shrink-0 md:mx-auto lg:mx-0">
-                                        <div className="size-11 sm:size-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                                            {group.image ? (
-                                                <img
-                                                    src={group.image}
-                                                    alt={group.name}
-                                                    className="size-11 sm:size-12 object-cover"
-                                                />
-                                            ) : (
-                                                <Users className="size-6 text-primary" />
-                                            )}
-                                        </div>
+                                        <GroupVibeAvatarRing
+                                            groupId={group._id}
+                                            groupName={group.name}
+                                            groupImage={group.image}
+                                            size={48}
+                                        />
                                         {hasUnreadMessages && (
                                             <span
                                                 className="absolute -top-0.5 -right-0.5 z-[2] min-w-[18px] h-[18px] px-1

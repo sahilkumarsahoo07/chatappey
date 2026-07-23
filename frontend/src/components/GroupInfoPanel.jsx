@@ -3,8 +3,9 @@ import {
     X, Users, LogOut, Trash2, UserPlus, UserMinus, Edit2, Camera, 
     Check, MoreVertical, Shield, ShieldOff, ShieldCheck, Search, Megaphone,
     Phone, Video, Star, Pin, Bell, Timer, Palette, Image as ImageIcon,
-    Settings, AlertTriangle, ChevronRight, Link, ArrowLeft
+    Settings, AlertTriangle, ChevronRight, Link, ArrowLeft, Sparkles, Archive
 } from "lucide-react";
+import { useGroupVibeStore } from "../store/useGroupVibeStore";
 import { useGroupStore } from "../store/useGroupStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
@@ -14,6 +15,7 @@ import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 
 const GroupInfoPanel = ({ isOpen, onClose }) => {
+    const { setCreatorOpen, fetchCreatorArchive } = useGroupVibeStore();
     const { selectedGroup, updateGroup, deleteGroup, addMembers, removeMember, leaveGroup, updateMemberRole, groupMessages } = useGroupStore();
     const { users } = useChatStore();
     const { authUser } = useAuthStore();
@@ -649,6 +651,8 @@ const GroupInfoPanel = ({ isOpen, onClose }) => {
                     {/* 5. MEDIA LINKS AND DOCS */}
                     <div className="bg-base-100 py-2">
                         <ListItem icon={ImageIcon} title="Media, links, and docs" right={<span className="flex items-center gap-2"><ChevronRight className="w-4 h-4"/></span>} onClick={() => setShowMedia(true)} />
+                        <ListItem icon={Sparkles} title="Create Group Vibe" right={<span className="badge badge-primary text-[10px]">NEW</span>} onClick={() => { onClose(); setCreatorOpen(true, selectedGroup._id); }} />
+                        <ListItem icon={Archive} title="Group Vibes Archive" right={<ChevronRight className="w-4 h-4"/>} onClick={() => fetchCreatorArchive(selectedGroup._id)} />
                     </div>
 
                     <div className="h-2 w-full bg-base-200"></div>
