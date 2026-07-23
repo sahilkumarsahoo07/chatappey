@@ -434,6 +434,10 @@ export const reactToGroupVibe = async (req, res) => {
     const { reaction } = req.body;
     const userId = req.user._id;
 
+    if (!mongoose.Types.ObjectId.isValid(groupId) || !mongoose.Types.ObjectId.isValid(vibeId)) {
+      return res.status(400).json({ error: "Invalid group or vibe ID" });
+    }
+
     const allowedReactions = ["❤️", "😂", "🔥", "😍", "😮", "😢", "👏"];
     if (!allowedReactions.includes(reaction)) {
       return res.status(400).json({ error: "Invalid reaction emoji" });
@@ -477,7 +481,7 @@ export const reactToGroupVibe = async (req, res) => {
 
     // Aggregate summary for vibe
     const reactionDocs = await GroupVibeReaction.aggregate([
-      { $match: { vibeId: new mongoose.Types.ObjectId(vibeId) } },
+      { $match: { vibeId: new mongoose.Types.ObjectId(String(vibeId)) } },
       { $group: { _id: "$reaction", count: { $sum: 1 } } },
     ]);
 
@@ -498,8 +502,8 @@ export const reactToGroupVibe = async (req, res) => {
 
     return res.json(payload);
   } catch (error) {
-    console.error("reactToGroupVibe:", error);
-    return res.status(500).json({ error: "Failed to process reaction" });
+    console.error("reactToGroupVibe error:", error);
+    return res.status(500).json({ error: error.message || "Failed to process reaction" });
   }
 };
 

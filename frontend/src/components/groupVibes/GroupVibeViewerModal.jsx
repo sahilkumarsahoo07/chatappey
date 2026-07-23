@@ -67,11 +67,10 @@ export const GroupVibeViewerModal = () => {
     if (currentVibe.music && !isMuted) {
       const audioUrl = currentVibe.music.audioUrl || "";
       const sourceUrl = currentVibe.music.sourceUrl || "";
-      const streamProxyUrl = audioUrl
-        ? `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}`
-        : sourceUrl
-        ? `/api/music/stream?sourceUrl=${encodeURIComponent(sourceUrl)}`
-        : "";
+      const title = currentVibe.music.title || "";
+      const artist = currentVibe.music.artist || "";
+
+      const streamProxyUrl = `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
       if (streamProxyUrl) {
         audioManager.play({
@@ -139,9 +138,9 @@ export const GroupVibeViewerModal = () => {
   if (!isViewerOpen || !currentVibe) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-lg select-none animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-black/95 sm:backdrop-blur-lg select-none animate-in fade-in duration-200">
       <div
-        className="relative w-full max-w-md h-[95vh] max-h-[820px] bg-slate-950 rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/10"
+        className="relative w-full h-full sm:h-[95vh] sm:max-h-[840px] sm:max-w-md bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border-0 sm:border border-white/10"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseDown={() => setIsPaused(true)}

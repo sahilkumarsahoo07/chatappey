@@ -146,10 +146,12 @@ export const resolveMusic = async (req, res) => {
 export const streamMusicProxy = async (req, res) => {
   try {
     let streamUrl = String(req.query.url || "").trim();
-    const sourceUrl = String(req.query.sourceUrl || "").trim();
+    let sourceUrl = String(req.query.sourceUrl || "").trim();
+    const title = String(req.query.title || "").trim();
+    const artist = String(req.query.artist || "").trim();
 
-    if (!streamUrl && !sourceUrl) {
-      return res.status(400).json({ error: "url or sourceUrl required" });
+    if (!streamUrl && !sourceUrl && !title) {
+      return res.status(400).json({ error: "url, sourceUrl, or title required" });
     }
 
     let response = null;
@@ -166,7 +168,7 @@ export const streamMusicProxy = async (req, res) => {
         }
 
         const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 7000);
+        const t = setTimeout(() => ctrl.abort(), 6000);
 
         const testRes = await fetch(streamUrl, {
           headers,
@@ -205,6 +207,31 @@ export const streamMusicProxy = async (req, res) => {
         }
       } catch (err) {
         console.error("Failed to re-parse music for stream proxy:", err.message);
+      }
+    }
+
+    if (!response && (title || artist)) {
+      try {
+        const query = `${title} ${artist}`.trim();
+        const freshLink = await resolveYoutubeMusicUrl(query);
+        const freshSong = await parseMusicMedia(freshLink);
+        if (freshSong?.audioUrl) {
+          streamUrl = freshSong.audioUrl;
+          const headers = {
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            Accept: "*/*",
+          };
+          if (req.headers.range) {
+            headers["Range"] = req.headers.range;
+          }
+          const titleRes = await fetch(streamUrl, { headers });
+          if (titleRes.ok || titleRes.status === 206) {
+            response = titleRes;
+          }
+        }
+      } catch (err) {
+        console.error("Title search stream fallback failed:", err.message);
       }
     }
 

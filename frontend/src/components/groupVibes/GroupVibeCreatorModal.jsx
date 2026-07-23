@@ -50,24 +50,39 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     dragStartRef.current = { pageX: clientX, pageY: clientY, startX: musicPos.x, startY: musicPos.y };
   };
 
-  const handlePointerMove = (e) => {
-    if (!isDraggingMusic.current || !canvasRef.current) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const rect = canvasRef.current.getBoundingClientRect();
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isDraggingMusic.current || !canvasRef.current) return;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const rect = canvasRef.current.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
 
-    const deltaXPercent = ((clientX - dragStartRef.current.pageX) / rect.width) * 100;
-    const deltaYPercent = ((clientY - dragStartRef.current.pageY) / rect.height) * 100;
+      const deltaXPercent = ((clientX - dragStartRef.current.pageX) / rect.width) * 100;
+      const deltaYPercent = ((clientY - dragStartRef.current.pageY) / rect.height) * 100;
 
-    const newX = Math.max(15, Math.min(85, dragStartRef.current.startX + deltaXPercent));
-    const newY = Math.max(15, Math.min(85, dragStartRef.current.startY + deltaYPercent));
+      const newX = Math.max(12, Math.min(88, dragStartRef.current.startX + deltaXPercent));
+      const newY = Math.max(12, Math.min(88, dragStartRef.current.startY + deltaYPercent));
 
-    setMusicPos({ x: newX, y: newY });
-  };
+      setMusicPos({ x: newX, y: newY });
+    };
 
-  const handlePointerUp = () => {
-    isDraggingMusic.current = false;
-  };
+    const onEnd = () => {
+      isDraggingMusic.current = false;
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd);
+
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isCreatorOpen && !propsGroupId) return;
@@ -188,8 +203,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md h-[90vh] max-h-[750px] bg-base-100 rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-base-content/10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 sm:backdrop-blur-md p-0 sm:p-4 animate-in fade-in duration-200">
+      <div className="relative w-full h-full sm:h-[92vh] sm:max-h-[800px] sm:max-w-md bg-base-100 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border-0 sm:border border-base-content/10">
         {/* Top Header */}
         <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/60 to-transparent absolute top-0 inset-x-0 z-20 text-white">
           <div className="flex items-center gap-2">
@@ -213,7 +228,8 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
 
         {/* Content Canvas */}
         <div
-          className="relative flex-1 flex flex-col items-center justify-center overflow-hidden bg-slate-900"
+          ref={canvasRef}
+          className="relative flex-1 flex flex-col items-center justify-center overflow-hidden bg-slate-900 select-none touch-none"
           style={
             mode === "text"
               ? { background: BACKGROUND_GRADIENTS[gradientIndex] }
@@ -262,23 +278,36 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             />
           )}
 
-          {/* Music Sticker Overlay */}
+          {/* Draggable Music Sticker Overlay */}
           {selectedSong && (
-            <div className="absolute top-20 inset-x-4 flex justify-center z-10 animate-in slide-in-from-top-4 duration-300">
-              <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-black/60 backdrop-blur-md border border-white/20 text-white shadow-xl max-w-xs">
+            <div
+              className="absolute z-30 cursor-grab active:cursor-grabbing touch-none select-none transition-transform active:scale-105"
+              style={{
+                left: `${musicPos.x}%`,
+                top: `${musicPos.y}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+              onPointerDown={handleMusicPointerDown}
+              onTouchStart={handleMusicPointerDown}
+            >
+              <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/30 text-white shadow-2xl max-w-xs ring-2 ring-rose-500/50 hover:border-rose-400">
                 <img
                   src={selectedSong.artwork || selectedSong.thumbnail || "/music-placeholder.png"}
                   alt="Song cover"
-                  className="w-10 h-10 rounded-xl object-cover animate-pulse"
+                  className="w-10 h-10 rounded-xl object-cover shadow pointer-events-none"
+                  draggable={false}
                 />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate">{selectedSong.title}</p>
-                  <p className="text-[10px] text-white/70 truncate">{selectedSong.artist}</p>
+                <div className="flex-1 min-w-0 pointer-events-none">
+                  <p className="text-xs font-bold truncate drop-shadow">{selectedSong.title}</p>
+                  <p className="text-[10px] text-white/80 truncate drop-shadow">{selectedSong.artist || "Unknown artist"}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => clearSong()}
-                  className="text-white/60 hover:text-white p-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearSong();
+                  }}
+                  className="text-white/60 hover:text-white p-1 rounded-full hover:bg-white/20 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
