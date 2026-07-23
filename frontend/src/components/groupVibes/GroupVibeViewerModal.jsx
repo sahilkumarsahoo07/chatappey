@@ -49,15 +49,6 @@ export const GroupVibeViewerModal = () => {
   const progressTimerRef = useRef(null);
   const isPausedRef = useRef(isPaused);
 
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-    if (isPaused) {
-      audioManager.pause();
-    } else if (isViewerOpen && currentVibe?.music && !isMuted) {
-      audioManager.resume();
-    }
-  }, [isPaused, isMuted, isViewerOpen, currentVibe?._id]);
-
   const rawVibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
 
   // Deduplicate and filter out deleted/invalid vibes for clean viewer segments
@@ -73,6 +64,15 @@ export const GroupVibeViewerModal = () => {
   }, [rawVibes]);
 
   const currentVibe = vibes[activeVibeIndex];
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+    if (isPaused) {
+      audioManager.pause();
+    } else if (isViewerOpen && currentVibe?.music && !isMuted) {
+      audioManager.resume();
+    }
+  }, [isPaused, isMuted, isViewerOpen, currentVibe?._id]);
 
   const isCreator = currentVibe && String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser?._id);
 
