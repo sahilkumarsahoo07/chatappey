@@ -354,11 +354,18 @@ function StatusViewer() {
     const clip = Math.max(5, Number(music.clipDuration) || 15);
     const audioUrl = music.audioUrl || "";
     const sourceUrl = music.sourceUrl || "";
-    const streamProxyUrl = audioUrl
-      ? `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}`
-      : sourceUrl
-      ? `/api/music/stream?sourceUrl=${encodeURIComponent(sourceUrl)}`
-      : "";
+    const title = music.title || "";
+    const artist = music.artist || "";
+
+    const getApiBaseUrl = () => {
+      if (import.meta.env.MODE === "development") {
+        return `http://${window.location.hostname}:5001`;
+      }
+      return "https://chatappey.onrender.com";
+    };
+
+    const baseUrl = getApiBaseUrl();
+    const streamProxyUrl = `${baseUrl}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
     audio.src = streamProxyUrl || audioUrl;
     audio.loop = false;

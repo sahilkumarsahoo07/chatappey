@@ -64,13 +64,20 @@ export const GroupVibeViewerModal = () => {
     const increment = (intervalMs / durationMs) * 100;
 
     // Handle music playback
-    if (currentVibe.music && !isMuted) {
+    if (currentVibe?.music && !isMuted) {
       const audioUrl = currentVibe.music.audioUrl || "";
       const sourceUrl = currentVibe.music.sourceUrl || "";
       const title = currentVibe.music.title || "";
       const artist = currentVibe.music.artist || "";
 
-      const streamProxyUrl = `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
+      const getApiBaseUrl = () => {
+        if (import.meta.env.MODE === "development") {
+          return `http://${window.location.hostname}:5001`;
+        }
+        return "https://chatappey.onrender.com";
+      };
+
+      const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
       if (streamProxyUrl) {
         audioManager.play({
@@ -80,7 +87,9 @@ export const GroupVibeViewerModal = () => {
           loop: true,
         });
         if (currentVibe.music.clipStart > 0) {
-          audioManager.seek(currentVibe.music.clipStart);
+          try {
+            audioManager.seek(currentVibe.music.clipStart);
+          } catch (e) {}
         }
       } else {
         audioManager.stop();
