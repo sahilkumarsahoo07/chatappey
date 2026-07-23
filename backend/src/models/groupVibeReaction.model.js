@@ -31,7 +31,6 @@ const groupVibeReactionSchema = new mongoose.Schema(
 
 // Prevent duplicate reaction records per user per vibe
 groupVibeReactionSchema.index({ vibeId: 1, userId: 1 }, { unique: true });
-groupVibeReactionSchema.index({ vibeId: 1 });
 
 const GroupVibeReaction = mongoose.model("GroupVibeReaction", groupVibeReactionSchema);
 export default GroupVibeReaction;
