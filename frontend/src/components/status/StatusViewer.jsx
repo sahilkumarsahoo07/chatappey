@@ -345,14 +345,22 @@ function StatusViewer() {
     audio.pause();
     audio.removeAttribute("src");
 
-    if (!isViewerOpen || !music?.audioUrl) {
+    if (!isViewerOpen || (!music?.audioUrl && !music?.sourceUrl)) {
       audio.load();
       return;
     }
 
     const start = Math.max(0, Number(music.startOffset) || 0);
     const clip = Math.max(5, Number(music.clipDuration) || 15);
-    audio.src = music.audioUrl;
+    const audioUrl = music.audioUrl || "";
+    const sourceUrl = music.sourceUrl || "";
+    const streamProxyUrl = audioUrl
+      ? `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}`
+      : sourceUrl
+      ? `/api/music/stream?sourceUrl=${encodeURIComponent(sourceUrl)}`
+      : "";
+
+    audio.src = streamProxyUrl || audioUrl;
     audio.loop = false;
     audio.muted = muted;
     audio.currentTime = start;

@@ -109,6 +109,12 @@ export const createGroupVibe = async (req, res) => {
       return res.status(400).json({ error: "Group Vibe requires text or media" });
     }
 
+    // Helper for safe number conversion avoiding NaN
+    const safeNum = (val, fallback) => {
+      const n = Number(val);
+      return Number.isFinite(n) ? n : fallback;
+    };
+
     // Parse Music metadata if provided
     let music = undefined;
     if (req.body.music) {
@@ -122,19 +128,19 @@ export const createGroupVibe = async (req, res) => {
             artwork: String(raw.artwork || raw.thumbnail || "").slice(0, 500),
             audioUrl: String(raw.audioUrl || "").slice(0, 2000),
             sourceUrl: String(raw.sourceUrl || "").slice(0, 500),
-            clipStart: Math.max(0, Number(raw.clipStart || raw.startOffset) || 0),
-            clipDuration: Math.min(60, Math.max(5, Number(raw.clipDuration) || 15)),
-            originalAudioVolume: Math.min(100, Math.max(0, Number(raw.originalAudioVolume) ?? 100)),
-            musicVolume: Math.min(100, Math.max(0, Number(raw.musicVolume) ?? 100)),
+            clipStart: Math.max(0, safeNum(raw.clipStart ?? raw.startOffset, 0)),
+            clipDuration: Math.min(60, Math.max(5, safeNum(raw.clipDuration, 15))),
+            originalAudioVolume: Math.min(100, Math.max(0, safeNum(raw.originalAudioVolume, 100))),
+            musicVolume: Math.min(100, Math.max(0, safeNum(raw.musicVolume, 100))),
             position: {
-              x: Number(raw.position?.x) || 50,
-              y: Number(raw.position?.y) || 25,
+              x: safeNum(raw.position?.x, 50),
+              y: safeNum(raw.position?.y, 25),
             },
             sticker: {
-              x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
-              y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
-              scale: Math.min(2.5, Math.max(0.6, Number(raw.sticker?.scale) ?? 1)),
-              rotation: Number(raw.sticker?.rotation) || 0,
+              x: Math.min(1, Math.max(0, safeNum(raw.sticker?.x, 0.5))),
+              y: Math.min(1, Math.max(0, safeNum(raw.sticker?.y, 0.72))),
+              scale: Math.min(2.5, Math.max(0.6, safeNum(raw.sticker?.scale, 1))),
+              rotation: safeNum(raw.sticker?.rotation, 0),
               theme: ["classic", "dark", "neon", "minimal"].includes(raw.sticker?.theme)
                 ? raw.sticker.theme
                 : "classic",

@@ -139,6 +139,111 @@ export const resolveMusic = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/music/stream?url=...&sourceUrl=...
+ * Proxy audio stream to bypass mobile CORS/expiration issues & support byte-range seeking.
+ */
+export const streamMusicProxy = async (req, res) => {
+  try {
+    let streamUrl = String(req.query.url || "").trim();
+    const sourceUrl = String(req.query.sourceUrl || "").trim();
+
+    if (!streamUrl && !sourceUrl) {
+      return res.status(400).json({ error: "url or sourceUrl required" });
+    }
+
+    let response = null;
+
+    if (streamUrl) {
+      try {
+        const headers = {
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+          Accept: "*/*",
+        };
+        if (req.headers.range) {
+          headers["Range"] = req.headers.range;
+        }
+
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 7000);
+
+        const testRes = await fetch(streamUrl, {
+          headers,
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+
+        if (testRes.ok || testRes.status === 206) {
+          response = testRes;
+        }
+      } catch (err) {
+        console.warn("Direct stream proxy failed, re-parsing sourceUrl:", err.message);
+      }
+    }
+
+    if (!response && sourceUrl) {
+      try {
+        const freshSong = await getMusicByLink(sourceUrl);
+        if (freshSong?.audioUrl) {
+          streamUrl = freshSong.audioUrl;
+          const cacheKey = `link:${sourceUrl}`;
+          linkCacheSet(cacheKey, freshSong);
+
+          const headers = {
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            Accept: "*/*",
+          };
+          if (req.headers.range) {
+            headers["Range"] = req.headers.range;
+          }
+          const freshRes = await fetch(streamUrl, { headers });
+          if (freshRes.ok || freshRes.status === 206) {
+            response = freshRes;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to re-parse music for stream proxy:", err.message);
+      }
+    }
+
+    if (!response) {
+      return res.status(502).json({ error: "Unable to stream audio resource" });
+    }
+
+    res.status(response.status);
+    const passHeaders = ["content-type", "content-length", "content-range", "accept-ranges"];
+    for (const h of passHeaders) {
+      const val = response.headers.get(h);
+      if (val) res.setHeader(h, val);
+    }
+    if (!res.getHeader("content-type")) {
+      res.setHeader("content-type", "audio/mpeg");
+    }
+
+    const reader = response.body.getReader();
+    const pump = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+      } catch (e) {
+        res.end();
+      }
+    };
+    pump();
+  } catch (error) {
+    console.error("streamMusicProxy:", error.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Audio proxy stream error" });
+    }
+  }
+};
+
 /** Curated trending seeds — resolved on demand when client opens Music. */
 const TRENDING_QUERIES = [
   "Shape of You",

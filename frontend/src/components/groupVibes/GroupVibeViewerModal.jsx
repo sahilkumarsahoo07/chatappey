@@ -64,15 +64,27 @@ export const GroupVibeViewerModal = () => {
     const increment = (intervalMs / durationMs) * 100;
 
     // Handle music playback
-    if (currentVibe.music?.audioUrl && !isMuted) {
-      audioManager.play({
-        id: `vibe_music_${currentVibe._id}`,
-        url: currentVibe.music.audioUrl,
-        volume: 0.9,
-        loop: true,
-      });
-      if (currentVibe.music.clipStart > 0) {
-        audioManager.seek(currentVibe.music.clipStart);
+    if (currentVibe.music && !isMuted) {
+      const audioUrl = currentVibe.music.audioUrl || "";
+      const sourceUrl = currentVibe.music.sourceUrl || "";
+      const streamProxyUrl = audioUrl
+        ? `/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}`
+        : sourceUrl
+        ? `/api/music/stream?sourceUrl=${encodeURIComponent(sourceUrl)}`
+        : "";
+
+      if (streamProxyUrl) {
+        audioManager.play({
+          id: `vibe_music_${currentVibe._id}`,
+          url: streamProxyUrl,
+          volume: 0.9,
+          loop: true,
+        });
+        if (currentVibe.music.clipStart > 0) {
+          audioManager.seek(currentVibe.music.clipStart);
+        }
+      } else {
+        audioManager.stop();
       }
     } else {
       audioManager.stop();

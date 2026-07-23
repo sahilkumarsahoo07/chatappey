@@ -145,11 +145,20 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
         title: selectedSong.title,
         artist: selectedSong.artist,
         artwork: selectedSong.artwork || selectedSong.thumbnail || "",
-        audioUrl: selectedSong.audioUrl,
+        audioUrl: selectedSong.audioUrl || "",
         sourceUrl: selectedSong.sourceUrl || "",
-        clipStart,
-        clipDuration,
-        position: musicPos,
+        clipStart: Number(clipStart) || 0,
+        clipDuration: Number(clipDuration) || 15,
+        originalAudioVolume: 100,
+        musicVolume: 100,
+        position: musicPos || { x: 50, y: 25 },
+        sticker: {
+          x: Math.min(1, Math.max(0, (musicPos?.x ?? 50) / 100)),
+          y: Math.min(1, Math.max(0, (musicPos?.y ?? 25) / 100)),
+          scale: 1,
+          rotation: 0,
+          theme: "classic",
+        },
       };
       formData.append("music", JSON.stringify(musicPayload));
     }
