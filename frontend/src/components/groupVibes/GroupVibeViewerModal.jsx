@@ -47,6 +47,16 @@ export const GroupVibeViewerModal = () => {
   const videoRef = useRef(null);
   const touchStartY = useRef(null);
   const progressTimerRef = useRef(null);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+    if (isPaused) {
+      audioManager.pause();
+    } else if (isViewerOpen && currentVibe?.music && !isMuted) {
+      audioManager.resume();
+    }
+  }, [isPaused, isMuted, isViewerOpen, currentVibe?._id]);
 
   const rawVibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
 
@@ -92,21 +102,30 @@ export const GroupVibeViewerModal = () => {
 
       const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
-      if (streamProxyUrl) {
+      const playAudioWithFallback = () => {
         audioManager.play({
           id: `vibe_music_${currentVibe._id}`,
           url: streamProxyUrl,
           volume: 0.9,
           loop: true,
+          onError: () => {
+            if (audioUrl) {
+              audioManager.play({
+                id: `vibe_music_direct_${currentVibe._id}`,
+                url: audioUrl,
+                volume: 0.9,
+                loop: true,
+              });
+            }
+          },
         });
+
         if (currentVibe.music.clipStart > 0) {
-          try {
-            audioManager.seek(currentVibe.music.clipStart);
-          } catch (e) {}
+          audioManager.seek(currentVibe.music.clipStart);
         }
-      } else {
-        audioManager.stop();
-      }
+      };
+
+      playAudioWithFallback();
     } else {
       audioManager.stop();
     }
@@ -114,7 +133,7 @@ export const GroupVibeViewerModal = () => {
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
 
     progressTimerRef.current = setInterval(() => {
-      if (!isPaused) {
+      if (!isPausedRef.current) {
         setProgress((prev) => {
           if (prev >= 100) {
             clearInterval(progressTimerRef.current);
@@ -130,7 +149,7 @@ export const GroupVibeViewerModal = () => {
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       audioManager.stop();
     };
-  }, [isViewerOpen, activeViewerGroupId, activeVibeIndex, isPaused, isMuted, currentVibe?._id]);
+  }, [isViewerOpen, activeViewerGroupId, activeVibeIndex, isMuted, currentVibe?._id]);
 
   // Touch Swipe Down to close
   const handleTouchStart = (e) => {
@@ -163,9 +182,15 @@ export const GroupVibeViewerModal = () => {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-black/95 sm:backdrop-blur-lg select-none animate-in fade-in duration-200">
       <div
         className="relative w-full h-full sm:h-[95vh] sm:max-h-[840px] sm:max-w-md bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border-0 sm:border border-white/10"
-        onTouchStart={handleTouchStart}
+        onTouchStart={(e) => {
+          audioManager.resume();
+          handleTouchStart(e);
+        }}
         onTouchEnd={handleTouchEnd}
-        onMouseDown={() => setIsPaused(true)}
+        onMouseDown={() => {
+          audioManager.resume();
+          setIsPaused(true);
+        }}
         onMouseUp={() => setIsPaused(false)}
       >
         {/* Floating Live Reactions Layer */}

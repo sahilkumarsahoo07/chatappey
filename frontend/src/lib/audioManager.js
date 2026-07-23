@@ -111,8 +111,23 @@ class AudioManager {
   }
 
   seek(seconds) {
-    if (this.currentAudio && Number.isFinite(seconds)) {
-      this.currentAudio.currentTime = seconds;
+    if (this.currentAudio && Number.isFinite(seconds) && seconds >= 0) {
+      const applySeek = () => {
+        try {
+          if (this.currentAudio && this.currentAudio.duration >= seconds) {
+            this.currentAudio.currentTime = seconds;
+          }
+        } catch (e) {
+          console.warn("AudioManager seek error:", e.message);
+        }
+      };
+
+      if (this.currentAudio.readyState >= 1) {
+        applySeek();
+      } else {
+        this.currentAudio.addEventListener("loadedmetadata", applySeek, { once: true });
+        this.currentAudio.addEventListener("canplay", applySeek, { once: true });
+      }
     }
   }
 
