@@ -8,17 +8,16 @@ import {
   Clock,
   Trash2,
   ChevronLeft,
+  Check,
+  Sparkles,
 } from "lucide-react";
 import { useStoryMusicStore } from "../../store/useStoryMusicStore";
+import { InstagramMusicSticker } from "../groupVibes/InstagramMusicSticker";
 import toast from "react-hot-toast";
 import "./storyMusic.css";
 
-const CLIP_OPTIONS = [30, 40, 50, 60];
-const STICKER_THEMES = ["classic", "dark", "neon", "minimal"];
-const WAVE_BARS = [
-  28, 52, 78, 44, 90, 60, 36, 72, 48, 84, 40, 66, 92, 50, 34, 70, 58, 86, 42, 76,
-  54, 88, 38, 64, 80, 46, 74, 56, 82, 62,
-];
+const CLIP_OPTIONS = [15, 30, 45, 60];
+const STICKER_THEMES = ["classic", "rounded", "compact", "vinyl", "neon"];
 
 function formatTime(sec = 0) {
   const s = Math.max(0, Math.floor(sec));
@@ -27,31 +26,70 @@ function formatTime(sec = 0) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+/** Compute a dynamic blurred background gradient based on song metadata */
+function getSongGradient(song) {
+  if (!song) {
+    return {
+      bg: "linear-gradient(145deg, #1e1b4b 0%, #0f172a 50%, #09090b 100%)",
+      glow: "rgba(255, 45, 85, 0.3)",
+      accent: "#ff2d55",
+    };
+  }
+  const seed = song.id || song.title || "default";
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const h1 = Math.abs(hash) % 360;
+  const h2 = (h1 + 55 + (Math.abs(hash >> 3) % 70)) % 360;
+
+  return {
+    bg: `linear-gradient(155deg, hsl(${h1}, 75%, 15%) 0%, hsl(${h2}, 85%, 9%) 55%, #09090b 100%)`,
+    glow: `hsla(${h1}, 90%, 55%, 0.4)`,
+    accent: `hsl(${h1}, 95%, 60%)`,
+  };
+}
+
 function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
   const isPlaying = playingId === song.id;
   const isLoading = loadingId === song.id;
+
   return (
-    <div className={`story-music-row${selected ? " is-selected" : ""}`}>
+    <div className={`story-music-row ${selected ? "is-selected" : ""}`}>
       <button
         type="button"
-        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+        className="flex items-center gap-3.5 flex-1 min-w-0 text-left cursor-pointer group"
         disabled={isLoading}
         onClick={() => onSelect(song)}
       >
-        <img
-          className="story-music-cover"
-          src={song.thumbnail || "/avatar.png"}
-          alt=""
-          loading="lazy"
-        />
-        <span className="story-music-meta">
-          <span className="title block">{song.title}</span>
-          <span className="sub block">
+        <div className="relative shrink-0">
+          <img
+            className="story-music-cover"
+            src={song.thumbnail || song.artwork || "/avatar.png"}
+            alt={song.title}
+            loading="lazy"
+          />
+          {isPlaying && (
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] rounded-xl flex items-center justify-center">
+              <div className="flex items-end gap-0.5 h-3">
+                <span className="w-0.5 h-full bg-rose-400 animate-eq-bar-1 rounded-full" />
+                <span className="w-0.5 h-full bg-rose-400 animate-eq-bar-2 rounded-full" />
+                <span className="w-0.5 h-full bg-rose-400 animate-eq-bar-3 rounded-full" />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="story-music-meta">
+          <p className="title block font-bold text-sm text-white truncate group-hover:text-rose-300 transition-colors">
+            {song.title}
+          </p>
+          <p className="sub block text-xs text-white/60 truncate mt-0.5">
             {song.artist}
             {song.duration ? ` · ${formatTime(song.duration)}` : ""}
-          </span>
-        </span>
+          </p>
+        </div>
       </button>
+
       <button
         type="button"
         className="story-music-play"
@@ -60,11 +98,11 @@ function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
         onClick={() => onPlay(song)}
       >
         {isLoading ? (
-          <span className="loading loading-spinner loading-xs text-white" />
+          <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
         ) : isPlaying ? (
-          <Pause className="w-4 h-4" fill="currentColor" />
+          <Pause className="w-4 h-4 text-white fill-current" />
         ) : (
-          <Play className="w-4 h-4" fill="currentColor" />
+          <Play className="w-4 h-4 text-white fill-current translate-x-0.5" />
         )}
       </button>
     </div>
@@ -73,8 +111,8 @@ function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
 
 function SkeletonRows() {
   return (
-    <>
-      {[0, 1, 2, 3].map((i) => (
+    <div className="space-y-3 px-4">
+      {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} className="story-music-skel">
           <div className="box" />
           <div className="lines">
@@ -83,7 +121,7 @@ function SkeletonRows() {
           </div>
         </div>
       ))}
-    </>
+    </div>
   );
 }
 
@@ -126,6 +164,10 @@ function StoryMusicPicker() {
   const lastSeekTimeRef = useRef(0);
   const isSelfScrollingRef = useRef(false);
 
+  // Dynamic color theme computed for the active preview song
+  const activeGradient = useMemo(() => getSongGradient(previewSong), [previewSong]);
+
+  // Generate waveform heights
   const timelineBars = useMemo(() => {
     if (!previewSong) return [];
     const seed = previewSong.id || "default";
@@ -134,10 +176,10 @@ function StoryMusicPicker() {
       hash = seed.charCodeAt(i) + ((hash << 5) - hash);
     }
     const heights = [];
-    for (let i = 0; i < 80; i++) {
-      const angle = i * 0.2 + Math.abs(hash % 100);
-      const h = 25 + Math.sin(angle) * 20 + Math.cos(angle * 0.5) * 15 + Math.abs((hash + i) % 30);
-      heights.push(Math.min(90, Math.max(15, h)));
+    for (let i = 0; i < 70; i++) {
+      const angle = i * 0.25 + Math.abs(hash % 100);
+      const h = 30 + Math.sin(angle) * 25 + Math.cos(angle * 0.4) * 20 + Math.abs((hash + i) % 25);
+      heights.push(Math.min(95, Math.max(18, h)));
     }
     return heights;
   }, [previewSong]);
@@ -146,11 +188,6 @@ function StoryMusicPicker() {
     if (!previewSong?.duration) return 120;
     return Math.max(0, previewSong.duration - clipDuration);
   }, [previewSong, clipDuration]);
-
-  const sliderProgress = useMemo(() => {
-    if (!maxStart) return 0;
-    return Math.min(100, (startOffset / maxStart) * 100);
-  }, [startOffset, maxStart]);
 
   // Sync scroll position from store state
   useEffect(() => {
@@ -185,13 +222,11 @@ function StoryMusicPicker() {
       const pct = el.scrollLeft / maxScroll;
       const newStart = Math.min(maxStart, pct * maxStart);
 
-      // Trigger store clip update
       useStoryMusicStore.getState().setClip({
         startOffset: newStart,
         clipDuration,
       });
 
-      // Seek audio
       const now = Date.now();
       if (now - lastSeekTimeRef.current > 80) {
         const a = audioRef.current;
@@ -202,22 +237,23 @@ function StoryMusicPicker() {
       }
     };
 
-    el.addEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [maxStart, clipDuration, playingId, previewSong]);
 
-  // Mouse drag handlers to support scrolling on desktop
+  // Mouse / touch drag handlers for track scrolling
   const handleMouseDown = (e) => {
     if (!scrubberRef.current) return;
     isDraggingRef.current = true;
-    startXRef.current = e.pageX - scrubberRef.current.offsetLeft;
+    const pageX = e.touches ? e.touches[0].pageX : e.pageX;
+    startXRef.current = pageX - scrubberRef.current.offsetLeft;
     startScrollLeftRef.current = scrubberRef.current.scrollLeft;
   };
 
   const handleMouseMove = (e) => {
     if (!isDraggingRef.current || !scrubberRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - scrubberRef.current.offsetLeft;
+    const pageX = e.touches ? e.touches[0].pageX : e.pageX;
+    const x = pageX - scrubberRef.current.offsetLeft;
     const walk = (x - startXRef.current) * 1.5;
     scrubberRef.current.scrollLeft = startScrollLeftRef.current - walk;
   };
@@ -225,18 +261,6 @@ function StoryMusicPicker() {
   const handleMouseUpOrLeave = () => {
     isDraggingRef.current = false;
   };
-
-  const handleCycleDuration = useCallback(() => {
-    if (!previewSong) return;
-    const currentIndex = CLIP_OPTIONS.indexOf(clipDuration);
-    const nextIndex = (currentIndex + 1) % CLIP_OPTIONS.length;
-    const nextDuration = CLIP_OPTIONS[nextIndex];
-    const nextMax = Math.max(0, (previewSong.duration || 0) - nextDuration);
-    setClip({
-      clipDuration: nextDuration,
-      startOffset: Math.min(startOffset, nextMax),
-    });
-  }, [clipDuration, startOffset, previewSong, setClip]);
 
   const stopAudio = useCallback(() => {
     const a = audioRef.current;
@@ -258,7 +282,7 @@ function StoryMusicPicker() {
     return () => stopAudio();
   }, [stopAudio]);
 
-  // Loop within selected clip while previewing (Instagram-style)
+  // Loop within selected clip window while previewing
   useEffect(() => {
     const a = audioRef.current;
     if (!a || !previewSong) return;
@@ -364,8 +388,6 @@ function StoryMusicPicker() {
     [setPreviewSong, clipDuration, startOffset, setClip, playSong, query, pushRecent]
   );
 
-
-
   const handleUse = () => {
     stopAudio();
     confirmSelection();
@@ -381,24 +403,50 @@ function StoryMusicPicker() {
   const showBrowse = !query.trim() && !searching && !results.length;
   const playingKey = playing ? playingId : null;
 
+  // Active music sticker object for live story preview
+  const liveMusicObject = previewSong
+    ? {
+        ...previewSong,
+        title: previewSong.title,
+        artist: previewSong.artist,
+        artwork: previewSong.thumbnail || previewSong.artwork,
+        sticker: { theme: stickerTheme },
+      }
+    : null;
+
   return (
     <div className="story-music-sheet" role="dialog" aria-modal="true" aria-label="Add music">
-      <button type="button" className="absolute inset-0" aria-label="Close" onClick={closePicker} />
+      {/* Backdrop overlay */}
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/80 backdrop-blur-2xl transition-opacity border-0"
+        aria-label="Close"
+        onClick={closePicker}
+      />
+
       <div className="story-music-panel">
+        <div className="story-music-handle" />
+
         {!previewSong ? (
-          <>
+          /* ==================================================================== */
+          /* 1. BROWSE / SEARCH MUSIC VIEW (Instagram Native Header & List) */
+          /* ==================================================================== */
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Header */}
             <header className="story-music-header">
               <div className="story-music-header-left">
-                <Music2 className="story-music-header-icon" strokeWidth={2.25} />
-                <h3>Add music</h3>
+                <ChevronLeft
+                  className="w-6 h-6 text-white cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={closePicker}
+                />
+                <h3>Music</h3>
               </div>
-              <button type="button" className="story-music-close" onClick={closePicker} aria-label="Close">
-                <X className="w-5 h-5" strokeWidth={2.25} />
-              </button>
+              <Music2 className="w-5 h-5 text-rose-400 animate-pulse" />
             </header>
 
+            {/* Search Bar */}
             <div className="story-music-search">
-              <Search className="w-4 h-4" strokeWidth={2.25} />
+              <Search className="w-4 h-4" />
               <input
                 value={query}
                 onChange={(e) => searchDebounced(e.target.value)}
@@ -410,7 +458,7 @@ function StoryMusicPicker() {
                     }
                   }
                 }}
-                placeholder="Search"
+                placeholder="Search music..."
                 autoFocus
               />
               {query ? (
@@ -425,7 +473,8 @@ function StoryMusicPicker() {
               ) : null}
             </div>
 
-            <div className="story-music-body">
+            {/* Results / Browse Scroll Area */}
+            <div className="story-music-body custom-scrollbar">
               {searching && <SkeletonRows />}
 
               {!searching && results.length > 0 && (
@@ -467,7 +516,7 @@ function StoryMusicPicker() {
                   {recentSearches.length > 0 && (
                     <section className="story-music-section">
                       <div className="story-music-section-head">
-                        <h4 className="!p-0 !mb-0">Recent searches</h4>
+                        <h4>Recent Searches</h4>
                         <button type="button" className="story-music-clear-link" onClick={clearRecent}>
                           <Trash2 className="w-3 h-3" /> Clear
                         </button>
@@ -493,7 +542,7 @@ function StoryMusicPicker() {
 
                   {recentlyPlayed.length > 0 && (
                     <section className="story-music-section">
-                      <h4>Recently played</h4>
+                      <h4>Recently Played</h4>
                       {recentlyPlayed.slice(0, 6).map((song) => (
                         <SongRow
                           key={`played-${song.id}`}
@@ -509,7 +558,7 @@ function StoryMusicPicker() {
                   )}
 
                   <section className="story-music-section">
-                    <h4>Trending</h4>
+                    <h4>Trending Songs</h4>
                     {trendingLoading && !trending.length ? <SkeletonRows /> : null}
                     {trending.map((song) => (
                       <SongRow
@@ -529,77 +578,99 @@ function StoryMusicPicker() {
                 </>
               )}
             </div>
-          </>
+          </div>
         ) : (
-          /* PREVIEW / EDITOR MODE (Fully cloned from Instagram UI) */
-          <div className="story-music-preview flex flex-col flex-1 h-full justify-between">
-            <div>
-              <div className="story-music-preview-bar">
-                <button
-                  type="button"
-                  className="story-music-back"
-                  onClick={handleBackFromPreview}
-                  aria-label="Back"
-                >
-                  <ChevronLeft className="w-5 h-5" strokeWidth={2.5} />
-                  <span>Back</span>
-                </button>
-                <button
-                  type="button"
-                  className="story-music-preview-dismiss"
-                  onClick={closePicker}
-                  aria-label="Close picker"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+          /* ==================================================================== */
+          /* 2. INSTAGRAM PREVIEW & TRIMMER VIEW (Dynamic Ambient Gradient) */
+          /* ==================================================================== */
+          <div
+            className="relative flex flex-col flex-1 h-full overflow-y-auto custom-scrollbar select-none transition-colors duration-500"
+            style={{ background: activeGradient.bg }}
+          >
+            {/* Ambient Background Glow Aura */}
+            <div
+              className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-60 transition-all duration-700"
+              style={{ background: activeGradient.glow }}
+            />
 
-              <div className="story-music-preview-top mt-4">
+            {/* Top Navigation Header: ← Back, Music, [Space] */}
+            <div className="relative z-10 flex items-center justify-between px-5 pt-4 pb-2">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-white font-bold text-sm bg-white/10 hover:bg-white/20 px-3.5 py-1.5 rounded-full backdrop-blur-md transition-all active:scale-95 border border-white/10 shadow-lg cursor-pointer"
+                onClick={handleBackFromPreview}
+                aria-label="Back to music search"
+              >
+                <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                <span>Back</span>
+              </button>
+
+              <span className="text-white font-extrabold text-base tracking-wide drop-shadow">
+                Music
+              </span>
+
+              <div className="w-16" /> {/* Balance header spacing */}
+            </div>
+
+            {/* Main Center Content: Artwork & Song Meta */}
+            <div className="relative z-10 flex flex-col items-center justify-center pt-4 px-6 text-center">
+              {/* Album Artwork with Soft Aura & Floating Play Badge */}
+              <div className="relative group cursor-pointer" onClick={() => playSong(previewSong)}>
                 <img
-                  className="story-music-cover"
-                  src={previewSong.thumbnail || "/avatar.png"}
-                  alt=""
+                  className="w-44 h-44 sm:w-52 sm:h-52 rounded-3xl object-cover shadow-[0_20px_50px_rgba(0,0,0,0.6)] border border-white/20 transition-transform duration-300 group-hover:scale-105"
+                  src={previewSong.thumbnail || previewSong.artwork || "/avatar.png"}
+                  alt={previewSong.title}
                 />
-                <div className="story-music-meta">
-                  <div className="title text-base font-bold">{previewSong.title}</div>
-                  <div className="sub text-sm">{previewSong.artist}</div>
-                </div>
                 <button
                   type="button"
-                  className="story-music-play"
-                  onClick={() => playSong(previewSong)}
+                  className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-black/60 backdrop-blur-md border border-white/30 text-white flex items-center justify-center shadow-2xl transition-transform group-hover:scale-110 active:scale-95"
                   aria-label={playing && playingId === previewSong.id ? "Pause" : "Play"}
                 >
                   {playing && playingId === previewSong.id ? (
-                    <Pause className="w-4 h-4" fill="currentColor" />
+                    <Pause className="w-6 h-6 fill-current" />
                   ) : (
-                    <Play className="w-4 h-4" fill="currentColor" />
+                    <Play className="w-6 h-6 fill-current translate-x-0.5" />
                   )}
                 </button>
               </div>
 
-              {/* Instagram-Style Interactive Scrubber Container */}
+              {/* Title & Artist */}
+              <div className="mt-5 space-y-1 max-w-xs">
+                <h2 className="text-xl font-black text-white tracking-tight leading-tight truncate drop-shadow-md">
+                  {previewSong.title}
+                </h2>
+                <p className="text-sm font-semibold text-white/75 truncate drop-shadow">
+                  {previewSong.artist}
+                </p>
+              </div>
+            </div>
+
+            {/* ==================================================================== */}
+            {/* 3. INSTAGRAM WAVEFORM & CLIP SCRUBBER */}
+            {/* ==================================================================== */}
+            <div className="relative z-10 px-4 mt-6">
               <div
-                className="instagram-scrubber-container"
+                className="instagram-scrubber-container relative"
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUpOrLeave}
                 onMouseLeave={handleMouseUpOrLeave}
+                onTouchStart={handleMouseDown}
+                onTouchMove={handleMouseMove}
+                onTouchEnd={handleMouseUpOrLeave}
               >
-                {/* Fixed Center Highlight Window */}
-                <div className="instagram-scrubber-window" />
+                {/* Fixed Center Highlight Selection Window */}
+                <div className="instagram-scrubber-window shadow-[0_0_20px_rgba(255,45,85,0.4)]" />
 
-                {/* Scrollable Waveform Track */}
+                {/* Scrollable Waveform Bar Track */}
                 <div className="instagram-scrubber-track" ref={scrubberRef}>
-                  {/* Left padding spacer (50% width to allow first bar to start at center) */}
+                  {/* Left 50% Spacer */}
                   <div style={{ minWidth: "50%", flexShrink: 0 }} />
 
                   {/* Waveform bars */}
                   {timelineBars.map((h, i) => {
                     const barTime = (i / timelineBars.length) * (previewSong.duration || 120);
-                    // Is the bar within the active selected segment?
-                    const isActive = barTime >= startOffset && barTime <= (startOffset + clipDuration);
-                    // Has this part of the selected segment already played?
+                    const isActive = barTime >= startOffset && barTime <= startOffset + clipDuration;
                     const isPlayed = isActive && barTime < currentTime;
 
                     return (
@@ -615,65 +686,102 @@ function StoryMusicPicker() {
                     );
                   })}
 
-                  {/* Right padding spacer (50% width to allow last bar to end at center) */}
+                  {/* Right 50% Spacer */}
                   <div style={{ minWidth: "50%", flexShrink: 0 }} />
                 </div>
               </div>
 
-              {/* Selection Info details below Scrubber */}
-              <div className="flex justify-between items-center px-1 text-xs text-gray-400 font-semibold mb-6">
-                <span>{formatTime(currentTime)}</span>
-                <span className="text-white bg-white/10 px-3 py-1 rounded-full font-variant-numeric: tabular-nums text-[11px] tracking-wider uppercase">
+              {/* Clip Timestamp details */}
+              <div className="flex justify-between items-center px-2 mt-2 text-xs text-white/70 font-medium">
+                <span>{formatTime(startOffset)}</span>
+                <span className="text-[11px] font-bold text-white bg-white/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 uppercase tracking-wider">
                   Clip: {formatTime(startOffset)} → {formatTime(startOffset + clipDuration)}
                 </span>
-                <span>{formatTime(previewSong.duration || 0)}</span>
+                <span>{formatTime(previewSong.duration || 120)}</span>
               </div>
             </div>
 
-            {/* Structured action panel containing duration & sticker theme selectors to prevent overlap */}
-            <div className="flex flex-col gap-5 mt-auto pb-4 pt-2 border-t border-white/5">
-              {/* Duration selector */}
-              <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Select Clip Duration</span>
-                <div className="story-music-clips flex items-center justify-center gap-3">
-                  {CLIP_OPTIONS.map((sec) => (
+            {/* ==================================================================== */}
+            {/* 4. LIVE STORY STICKER PREVIEW & THEME SWITCHER */}
+            {/* ==================================================================== */}
+            <div className="relative z-10 px-6 mt-6 flex flex-col items-center">
+              <span className="text-[10px] font-extrabold text-white/60 uppercase tracking-widest mb-3">
+                Live Story Sticker Preview
+              </span>
+
+              {/* Dynamic Live Sticker Component Rendering */}
+              <div className="p-3 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/15 shadow-xl transition-all duration-300 transform hover:scale-105">
+                <InstagramMusicSticker music={liveMusicObject} isPlaying={playing} />
+              </div>
+
+              {/* Sticker Style Selector Segmented Control */}
+              <div className="flex items-center justify-center gap-2 mt-4 flex-wrap max-w-sm">
+                {STICKER_THEMES.map((theme) => {
+                  const isSelected = stickerTheme === theme;
+                  return (
+                    <button
+                      key={theme}
+                      type="button"
+                      onClick={() => setStickerTheme(theme)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold capitalize transition-all duration-200 cursor-pointer shadow-md ${
+                        isSelected
+                          ? "bg-white text-black scale-105 ring-2 ring-rose-400 shadow-rose-500/20"
+                          : "bg-white/10 text-white/80 hover:bg-white/20 border border-white/10"
+                      }`}
+                    >
+                      {theme}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ==================================================================== */}
+            {/* 5. SEGMENTED DURATION PICKER */}
+            {/* ==================================================================== */}
+            <div className="relative z-10 px-6 mt-6 flex flex-col items-center">
+              <span className="text-[10px] font-extrabold text-white/60 uppercase tracking-widest mb-2.5">
+                Clip Duration
+              </span>
+
+              <div className="flex items-center p-1 rounded-full bg-black/50 backdrop-blur-xl border border-white/15 shadow-inner">
+                {CLIP_OPTIONS.map((sec) => {
+                  const isSelected = clipDuration === sec;
+                  return (
                     <button
                       key={sec}
                       type="button"
-                      className={`story-music-clip-btn ${clipDuration === sec ? "is-active" : ""}`}
                       onClick={() => {
-                        const nextMax = Math.max(0, (previewSong.duration || 0) - sec);
+                        const nextMax = Math.max(0, (previewSong.duration || 120) - sec);
                         setClip({
                           clipDuration: sec,
                           startOffset: Math.min(startOffset, nextMax),
                         });
                       }}
+                      className={`px-5 py-1.5 rounded-full text-xs font-black transition-all duration-200 cursor-pointer ${
+                        isSelected
+                          ? "bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg scale-105"
+                          : "text-white/70 hover:text-white"
+                      }`}
                     >
                       {sec}s
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
+            </div>
 
-              {/* Theme selector */}
-              <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Select Sticker Theme</span>
-                <div className="story-music-sticker-themes flex items-center justify-center gap-3">
-                  {STICKER_THEMES.map((theme) => (
-                    <button
-                      key={theme}
-                      type="button"
-                      className={`story-music-theme-btn ${stickerTheme === theme ? "is-active" : ""}`}
-                      onClick={() => setStickerTheme(theme)}
-                    >
-                      {theme}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button type="button" className="story-music-use mt-2" onClick={handleUse}>
-                Use music
+            {/* ==================================================================== */}
+            {/* 6. STICKY BOTTOM ACTION (Instagram "Done" Button) */}
+            {/* ==================================================================== */}
+            <div className="sticky bottom-0 z-20 p-5 mt-8 bg-gradient-to-t from-black via-black/80 to-transparent">
+              <button
+                type="button"
+                onClick={handleUse}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-500 via-purple-600 to-indigo-600 text-white font-black text-base shadow-[0_10px_30px_rgba(255,45,85,0.4)] transition-all duration-200 active:scale-95 hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-5 h-5 stroke-[3]" />
+                <span>Done</span>
               </button>
             </div>
           </div>

@@ -1,35 +1,35 @@
-/* Instagram-style Add music sheet */
+/* Instagram-Native Add Music & Story Music Trimmer Design Engine */
 
 .story-music-sheet {
   --ig-pink: #ff2d55;
-  --ig-bg: #121212;
-  --ig-panel: #161618;
-  --ig-elev: #1f1f23;
-  --ig-chip: rgba(255, 255, 255, 0.05);
-  --ig-muted: #a0a0a9;
-  --ig-line: rgba(255, 255, 255, 0.06);
+  --ig-orange: #ff7e40;
+  --ig-bg: #09090b;
+  --ig-panel: #121215;
+  --ig-chip: rgba(255, 255, 255, 0.08);
+  --ig-muted: #a1a1aa;
+  --ig-line: rgba(255, 255, 255, 0.08);
 
   position: fixed;
   inset: 0;
-  z-index: 140;
+  z-index: 150;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(12px);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  animation: smFade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  animation: smSheetFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes smFade {
+@keyframes smSheetFade {
   from {
     opacity: 0;
     backdrop-filter: blur(0px);
   }
   to {
     opacity: 1;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(20px);
   }
 }
 
@@ -38,18 +38,17 @@
   z-index: 10;
   background: var(--ig-panel);
   color: #fff;
-  border-radius: 20px 20px 0 0;
-  max-height: min(94dvh, 900px);
+  width: 100%;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  animation: smUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: smSheetSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   padding-bottom: env(safe-area-inset-bottom, 0);
   overflow: hidden;
-  border-top: 1px solid rgba(255, 255, 255, 0.085);
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.7);
 }
 
-@keyframes smUp {
+@keyframes smSheetSlideUp {
   from {
     transform: translateY(100%);
   }
@@ -62,128 +61,73 @@
   .story-music-sheet {
     align-items: center;
     justify-content: center;
-    padding: 1rem;
+    padding: 1.5rem;
   }
   .story-music-panel {
-    width: min(430px, 100%);
-    border-radius: 20px;
-    max-height: 85vh;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+    width: min(440px, 100%);
+    height: min(880px, 92vh);
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 32px 96px rgba(0, 0, 0, 0.85);
   }
 }
 
-/* Beautiful Slim Scrollbars */
-.story-music-body::-webkit-scrollbar,
-.instagram-scrubber-track::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-.story-music-body::-webkit-scrollbar-track,
-.instagram-scrubber-track::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.story-music-body::-webkit-scrollbar-thumb,
-.instagram-scrubber-track::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 99px;
-  transition: background 0.2s ease;
-}
-
-.story-music-body::-webkit-scrollbar-thumb:hover,
-.instagram-scrubber-track::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
+/* Mobile Drag Handle */
 .story-music-handle {
   display: block;
-  width: 36px;
+  width: 40px;
   height: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 99px;
-  margin: 8px auto 0;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  margin: 10px auto 4px;
   flex-shrink: 0;
 }
 
+/* Header */
 .story-music-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 18px 8px;
+  padding: 12px 20px 8px;
 }
 
 .story-music-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .story-music-header-left h3 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 800;
-  letter-spacing: -0.015em;
-  background: linear-gradient(to right, #fff, #e4e4e7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.story-music-header-icon {
-  width: 22px;
-  height: 22px;
-  color: var(--ig-pink);
-  filter: drop-shadow(0 2px 8px rgba(255, 45, 85, 0.35));
-}
-
-.story-music-close {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.04);
+  letter-spacing: -0.02em;
   color: #fff;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.story-music-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: scale(1.05);
-}
-
-.story-music-close:active {
-  transform: scale(0.95);
-}
-
+/* Search Bar */
 .story-music-search {
-  margin: 4px 18px 14px;
+  margin: 8px 18px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  padding: 0 14px;
-  height: 42px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 0 16px;
+  height: 44px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .story-music-search:focus-within {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 45, 85, 0.55);
-  box-shadow: 0 0 16px rgba(255, 45, 85, 0.15);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--ig-pink);
+  box-shadow: 0 0 20px rgba(255, 45, 85, 0.25);
 }
 
 .story-music-search svg {
   color: var(--ig-muted);
   flex-shrink: 0;
-  transition: color 0.2s ease;
 }
 
 .story-music-search:focus-within svg {
@@ -198,7 +142,7 @@
   outline: none;
   color: #fff;
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .story-music-search input::placeholder {
@@ -213,129 +157,99 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: color 0.15s ease;
 }
 
 .story-music-search-clear:hover {
   color: #fff;
 }
 
+/* Scroll Body & Sections */
 .story-music-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 16px;
-  -webkit-overflow-scrolling: touch;
+  padding: 0 0 20px;
 }
 
 .story-music-section {
-  padding: 10px 0 6px;
+  padding: 12px 0 6px;
 }
 
 .story-music-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px 8px;
+  padding: 0 20px 8px;
 }
 
-.story-music-section h4,
-.story-music-section-title {
+.story-music-section h4 {
   margin: 0;
-  padding: 0 18px 8px;
-  font-size: 0.74rem;
-  font-weight: 750;
+  padding: 0 20px 8px;
+  font-size: 0.75rem;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ig-muted);
 }
 
+/* Song Row */
 .story-music-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  width: calc(100% - 16px);
-  margin: 0 8px;
-  padding: 10px 10px;
+  width: calc(100% - 20px);
+  margin: 0 10px 4px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   color: #fff;
-  text-align: left;
-  cursor: pointer;
-  border-radius: 10px;
-  transition: all 0.2s ease;
+  border-radius: 16px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .story-music-row:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .story-music-row:active {
-  background: rgba(255, 255, 255, 0.055);
+  transform: scale(0.98);
 }
 
 .story-music-row.is-selected {
-  background: rgba(255, 45, 85, 0.06);
-  border-left: 3px solid var(--ig-pink);
-  border-radius: 0 10px 10px 0;
+  background: rgba(255, 45, 85, 0.12);
+  border-left: 3.5px solid var(--ig-pink);
 }
 
 .story-music-cover {
-  width: 50px;
-  height: 50px;
-  border-radius: 8px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   object-fit: cover;
   background: #18181b;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.story-music-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.story-music-meta .title {
-  font-size: 0.94rem;
-  font-weight: 700;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #fafafa;
-}
-
-.story-music-meta .sub {
-  font-size: 0.78rem;
-  color: var(--ig-muted);
-  margin-top: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .story-music-play {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .story-music-play:hover {
   background: var(--ig-pink);
-  color: #fff;
   border-color: var(--ig-pink);
-  box-shadow: 0 0 12px rgba(255, 45, 85, 0.45);
+  box-shadow: 0 0 16px rgba(255, 45, 85, 0.5);
   transform: scale(1.08);
 }
 
@@ -347,12 +261,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 13px;
+  padding: 8px 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: #e4e4e7;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
   margin: 0 6px 8px 0;
   cursor: pointer;
@@ -360,15 +274,9 @@
 }
 
 .story-music-chip:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
   transform: translateY(-1px);
-}
-
-.story-music-chip:active {
-  opacity: 0.85;
-  transform: translateY(0);
 }
 
 .story-music-clear-link {
@@ -380,273 +288,29 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  padding: 0;
-}
-
-/* —— Clip editor (Instagram bottom panel) —— */
-.story-music-preview {
-  flex-shrink: 0;
-  border-top: 1px solid var(--ig-line);
-  padding: 10px 16px 16px;
-  background: var(--ig-elev);
-}
-
-.story-music-preview-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.story-music-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: -6px;
-  border: none;
-  background: transparent;
-  color: #fafafa;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 4px 6px;
-  cursor: pointer;
-  border-radius: 8px;
-}
-
-.story-music-back:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.story-music-preview-dismiss {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: var(--ig-chip);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.story-music-preview-top {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.story-music-preview-top .story-music-cover {
-  width: 48px;
-  height: 48px;
-}
-
-/* Dense Instagram-style waveform */
-.story-music-wave {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 2px;
-  height: 42px;
-  margin: 20px 0 8px;
-  padding: 0 4px;
-}
-
-.story-music-wave span {
-  flex: 1;
-  max-width: 5px;
-  min-width: 2px;
-  border-radius: 1px;
-  background: rgba(255, 45, 85, 0.35);
-  transition: background 0.15s ease, height 0.15s ease;
-}
-
-.story-music-wave.is-paused span {
-  opacity: 0.7;
-}
-
-.story-music-times {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: var(--ig-muted);
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 12px;
-  font-weight: 600;
 }
 
 .story-music-recent-row {
   display: flex;
   flex-wrap: wrap;
-  padding: 0 16px 8px;
+  padding: 0 20px 8px;
   gap: 8px;
 }
 
-.story-music-clip-btn {
-  border: 2px solid rgba(255, 255, 255, 0.15) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #fff !important;
-  border-radius: 50% !important;
-  width: 44px !important;
-  height: 44px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  font-size: 0.85rem !important;
-  font-weight: 700 !important;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.story-music-clip-btn:hover,
-.story-music-clip-btn.is-active {
-  background: var(--ig-pink) !important;
-  border-color: var(--ig-pink) !important;
-  color: #fff !important;
-  transform: scale(1.08);
-  box-shadow: 0 0 14px rgba(255, 45, 85, 0.5);
-}
-
-.story-music-sticker-themes {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.story-music-theme-btn {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #fff !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 999px !important;
-  padding: 6px 14px !important;
-  font-size: 0.8rem !important;
-  font-weight: 600 !important;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: capitalize;
-}
-
-.story-music-theme-btn:hover,
-.story-music-theme-btn.is-active {
-  background: #fff !important;
-  color: #000 !important;
-  border-color: #fff !important;
-  font-weight: 700 !important;
-  transform: scale(1.05);
-}
-
-.story-music-trim {
-  margin: 2px 0 12px;
-}
-
-.story-music-trim-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-  color: var(--ig-muted);
-  margin-bottom: 8px;
-}
-
-.story-music-trim-label strong {
-  color: #fafafa;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Custom Instagram pink range */
-.story-music-progress {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 3px;
-  border-radius: 999px;
-  background: #fff;
-  outline: none;
-  cursor: pointer;
-}
-
-.story-music-progress::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--ig-pink) 0%,
-    var(--ig-pink) var(--progress, 0%),
-    #fff var(--progress, 0%),
-    #fff 100%
-  );
-}
-
-.story-music-progress::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ig-pink);
-  border: 2px solid #fff;
-  margin-top: -7.5px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  cursor: grab;
-}
-
-.story-music-progress::-moz-range-track {
-  height: 3px;
-  border-radius: 999px;
-  background: #fff;
-}
-
-.story-music-progress::-moz-range-progress {
-  height: 3px;
-  border-radius: 999px;
-  background: var(--ig-pink);
-}
-
-.story-music-progress::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ig-pink);
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  cursor: grab;
-}
-
-.story-music-use {
-  width: 100%;
-  margin-top: 4px;
-  height: 48px;
-  border: none;
-  border-radius: 12px;
-  background: var(--ig-pink);
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: -0.01em;
-  cursor: pointer;
-}
-
-.story-music-use:active {
-  filter: brightness(0.95);
-  transform: scale(0.995);
-}
-
+/* Skeleton Loading */
 .story-music-skel {
   display: flex;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: 14px;
+  padding: 8px 0;
   align-items: center;
 }
 
 .story-music-skel .box {
   width: 52px;
   height: 52px;
-  border-radius: 6px;
+  border-radius: 14px;
   background: var(--ig-chip);
-  animation: smPulse 1.1s ease-in-out infinite;
+  animation: smPulse 1.2s ease-in-out infinite;
 }
 
 .story-music-skel .lines {
@@ -654,202 +318,97 @@
 }
 
 .story-music-skel .line {
-  height: 10px;
-  border-radius: 4px;
+  height: 12px;
+  border-radius: 6px;
   background: var(--ig-chip);
   margin-bottom: 8px;
-  animation: smPulse 1.1s ease-in-out infinite;
+  animation: smPulse 1.2s ease-in-out infinite;
 }
 
 .story-music-skel .line.short {
-  width: 42%;
+  width: 45%;
 }
 
 @keyframes smPulse {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 0.9;
-  }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
 }
 
 .story-music-empty {
-  padding: 8px 16px 16px;
+  padding: 12px 20px;
   font-size: 0.875rem;
   color: var(--ig-muted);
 }
 
-/* Music sticker (on story canvas) */
-.music-sticker {
-  position: absolute;
-  z-index: 20;
-  touch-action: none;
-  user-select: none;
-  cursor: grab;
-  transform-origin: center center;
-}
+/* ==================================================================== */
+/* INSTAGRAM-STYLE WAVEFORM & SCRUBBER */
+/* ==================================================================== */
 
-.music-sticker:active {
-  cursor: grabbing;
-}
-
-.music-sticker-inner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px 8px 8px;
-  border-radius: 999px;
-  min-width: 160px;
-  max-width: 240px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(10px);
-}
-
-.music-sticker-inner.theme-classic {
-  background: rgba(255, 255, 255, 0.95);
-  color: #111;
-}
-
-.music-sticker-inner.theme-dark {
-  background: rgba(18, 18, 18, 0.92);
-  color: #fff;
-}
-
-.music-sticker-inner.theme-neon {
-  background: linear-gradient(135deg, #ff2d55, #ff6b35);
-  color: #fff;
-}
-
-.music-sticker-inner.theme-minimal {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-}
-
-.music-sticker-cover {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  object-fit: cover;
-}
-
-.music-sticker-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.music-sticker-text .t {
-  font-size: 0.78rem;
-  font-weight: 750;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.music-sticker-text .a {
-  font-size: 0.68rem;
-  opacity: 0.7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.music-eq {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 16px;
-}
-
-.music-eq i {
-  width: 2.5px;
-  border-radius: 1px;
-  background: currentColor;
-  animation: smEq 0.7s ease-in-out infinite alternate;
-}
-
-.music-eq i:nth-child(1) {
-  height: 40%;
-}
-.music-eq i:nth-child(2) {
-  height: 80%;
-  animation-delay: 0.1s;
-}
-.music-eq i:nth-child(3) {
-  height: 55%;
-  animation-delay: 0.2s;
-}
-.music-eq.is-paused i {
-  animation: none;
-  opacity: 0.4;
-}
-
-/* Instagram-Style Scrubber Styles */
 .instagram-scrubber-container {
   position: relative;
   width: 100%;
-  height: 90px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  height: 84px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
   overflow: hidden;
-  margin: 24px 0 16px;
   display: flex;
   align-items: center;
+  backdrop-filter: blur(12px);
+  touch-action: pan-x;
 }
 
+/* Fixed Center Highlight Clip Selection Box */
+.instagram-scrubber-window {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  bottom: 6px;
+  width: 110px;
+  transform: translateX(-50%);
+  background: rgba(255, 45, 85, 0.18);
+  border: 2.5px solid var(--ig-pink);
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 0 24px rgba(255, 45, 85, 0.35), inset 0 0 12px rgba(255, 45, 85, 0.2);
+}
+
+/* Scrollable Waveform Bar Track */
 .instagram-scrubber-track {
-  overflow-x: auto;
-  height: 100%;
-  width: 100%;
   display: flex;
   align-items: center;
-  gap: 3px;
-  cursor: grab;
-  scrollbar-width: none; /* Firefox */
+  gap: 3.5px;
+  height: 100%;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
   padding: 0;
+  scrollbar-width: none;
 }
 
 .instagram-scrubber-track::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+  display: none;
 }
 
-.instagram-scrubber-track:active {
-  cursor: grabbing;
-}
-
+/* Waveform Bars */
 .instagram-scrubber-bar {
-  width: 3.5px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.2);
-  transition: background 0.15s ease, height 0.15s ease;
   flex-shrink: 0;
+  width: 4px;
+  min-height: 12%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.15s ease, height 0.15s ease, transform 0.15s ease;
 }
 
-/* Active range segment styling */
 .instagram-scrubber-bar.is-active {
-  background: rgba(255, 45, 85, 0.5); /* Dim pink for active but unplayed */
+  background: linear-gradient(180deg, #ff2d55 0%, #ff7e40 100%);
+  box-shadow: 0 0 8px rgba(255, 45, 85, 0.4);
 }
 
-/* Currently playing progress timeline styling */
 .instagram-scrubber-bar.is-played {
-  background: var(--ig-pink); /* Glowing pink for current playhead progress */
-  box-shadow: 0 0 4px rgba(255, 45, 85, 0.6);
-}
-
-/* Center selection window overlay */
-.instagram-scrubber-window {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 80px;
-  border: 2px solid #ffffff;
-  border-radius: 12px;
-  pointer-events: none; /* Click pass-through */
-  box-shadow: 0 0 0 9999px rgba(18, 18, 18, 0.65); /* Instagram-style dim overlay */
-  z-index: 5;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
 }
