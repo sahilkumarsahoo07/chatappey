@@ -167,7 +167,14 @@
 .story-music-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 0 20px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.story-music-body::-webkit-scrollbar {
+  display: none;
 }
 
 .story-music-section {
@@ -195,14 +202,17 @@
 .story-music-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  width: calc(100% - 20px);
-  margin: 0 10px 4px;
-  padding: 10px 12px;
+  justify-content: space-between;
+  gap: 10px;
+  width: calc(100% - 16px);
+  margin: 0 8px 4px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: #fff;
   border-radius: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

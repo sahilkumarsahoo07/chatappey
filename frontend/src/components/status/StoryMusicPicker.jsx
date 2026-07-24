@@ -58,7 +58,7 @@ function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
     <div className={`story-music-row ${selected ? "is-selected" : ""}`}>
       <button
         type="button"
-        className="flex items-center gap-3.5 flex-1 min-w-0 text-left cursor-pointer group"
+        className="flex items-center gap-3.5 flex-1 min-w-0 text-left cursor-pointer group pr-2 overflow-hidden"
         disabled={isLoading}
         onClick={() => onSelect(song)}
       >
@@ -79,11 +79,11 @@ function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
             </div>
           )}
         </div>
-        <div className="story-music-meta">
-          <p className="title block font-bold text-sm text-white truncate group-hover:text-rose-300 transition-colors">
+        <div className="story-music-meta flex-1 min-w-0 overflow-hidden">
+          <p className="title font-bold text-sm text-white truncate group-hover:text-rose-300 transition-colors">
             {song.title}
           </p>
-          <p className="sub block text-xs text-white/60 truncate mt-0.5">
+          <p className="sub text-xs text-white/60 truncate mt-0.5">
             {song.artist}
             {song.duration ? ` · ${formatTime(song.duration)}` : ""}
           </p>
@@ -92,7 +92,7 @@ function SongRow({ song, onSelect, onPlay, playingId, loadingId, selected }) {
 
       <button
         type="button"
-        className="story-music-play"
+        className="story-music-play shrink-0 ml-2"
         aria-label={isLoading ? "Loading" : isPlaying ? "Pause" : "Play"}
         disabled={isLoading}
         onClick={() => onPlay(song)}
