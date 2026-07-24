@@ -314,7 +314,7 @@ export default function CreateStatusModal() {
             </button>
           ) : selectedMusic && !file ? (
             /* Music Only Story Canvas */
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl h-[320px] sm:h-[360px] border border-white/10 group">
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl h-[380px] sm:h-[420px] border border-white/10 group">
               <MusicStoryCanvas
                 music={selectedMusic}
                 editable={true}
@@ -322,12 +322,12 @@ export default function CreateStatusModal() {
                 onThemeChange={(t) => setBackgroundTheme(t)}
                 onLayoutChange={(l) => setLayoutStyle(l)}
               />
-              <div className="absolute top-3 right-3 flex gap-2 z-40">
+              <div className="absolute top-2.5 right-2.5 flex gap-1.5 z-40">
                 <button
                   type="button"
                   onClick={openMusicPicker}
                   disabled={isUploading}
-                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
+                  className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white text-[11px] font-semibold hover:bg-black/90 border border-white/15 transition-colors disabled:opacity-40 shadow-md"
                 >
                   Change Song
                 </button>
@@ -335,7 +335,7 @@ export default function CreateStatusModal() {
                   type="button"
                   onClick={clearSelectedMusic}
                   disabled={isUploading}
-                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
+                  className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-white text-[11px] font-semibold hover:bg-black/90 border border-white/15 transition-colors disabled:opacity-40 shadow-md"
                 >
                   Remove
                 </button>

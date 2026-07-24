@@ -1,15 +1,18 @@
-import { useState, useMemo } from "react";
-import { Disc, Music, Sparkles, Volume2, Play } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Disc, Music, Sparkles, Volume2, Shuffle } from "lucide-react";
 import MusicSticker from "./MusicSticker";
 
 export const BACKGROUND_THEMES = [
-  { id: "purple", name: "Purple", bg: "from-purple-900 via-indigo-900 to-black", accent: "#a855f7" },
-  { id: "blue", name: "Ocean", bg: "from-blue-900 via-sky-900 to-slate-950", accent: "#38bdf8" },
-  { id: "neon", name: "Neon", bg: "from-fuchsia-900 via-pink-900 to-purple-950", accent: "#f43f5e" },
-  { id: "aurora", name: "Aurora", bg: "from-emerald-900 via-teal-900 to-cyan-950", accent: "#10b981" },
-  { id: "sunset", name: "Sunset", bg: "from-amber-900 via-rose-900 to-slate-950", accent: "#f97316" },
-  { id: "dark", name: "Midnight", bg: "from-zinc-900 via-neutral-900 to-black", accent: "#a1a1aa" },
-  { id: "pastel", name: "Vibe", bg: "from-violet-800 via-pink-800 to-purple-900", accent: "#ec4899" },
+  { id: "purple", name: "Purple Dream", bg: "from-purple-900 via-indigo-900 to-black", accent: "#a855f7" },
+  { id: "blue", name: "Deep Ocean", bg: "from-blue-950 via-sky-900 to-slate-950", accent: "#38bdf8" },
+  { id: "neon", name: "Cyber Neon", bg: "from-fuchsia-900 via-pink-900 to-purple-950", accent: "#f43f5e" },
+  { id: "aurora", name: "Northern Lights", bg: "from-emerald-950 via-teal-900 to-cyan-950", accent: "#10b981" },
+  { id: "sunset", name: "Vibrant Sunset", bg: "from-rose-900 via-amber-900 to-slate-950", accent: "#f97316" },
+  { id: "dark", name: "Midnight Glow", bg: "from-zinc-950 via-neutral-900 to-black", accent: "#a1a1aa" },
+  { id: "pastel", name: "Pastel Vibe", bg: "from-violet-900 via-pink-800 to-purple-950", accent: "#ec4899" },
+  { id: "electric", name: "Electric Blue", bg: "from-indigo-950 via-blue-900 to-cyan-950", accent: "#60a5fa" },
+  { id: "fire", name: "Crimson Flame", bg: "from-red-950 via-rose-900 to-orange-950", accent: "#ef4444" },
+  { id: "gold", name: "Golden Hour", bg: "from-amber-950 via-yellow-900 to-slate-950", accent: "#eab308" },
 ];
 
 export const LAYOUT_STYLES = [
@@ -20,6 +23,19 @@ export const LAYOUT_STYLES = [
   { id: "style5", label: "Lyrics Card" },
 ];
 
+// Helper to derive a stable random gradient index from song ID/title
+function getRandomThemeForSong(song) {
+  if (!song) return BACKGROUND_THEMES[0];
+  const str = String(song.id || song.title || "song");
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % BACKGROUND_THEMES.length;
+  return BACKGROUND_THEMES[index];
+}
+
 export default function MusicStoryCanvas({
   music,
   editable = false,
@@ -27,20 +43,29 @@ export default function MusicStoryCanvas({
   containerRef,
   onThemeChange,
   onLayoutChange,
-  onStickerChange,
 }) {
-  const [activeTheme, setActiveTheme] = useState(
-    music?.backgroundTheme || "purple"
-  );
-  const [activeLayout, setActiveLayout] = useState(
-    music?.layoutStyle || "style1"
-  );
+  // If no saved theme, pick deterministic random theme for this song
+  const initialTheme = useMemo(() => {
+    if (music?.backgroundTheme && music.backgroundTheme !== "purple") {
+      return music.backgroundTheme;
+    }
+    return getRandomThemeForSong(music).id;
+  }, [music]);
+
+  const [activeTheme, setActiveTheme] = useState(initialTheme);
+  const [activeLayout, setActiveLayout] = useState(music?.layoutStyle || "style1");
+
+  useEffect(() => {
+    if (music?.backgroundTheme) {
+      setActiveTheme(music.backgroundTheme);
+    }
+  }, [music?.backgroundTheme]);
 
   const themeObj = useMemo(
     () =>
-      BACKGROUND_THEMES.find((t) => t.id === (music?.backgroundTheme || activeTheme)) ||
+      BACKGROUND_THEMES.find((t) => t.id === activeTheme) ||
       BACKGROUND_THEMES[0],
-    [music?.backgroundTheme, activeTheme]
+    [activeTheme]
   );
 
   const currentLayout = music?.layoutStyle || activeLayout;
@@ -51,6 +76,14 @@ export default function MusicStoryCanvas({
     if (onThemeChange) onThemeChange(tId);
   };
 
+  const handleRandomTheme = () => {
+    const available = BACKGROUND_THEMES.filter((t) => t.id !== activeTheme);
+    const randomObj = available[Math.floor(Math.random() * available.length)];
+    if (randomObj) {
+      handleSelectTheme(randomObj.id);
+    }
+  };
+
   const handleSelectLayout = (lId) => {
     setActiveLayout(lId);
     if (onLayoutChange) onLayoutChange(lId);
@@ -59,12 +92,12 @@ export default function MusicStoryCanvas({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full h-full min-h-[380px] flex flex-col items-center justify-center overflow-hidden bg-gradient-to-b ${themeObj.bg} text-white select-none transition-all duration-500`}
+      className={`relative w-full h-full min-h-[360px] flex flex-col items-center justify-between overflow-hidden bg-gradient-to-b ${themeObj.bg} text-white select-none transition-all duration-700`}
     >
       {/* Background Animated Bokeh & Glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div
-          className="absolute -top-1/4 -left-1/4 w-[150%] h-[150%] opacity-30 blur-3xl rounded-full animate-pulse"
+          className="absolute -top-1/4 -left-1/4 w-[150%] h-[150%] opacity-35 blur-3xl rounded-full animate-pulse"
           style={{
             background: `radial-gradient(circle, ${themeObj.accent} 0%, transparent 70%)`,
           }}
@@ -72,38 +105,38 @@ export default function MusicStoryCanvas({
         <img
           src={artworkUrl}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-25 scale-125"
+          className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-30 scale-125 transition-all duration-700"
         />
       </div>
 
-      {/* Main Layout Rendering */}
-      <div className="relative z-10 w-full px-6 flex flex-col items-center justify-center text-center gap-4 py-8">
+      {/* Main Content Area - Centered with bottom padding to avoid control overlap */}
+      <div className="relative z-10 w-full h-full px-4 pt-10 pb-28 flex flex-col items-center justify-center text-center">
         {/* Style 1: Large Artwork */}
         {currentLayout === "style1" && (
-          <div className="flex flex-col items-center gap-5 max-w-xs animate-[statusFadeIn_0.3s_ease-out]">
+          <div className="flex flex-col items-center gap-3.5 max-w-xs animate-[statusFadeIn_0.3s_ease-out]">
             <div className="relative group">
               <img
                 src={artworkUrl}
                 alt={music?.title}
-                className="w-56 h-56 sm:w-64 sm:h-64 rounded-3xl object-cover shadow-2xl border-2 border-white/20 transform hover:scale-105 transition duration-300"
+                className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl object-cover shadow-2xl border-2 border-white/20 transform hover:scale-105 transition duration-300"
               />
-              <div className="absolute -bottom-3 right-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium border border-white/10 flex items-center gap-1.5 shadow-lg">
-                <Music className="w-3.5 h-3.5 text-primary animate-bounce" />
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md px-3 py-0.5 rounded-full text-[11px] font-medium border border-white/15 flex items-center gap-1.5 shadow-lg whitespace-nowrap">
+                <Music className="w-3 h-3 text-primary animate-bounce" />
                 <span>Music Story</span>
               </div>
             </div>
 
-            <div className="space-y-1 mt-2">
-              <h3 className="font-bold text-xl sm:text-2xl tracking-tight line-clamp-1 drop-shadow-md">
+            <div className="space-y-0.5 mt-1 max-w-[240px]">
+              <h3 className="font-bold text-base sm:text-lg tracking-tight line-clamp-1 drop-shadow-md text-white">
                 {music?.title || "Unknown Track"}
               </h3>
-              <p className="text-sm font-medium text-white/80 line-clamp-1 drop-shadow">
+              <p className="text-xs font-medium text-white/80 line-clamp-1 drop-shadow">
                 {music?.artist || "Unknown Artist"}
               </p>
             </div>
 
-            {/* Equalizer bars */}
-            <div className="flex items-end gap-1 h-6 px-4 py-1 bg-black/30 backdrop-blur-md rounded-full border border-white/10">
+            {/* Animated Equalizer bars */}
+            <div className="flex items-end gap-1 h-5 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/15">
               {[40, 75, 100, 50, 90, 30, 80, 60].map((h, i) => (
                 <div
                   key={i}
@@ -120,23 +153,23 @@ export default function MusicStoryCanvas({
 
         {/* Style 2: Minimal Sticker Mode */}
         {currentLayout === "style2" && (
-          <div className="flex flex-col items-center gap-6 animate-[statusFadeIn_0.3s_ease-out]">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/30 shadow-2xl animate-pulse">
+          <div className="flex flex-col items-center gap-4 animate-[statusFadeIn_0.3s_ease-out]">
+            <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white/30 shadow-2xl animate-pulse">
               <img
                 src={artworkUrl}
                 alt=""
                 className="w-full h-full object-cover"
               />
             </div>
-            <div className="bg-black/50 backdrop-blur-xl border border-white/20 px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-4">
-              <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center text-primary">
-                <Volume2 className="w-5 h-5 animate-pulse" />
+            <div className="bg-black/60 backdrop-blur-xl border border-white/20 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 max-w-[260px]">
+              <div className="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
+                <Volume2 className="w-4 h-4 animate-pulse" />
               </div>
-              <div className="text-left">
-                <p className="font-bold text-base line-clamp-1 text-white">
+              <div className="text-left overflow-hidden">
+                <p className="font-bold text-xs line-clamp-1 text-white">
                   {music?.title || "Music Story"}
                 </p>
-                <p className="text-xs text-white/70 line-clamp-1">
+                <p className="text-[11px] text-white/70 line-clamp-1">
                   {music?.artist || "Audio Track"}
                 </p>
               </div>
@@ -146,8 +179,8 @@ export default function MusicStoryCanvas({
 
         {/* Style 3: Vinyl Record Animation */}
         {currentLayout === "style3" && (
-          <div className="flex flex-col items-center gap-6 animate-[statusFadeIn_0.3s_ease-out]">
-            <div className="relative w-56 h-56 sm:w-64 sm:h-64 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 animate-[statusFadeIn_0.3s_ease-out]">
+            <div className="relative w-40 h-40 sm:w-48 sm:h-48 flex items-center justify-center">
               {/* Vinyl Record */}
               <div
                 className={`w-full h-full rounded-full bg-zinc-950 border-4 border-zinc-800 shadow-2xl flex items-center justify-center ${
@@ -159,23 +192,23 @@ export default function MusicStoryCanvas({
                 }}
               >
                 {/* Vinyl Grooves */}
-                <div className="w-44 h-44 rounded-full border border-white/10 flex items-center justify-center">
-                  <div className="w-32 h-32 rounded-full border border-white/10 flex items-center justify-center">
+                <div className="w-32 h-32 rounded-full border border-white/10 flex items-center justify-center">
+                  <div className="w-24 h-24 rounded-full border border-white/10 flex items-center justify-center">
                     {/* Vinyl Center Art */}
                     <img
                       src={artworkUrl}
                       alt=""
-                      className="w-20 h-20 rounded-full object-cover border-2 border-amber-500/80 shadow-md"
+                      className="w-14 h-14 rounded-full object-cover border-2 border-amber-500/80 shadow-md"
                     />
                   </div>
                 </div>
               </div>
-              {/* Vinyl Hole */}
-              <div className="absolute w-4 h-4 rounded-full bg-white border-2 border-black" />
+              {/* Vinyl Center Hole */}
+              <div className="absolute w-3 h-3 rounded-full bg-white border-2 border-black" />
             </div>
 
-            <div className="space-y-1">
-              <h3 className="font-bold text-xl line-clamp-1">{music?.title}</h3>
+            <div className="space-y-0.5 max-w-[220px]">
+              <h3 className="font-bold text-sm sm:text-base line-clamp-1 text-white">{music?.title}</h3>
               <p className="text-xs text-white/70 line-clamp-1">{music?.artist}</p>
             </div>
           </div>
@@ -183,51 +216,51 @@ export default function MusicStoryCanvas({
 
         {/* Style 4: Floating Music Card */}
         {currentLayout === "style4" && (
-          <div className="w-full max-w-xs bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-5 shadow-2xl flex flex-col gap-4 animate-[statusFadeIn_0.3s_ease-out]">
-            <div className="relative w-full aspect-square rounded-2xl overflow-hidden shadow-lg">
+          <div className="w-full max-w-[240px] bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 animate-[statusFadeIn_0.3s_ease-out]">
+            <div className="relative w-full aspect-square rounded-xl overflow-hidden shadow-lg">
               <img
                 src={artworkUrl}
                 alt=""
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-4">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
                 <div className="text-left">
-                  <p className="font-bold text-lg text-white line-clamp-1">
+                  <p className="font-bold text-xs text-white line-clamp-1">
                     {music?.title}
                   </p>
-                  <p className="text-xs text-white/80 line-clamp-1">
+                  <p className="text-[11px] text-white/80 line-clamp-1">
                     {music?.artist}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-between px-2 text-xs text-white/70">
+            <div className="flex items-center justify-between px-1 text-[11px] text-white/70">
               <span className="flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Instagram Music
+                <Sparkles className="w-3 h-3 text-amber-400" /> Instagram Music
               </span>
-              <span className="font-mono">0:15</span>
+              <span className="font-mono text-[10px]">0:15</span>
             </div>
           </div>
         )}
 
         {/* Style 5: Lyric Style Card */}
         {currentLayout === "style5" && (
-          <div className="flex flex-col items-center gap-5 max-w-xs text-center animate-[statusFadeIn_0.3s_ease-out]">
-            <div className="bg-black/40 backdrop-blur-xl border border-white/15 p-6 rounded-3xl shadow-2xl space-y-4">
-              <p className="font-serif italic text-lg sm:text-xl text-amber-200/90 leading-relaxed">
-                "♫ Playing: {music?.title} — {music?.artist}"
+          <div className="flex flex-col items-center gap-3 max-w-[260px] text-center animate-[statusFadeIn_0.3s_ease-out]">
+            <div className="bg-black/40 backdrop-blur-xl border border-white/15 p-4 rounded-2xl shadow-2xl space-y-3">
+              <p className="font-serif italic text-sm sm:text-base text-amber-200/90 leading-snug">
+                "♫ {music?.title} — {music?.artist}"
               </p>
-              <div className="flex items-center justify-center gap-3 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-center gap-2.5 pt-2 border-t border-white/10">
                 <img
                   src={artworkUrl}
                   alt=""
-                  className="w-10 h-10 rounded-xl object-cover border border-white/20"
+                  className="w-8 h-8 rounded-lg object-cover border border-white/20"
                 />
                 <div className="text-left">
                   <p className="font-bold text-xs text-white line-clamp-1">
                     {music?.title}
                   </p>
-                  <p className="text-[11px] text-white/60 line-clamp-1">
+                  <p className="text-[10px] text-white/60 line-clamp-1">
                     {music?.artist}
                   </p>
                 </div>
@@ -246,17 +279,17 @@ export default function MusicStoryCanvas({
         )}
       </div>
 
-      {/* Editor Controls for Theme & Layout Selection */}
+      {/* Editor Controls Toolbar for Theme & Layout Selection */}
       {editable && (
-        <div className="absolute bottom-3 left-0 right-0 z-30 px-4 flex flex-col gap-2.5 items-center">
-          {/* Layout Picker */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full p-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/15 no-scrollbar">
+        <div className="absolute bottom-2 left-0 right-0 z-30 px-3 flex flex-col gap-2 items-center">
+          {/* Layout Mode Selector Bar */}
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full px-2 py-1 bg-black/75 backdrop-blur-md rounded-full border border-white/20 no-scrollbar shadow-lg">
             {LAYOUT_STYLES.map((l) => (
               <button
                 key={l.id}
                 type="button"
                 onClick={() => handleSelectLayout(l.id)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition ${
                   currentLayout === l.id
                     ? "bg-white text-black shadow-md"
                     : "text-white/70 hover:text-white"
@@ -267,18 +300,29 @@ export default function MusicStoryCanvas({
             ))}
           </div>
 
-          {/* Theme Color Picker */}
-          <div className="flex items-center gap-2 overflow-x-auto max-w-full p-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/15 no-scrollbar">
+          {/* Random Gradient Generator & Palette Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full px-2 py-1 bg-black/75 backdrop-blur-md rounded-full border border-white/20 no-scrollbar shadow-lg">
+            {/* 🎲 Shuffle Random Theme Button */}
+            <button
+              type="button"
+              onClick={handleRandomTheme}
+              title="Random Background Gradient"
+              className="p-1 rounded-full bg-white/20 hover:bg-white/40 text-white transition transform active:scale-95 flex items-center justify-center mr-1"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Gradient Theme Dots */}
             {BACKGROUND_THEMES.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => handleSelectTheme(t.id)}
                 title={t.name}
-                className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
+                className={`w-5 h-5 rounded-full border-2 transition transform hover:scale-110 shrink-0 ${
                   activeTheme === t.id
                     ? "border-white scale-110 shadow-lg"
-                    : "border-transparent opacity-80"
+                    : "border-transparent opacity-75 hover:opacity-100"
                 }`}
                 style={{ backgroundColor: t.accent }}
               />
