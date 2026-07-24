@@ -33,6 +33,7 @@ export const GroupVibeViewerModal = () => {
     nextVibe,
     prevVibe,
     deleteVibe,
+    viewVibe,
     reactToVibe,
     replyToVibe,
     fetchVibeViewers,
@@ -60,12 +61,22 @@ export const GroupVibeViewerModal = () => {
 
   const vibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
   const currentVibe = vibes[activeVibeIndex] || null;
-  const isCreator = currentVibe && authUser && String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser._id);
+  const isCreator =
+    currentVibe &&
+    authUser &&
+    String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser._id);
 
   // Determine slide duration (default 5s for photo/text, custom for music clip)
   const durationSec = currentVibe?.music?.clipDuration
     ? Number(currentVibe.music.clipDuration)
     : currentVibe?.duration || 5;
+
+  // --- AUTO-MARK AS VIEWED INSTANTLY ---
+  useEffect(() => {
+    if (isViewerOpen && activeViewerGroupId && currentVibe?._id) {
+      viewVibe(activeViewerGroupId, currentVibe._id);
+    }
+  }, [isViewerOpen, activeViewerGroupId, currentVibe?._id, viewVibe]);
 
   // --- PRELOAD NEIGHBORS ON VIBE CHANGE ---
   useEffect(() => {
@@ -103,7 +114,11 @@ export const GroupVibeViewerModal = () => {
         return "https://chatappey.onrender.com";
       };
 
-      const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
+      const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(
+        audioUrl
+      )}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(
+        artist
+      )}`;
 
       const primaryUrl = audioUrl || streamProxyUrl;
       const fallbackUrl = audioUrl ? streamProxyUrl : "";
@@ -141,7 +156,6 @@ export const GroupVibeViewerModal = () => {
     }
 
     // --- Story Timer Engine (Updates progress only when NOT buffering and NOT paused) ---
-    const startTime = Date.now();
     const totalMs = durationSec * 1000;
 
     progressInterval = setInterval(() => {
@@ -154,7 +168,7 @@ export const GroupVibeViewerModal = () => {
       }
 
       setProgress((prev) => {
-        const nextVal = prev + (100 / (totalMs / 50));
+        const nextVal = prev + 100 / (totalMs / 50);
         if (nextVal >= 100) {
           clearInterval(progressInterval);
           nextVibe();
@@ -248,102 +262,106 @@ export const GroupVibeViewerModal = () => {
     // Tap left/right 30% boundaries
     const screenWidth = window.innerWidth;
     const clickX = e.changedTouches[0].clientX;
-    if (clickX < screenWidth * 0.3) {
+
+    if (clickX < screenWidth * 0.35) {
       prevVibe();
-    } else if (clickX > screenWidth * 0.7) {
+    } else if (clickX > screenWidth * 0.65) {
       nextVibe();
     }
   };
 
-  const isMusicOnly =
-    (currentVibe.mediaType === "music" || (!currentVibe.mediaUrl && !currentVibe.text)) &&
-    currentVibe.music;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 sm:bg-black/90 backdrop-blur-2xl no-select safe-top safe-bottom">
-      {/* Viewer Main Shell */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 sm:backdrop-blur-xl p-0 sm:p-4 select-none animate-in fade-in duration-200">
       <div
+        className="relative w-full h-full sm:h-[94vh] sm:max-h-[850px] sm:max-w-md bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border-0 sm:border border-white/10"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="relative w-full h-full sm:max-w-[420px] sm:h-[92vh] sm:rounded-3xl overflow-hidden bg-black shadow-2xl flex flex-col justify-between"
       >
         {/* ==================================================================== */}
-        {/* 1. MEDIA DISPLAY AREA */}
+        {/* 1. MEDIA CANVAS CONTAINER */}
         {/* ==================================================================== */}
-        <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
-          {/* Buffering Spinner Overlay */}
-          {isBuffering && (
-            <div className="absolute z-30 inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-              <div className="p-3 rounded-full bg-black/60 border border-white/20 text-white shadow-2xl animate-spin">
-                <Loader2 className="w-8 h-8 text-rose-400" />
-              </div>
-            </div>
+        <div className="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-slate-900">
+          {/* Media Content rendering based on mediaType */}
+          {currentVibe.mediaType === "photo" && currentVibe.mediaUrl && (
+            <img
+              src={currentVibe.mediaUrl}
+              alt="Group Vibe"
+              className="w-full h-full object-contain pointer-events-none"
+            />
           )}
 
-          {/* MODE A: Music-Only Vibe */}
-          {isMusicOnly ? (
-            <MusicOnlyVibeView vibe={currentVibe} isPlaying={!isPaused && !isBuffering} />
-          ) : currentVibe.mediaType === "video" ? (
-            /* MODE B: Video Vibe */
+          {currentVibe.mediaType === "video" && currentVibe.mediaUrl && (
             <video
               src={currentVibe.mediaUrl}
               autoPlay
               playsInline
-              muted={isMuted || !!currentVibe.music}
               loop
-              className="w-full h-full object-cover"
-              onWaiting={() => setIsBuffering(true)}
-              onPlaying={() => setIsBuffering(false)}
+              muted={isMuted || !!currentVibe.music}
+              className="w-full h-full object-contain pointer-events-none"
             />
-          ) : currentVibe.mediaType === "photo" ? (
-            /* MODE C: Photo Vibe */
-            <img
-              src={currentVibe.mediaUrl}
-              alt="Group Vibe"
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            /* MODE D: Text Vibe */
-            <div className="w-full h-full flex items-center justify-center p-8 text-center bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 text-white font-extrabold text-2xl sm:text-3xl leading-relaxed animate-aurora-bg">
+          )}
+
+          {currentVibe.mediaType === "text" && (
+            <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-indigo-900 via-purple-900 to-rose-950 text-white font-black text-2xl sm:text-3xl leading-snug drop-shadow-xl">
               {currentVibe.text}
             </div>
           )}
 
-          {/* OVERLAY: Instagram Music Sticker (for Photo, Video, and Text Vibes with Music) */}
-          {!isMusicOnly && currentVibe.music && (
+          {currentVibe.mediaType === "music" && (
+            <MusicOnlyVibeView vibe={currentVibe} isPlaying={!isPaused && !isBuffering} />
+          )}
+
+          {/* Instagram Music Sticker Overlay if media + song */}
+          {currentVibe.music && currentVibe.mediaType !== "music" && (
             <div
-              className="absolute z-20 pointer-events-none"
+              className="absolute z-20 pointer-events-none drop-shadow-2xl"
               style={{
                 left: `${currentVibe.music.position?.x ?? 50}%`,
                 top: `${currentVibe.music.position?.y ?? 25}%`,
                 transform: "translate(-50%, -50%)",
               }}
             >
-              <InstagramMusicSticker
-                music={currentVibe.music}
-                isPlaying={!isPaused && !isBuffering}
-              />
+              <InstagramMusicSticker music={currentVibe.music} isPlaying={!isPaused && !isBuffering} />
+            </div>
+          )}
+
+          {/* Text Caption if Media + Text */}
+          {currentVibe.mediaType !== "text" && currentVibe.text && (
+            <div className="absolute bottom-16 inset-x-4 z-20 flex justify-center pointer-events-none">
+              <div className="px-4 py-2 rounded-2xl bg-black/65 backdrop-blur-md border border-white/20 text-white text-xs sm:text-sm font-semibold text-center max-w-xs shadow-xl">
+                {currentVibe.text}
+              </div>
+            </div>
+          )}
+
+          {/* Buffering Spinner Overlay */}
+          {isBuffering && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 backdrop-blur-xs">
+              <Loader2 className="w-10 h-10 text-rose-400 animate-spin" />
             </div>
           )}
         </div>
 
         {/* ==================================================================== */}
-        {/* 2. TOP INSTAGRAM BAR (Progress, Creator Avatar, Actions) */}
+        {/* 2. TOP OVERLAY HEADER (Progress Bar, User Info, Controls) */}
         {/* ==================================================================== */}
         <div
-          className={`relative z-20 p-3 pt-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-200 ${
+          className={`absolute top-0 inset-x-0 z-30 p-3 pt-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-200 ${
             isHolding.current ? "opacity-0" : "opacity-100"
           }`}
         >
-          {/* Segmented Progress Bars */}
-          <div className="flex gap-1.5 mb-3">
+          {/* Segmented Top Progress Bars */}
+          <div className="flex items-center gap-1 mb-3 px-1">
             {vibes.map((v, idx) => {
               let fillWidth = "0%";
               if (idx < activeVibeIndex) fillWidth = "100%";
               else if (idx === activeVibeIndex) fillWidth = `${progress}%`;
 
               return (
-                <div key={v._id || idx} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                <div
+                  key={v._id}
+                  className="flex-1 h-1 bg-white/25 rounded-full overflow-hidden backdrop-blur-sm"
+                >
                   <div
                     className="h-full bg-white transition-all duration-75 ease-linear rounded-full"
                     style={{ width: fillWidth }}
@@ -353,19 +371,19 @@ export const GroupVibeViewerModal = () => {
             })}
           </div>
 
-          {/* User Info & Controls */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+          {/* Creator Profile Info & Right Action Buttons */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2.5 min-w-0">
               <img
                 src={currentVibe.creator?.profilePic || "/avatar.png"}
-                alt="Avatar"
-                className="w-9 h-9 rounded-full object-cover border-2 border-rose-500 shadow-md"
+                alt={currentVibe.creator?.fullName || "Creator"}
+                className="w-9 h-9 rounded-full object-cover border border-white/30 shadow-md shrink-0"
               />
-              <div className="leading-tight">
-                <p className="text-sm font-bold text-white drop-shadow">
+              <div className="leading-tight min-w-0">
+                <p className="text-xs font-bold text-white truncate drop-shadow">
                   {currentVibe.creator?.fullName || "Group Member"}
                 </p>
-                <p className="text-[10px] text-white/75 drop-shadow">
+                <p className="text-[10px] text-white/70 truncate drop-shadow">
                   {currentVibe.createdAt
                     ? formatDistanceToNow(new Date(currentVibe.createdAt), { addSuffix: true })
                     : "Just now"}
@@ -373,8 +391,7 @@ export const GroupVibeViewerModal = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 text-white">
+            <div className="flex items-center gap-2 text-white shrink-0">
               {currentVibe.music && (
                 <button
                   type="button"
@@ -470,13 +487,15 @@ export const GroupVibeViewerModal = () => {
               <button
                 type="button"
                 onClick={() => fetchVibeViewers(activeViewerGroupId, currentVibe._id)}
-                className="flex-1 flex items-center justify-between px-4 py-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-semibold hover:bg-white/20 transition-colors"
+                className="flex-1 flex items-center justify-between px-4 py-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-semibold hover:bg-white/20 transition-colors shadow-lg"
               >
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4 text-rose-400" />
-                  <span>{currentVibe.viewCount || 1} {currentVibe.viewCount === 1 ? "View" : "Views"}</span>
+                  <span>
+                    {currentVibe.viewCount || 1} {currentVibe.viewCount === 1 ? "View" : "Views"}
+                  </span>
                 </div>
-                <span className="text-[10px] text-white/70">Tap to see who viewed</span>
+                <span className="text-[10px] text-white/70">Tap to see who viewed & reacted</span>
               </button>
             )}
           </div>
@@ -487,17 +506,17 @@ export const GroupVibeViewerModal = () => {
       {/* 4. VIEWERS DRAWER MODAL (Creator Only) */}
       {/* ==================================================================== */}
       {viewersDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-0 sm:p-4">
-          <div className="w-full sm:max-w-md bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-3xl max-h-[70vh] flex flex-col overflow-hidden text-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-md p-0 sm:p-4">
+          <div className="w-full sm:max-w-md bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-3xl max-h-[70vh] flex flex-col overflow-hidden text-white shadow-2xl animate-in slide-in-from-bottom duration-200">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Eye className="w-5 h-5 text-rose-400" />
-                <h3 className="font-bold text-sm">Story Viewers</h3>
+                <h3 className="font-bold text-sm">Story Viewers & Reactions</h3>
               </div>
               <button
                 type="button"
                 onClick={closeViewersDrawer}
-                className="p-1 rounded-full text-white/60 hover:text-white"
+                className="p-1.5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -505,39 +524,45 @@ export const GroupVibeViewerModal = () => {
 
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-3">
               {viewersLoading ? (
-                <div className="flex justify-center p-6">
+                <div className="flex flex-col items-center justify-center p-8 space-y-2">
                   <Loader2 className="w-6 h-6 text-rose-400 animate-spin" />
+                  <p className="text-xs text-white/60">Loading viewers...</p>
                 </div>
               ) : viewersList.length === 0 ? (
                 <p className="text-center text-xs text-white/60 p-6">No viewers yet.</p>
               ) : (
-                viewersList.map((viewer) => (
-                  <div
-                    key={viewer._id || viewer.userId}
-                    className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={viewer.profilePic || "/avatar.png"}
-                        alt={viewer.fullName}
-                        className="w-9 h-9 rounded-full object-cover border border-white/20"
-                      />
-                      <div>
-                        <p className="text-xs font-bold">{viewer.fullName || "User"}</p>
-                        <p className="text-[10px] text-white/50">
-                          {viewer.viewedAt
-                            ? formatDistanceToNow(new Date(viewer.viewedAt), { addSuffix: true })
-                            : "Recently"}
-                        </p>
+                viewersList.map((viewer, idx) => {
+                  const user = viewer.user || viewer;
+                  const name = user.fullName || user.name || "Group Member";
+                  const pic = user.profilePic || "/avatar.png";
+                  const time = viewer.viewedAt
+                    ? formatDistanceToNow(new Date(viewer.viewedAt), { addSuffix: true })
+                    : "Recently";
+
+                  return (
+                    <div
+                      key={user._id || viewer._id || idx}
+                      className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={pic}
+                          alt={name}
+                          className="w-10 h-10 rounded-full object-cover border border-white/20 shadow-md shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{name}</p>
+                          <p className="text-[10px] text-white/60">{time}</p>
+                        </div>
                       </div>
+                      {viewer.reaction && (
+                        <span className="text-xl bg-black/60 px-2.5 py-1 rounded-full border border-white/20 shadow-md animate-in zoom-in-50 duration-150 shrink-0">
+                          {viewer.reaction}
+                        </span>
+                      )}
                     </div>
-                    {viewer.reaction && (
-                      <span className="text-lg bg-black/40 px-2 py-1 rounded-full border border-white/10">
-                        {viewer.reaction}
-                      </span>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

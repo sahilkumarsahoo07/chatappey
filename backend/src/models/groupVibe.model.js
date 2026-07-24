@@ -16,7 +16,7 @@ const groupVibeSchema = new mongoose.Schema(
     },
     mediaType: {
       type: String,
-      enum: ["photo", "video", "text"],
+      enum: ["photo", "video", "text", "music"],
       required: true,
     },
     mediaUrl: {
@@ -59,7 +59,7 @@ const groupVibeSchema = new mongoose.Schema(
         rotation: { type: Number, default: 0 },
         theme: {
           type: String,
-          enum: ["classic", "dark", "neon", "minimal"],
+          enum: ["classic", "rounded", "compact", "vinyl", "neon"],
           default: "classic",
         },
       },

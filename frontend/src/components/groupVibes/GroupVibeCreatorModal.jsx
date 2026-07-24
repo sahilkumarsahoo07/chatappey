@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { X, Image, Video, Music, Sparkles, Send, Volume2, VolumeX, Type, Palette } from "lucide-react";
+import { X, Image, Video, Music, Sparkles, Send, Volume2, VolumeX, Type, Palette, Sliders } from "lucide-react";
 import { useGroupVibeStore } from "../../store/useGroupVibeStore";
 import { useStoryMusicStore } from "../../store/useStoryMusicStore";
 import StoryMusicPicker from "../status/StoryMusicPicker";
@@ -36,7 +36,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     }
   };
 
-  const [mode, setMode] = useState("media"); // 'media' | 'text' | 'music'
+  const [mode, setMode] = useState("media"); // 'media' | 'text'
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [mediaType, setMediaType] = useState("photo"); // 'photo' | 'video' | 'music'
@@ -307,7 +307,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   />
                 </div>
-                <p className="text-lg font-black text-white">{selectedSong.title}</p>
+                <p className="text-lg font-black text-white px-4 truncate max-w-xs">{selectedSong.title}</p>
                 <p className="text-xs text-white/75">{selectedSong.artist}</p>
                 <span className="text-[10px] bg-rose-500/30 text-rose-300 px-3 py-1 rounded-full border border-rose-400/40">
                   Music Story
@@ -364,8 +364,37 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             </div>
           )}
 
+          {/* Music Sticker Style Selector Floating Bar */}
+          {selectedSong && (
+            <div className="absolute bottom-20 inset-x-3 z-30 flex flex-col items-center gap-1.5 animate-in slide-in-from-bottom-2 duration-200">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/85 backdrop-blur-xl border border-white/20 shadow-2xl overflow-x-auto max-w-full no-scrollbar">
+                <span className="text-[10px] uppercase font-bold text-white/60 px-1 shrink-0 flex items-center gap-1">
+                  <Sliders className="w-3 h-3 text-rose-400" />
+                  Style:
+                </span>
+                {STICKER_THEMES.map((themeName, idx) => (
+                  <button
+                    key={themeName}
+                    type="button"
+                    onClick={() => setStickerThemeIndex(idx)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-all shrink-0 ${
+                      stickerThemeIndex === idx
+                        ? "bg-rose-500 text-white shadow-lg scale-105 ring-1 ring-rose-300"
+                        : "bg-white/10 text-white/80 hover:bg-white/20 hover:text-white"
+                    }`}
+                  >
+                    {themeName}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-white/60 font-medium drop-shadow">
+                Tap sticker or style buttons to change appearance
+              </p>
+            </div>
+          )}
+
           {/* Caption input if media mode */}
-          {mode === "media" && file && (
+          {mode === "media" && file && !selectedSong && (
             <div className="absolute bottom-20 inset-x-4 z-10">
               <input
                 type="text"

@@ -105,8 +105,10 @@ export const createGroupVibe = async (req, res) => {
       } else {
         thumbnailUrl = mediaUrl;
       }
+    } else if (req.body.music) {
+      mediaType = "music";
     } else if (!text.trim()) {
-      return res.status(400).json({ error: "Group Vibe requires text or media" });
+      return res.status(400).json({ error: "Group Vibe requires text, media, or music" });
     }
 
     // Helper for safe number conversion avoiding NaN
@@ -141,13 +143,16 @@ export const createGroupVibe = async (req, res) => {
               y: Math.min(1, Math.max(0, safeNum(raw.sticker?.y, 0.72))),
               scale: Math.min(2.5, Math.max(0.6, safeNum(raw.sticker?.scale, 1))),
               rotation: safeNum(raw.sticker?.rotation, 0),
-              theme: ["classic", "dark", "neon", "minimal"].includes(raw.sticker?.theme)
+              theme: ["classic", "rounded", "compact", "vinyl", "neon"].includes(raw.sticker?.theme)
                 ? raw.sticker.theme
                 : "classic",
             },
           };
           if (music.clipDuration) {
             duration = music.clipDuration;
+          }
+          if (mediaType === "music" && music.artwork) {
+            thumbnailUrl = music.artwork;
           }
         }
       } catch (e) {
