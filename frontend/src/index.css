@@ -543,6 +543,60 @@ textarea,
     animation: shimmer 2s infinite;
 }
 
+/* ============================================
+   INSTAGRAM MUSIC STORY ANIMATIONS
+   ============================================ */
+
+@keyframes equalizerBar1 {
+  0%, 100% { height: 25%; }
+  50% { height: 95%; }
+}
+@keyframes equalizerBar2 {
+  0%, 100% { height: 85%; }
+  50% { height: 30%; }
+}
+@keyframes equalizerBar3 {
+  0%, 100% { height: 40%; }
+  50% { height: 100%; }
+}
+@keyframes equalizerBar4 {
+  0%, 100% { height: 90%; }
+  50% { height: 20%; }
+}
+
+.animate-eq-bar-1 { animation: equalizerBar1 0.75s ease-in-out infinite; }
+.animate-eq-bar-2 { animation: equalizerBar2 0.65s ease-in-out infinite; }
+.animate-eq-bar-3 { animation: equalizerBar3 0.85s ease-in-out infinite; }
+.animate-eq-bar-4 { animation: equalizerBar4 0.70s ease-in-out infinite; }
+
+@keyframes vinylSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-vinyl-spin { animation: vinylSpin 12s linear infinite; }
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow { animation: spinSlow 8s linear infinite; }
+
+@keyframes auroraShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-aurora-bg {
+  background-size: 200% 200%;
+  animation: auroraShift 14s ease-in-out infinite;
+}
+
+@keyframes floatUp {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-160px) scale(1.4); }
+}
+.animate-float-up { animation: floatUp 1.8s ease-out forwards; }
+
 /* Mobile Optimizations */
 @media (max-width: 640px) {
     .chat-bubble {

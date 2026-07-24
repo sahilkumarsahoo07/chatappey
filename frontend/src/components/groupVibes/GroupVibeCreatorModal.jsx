@@ -4,8 +4,8 @@ import { useGroupVibeStore } from "../../store/useGroupVibeStore";
 import { useStoryMusicStore } from "../../store/useStoryMusicStore";
 import StoryMusicPicker from "../status/StoryMusicPicker";
 import { audioManager } from "../../lib/audioManager";
+import { InstagramMusicSticker, STICKER_THEMES } from "./InstagramMusicSticker";
 import { toast } from "react-hot-toast";
-
 import { useGroupStore } from "../../store/useGroupStore";
 
 const BACKGROUND_GRADIENTS = [
@@ -36,13 +36,14 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     }
   };
 
-  const [mode, setMode] = useState("media"); // 'media' | 'text'
+  const [mode, setMode] = useState("media"); // 'media' | 'text' | 'music'
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [mediaType, setMediaType] = useState("photo"); // 'photo' | 'video'
+  const [mediaType, setMediaType] = useState("photo"); // 'photo' | 'video' | 'music'
   const [text, setText] = useState("");
   const [gradientIndex, setGradientIndex] = useState(0);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [stickerThemeIndex, setStickerThemeIndex] = useState(0);
 
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
@@ -50,7 +51,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   const isDraggingMusic = useRef(false);
   const dragStartRef = useRef({ pageX: 0, pageY: 0, startX: 50, startY: 25 });
 
-  // Clean state when modal opens or closes
+  // Reset state when modal opens or closes
   useEffect(() => {
     if (isCreatorOpen || propsGroupId) {
       setFile(null);
@@ -141,31 +142,41 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
   useEffect(() => {
     if (!isCreatorOpen && !propsGroupId) return;
     const startSec = Number(selectedSong?.clipStart ?? selectedSong?.startOffset ?? clipStart ?? 0);
+    const duration = Number(selectedSong?.clipDuration ?? clipDuration ?? 15);
+
     if (selectedSong?.audioUrl && !isAudioMuted) {
       audioManager.play({
         id: `creator_music_${selectedSong.id}`,
         url: selectedSong.audioUrl,
         volume: 0.8,
         loop: true,
+        clipStart: startSec,
+        clipDuration: duration,
       });
-      if (startSec > 0) {
-        audioManager.seek(startSec);
-      }
     } else {
       audioManager.stop();
     }
-  }, [selectedSong, clipStart, isAudioMuted, isCreatorOpen, propsGroupId]);
+  }, [selectedSong, clipStart, clipDuration, isAudioMuted, isCreatorOpen, propsGroupId]);
 
   if (!isCreatorOpen && !propsGroupId) return null;
 
+  const cycleStickerTheme = () => {
+    setStickerThemeIndex((prev) => (prev + 1) % STICKER_THEMES.length);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (mode === "media" && !file) {
-      toast.error("Please select a photo or video");
-      return;
+
+    // Determine target mediaType
+    let finalMediaType = mediaType;
+    if (!file && !text.trim() && selectedSong) {
+      finalMediaType = "music";
+    } else if (mode === "text") {
+      finalMediaType = "text";
     }
-    if (mode === "text" && !text.trim()) {
-      toast.error("Please enter text for your Vibe");
+
+    if (!file && !text.trim() && !selectedSong) {
+      toast.error("Please select a photo/video, type text, or choose a song");
       return;
     }
 
@@ -179,6 +190,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
     if (selectedSong) {
       const activeClipStart = Number(selectedSong.clipStart ?? selectedSong.startOffset ?? clipStart ?? 0);
       const activeClipDuration = Number(selectedSong.clipDuration ?? clipDuration ?? 15);
+      const currentTheme = STICKER_THEMES[stickerThemeIndex] || "classic";
 
       const musicPayload = {
         id: selectedSong.id,
@@ -197,27 +209,30 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
           y: Math.min(1, Math.max(0, (musicPos?.y ?? 25) / 100)),
           scale: 1,
           rotation: 0,
-          theme: "classic",
+          theme: currentTheme,
         },
       };
       formData.append("music", JSON.stringify(musicPayload));
     }
 
-    // Temporary preview payload for instant UI update
+    // Temporary preview payload for instant optimistic UI update
     const tempPreviewPayload = {
-      mediaType: mode === "text" ? "text" : mediaType,
+      mediaType: finalMediaType,
       mediaUrl: previewUrl || "",
       text,
+      duration: selectedSong?.clipDuration || 5,
       music: selectedSong
         ? {
-          title: selectedSong.title,
-          artist: selectedSong.artist,
-          artwork: selectedSong.artwork || selectedSong.thumbnail,
-          audioUrl: selectedSong.audioUrl,
-          sourceUrl: selectedSong.sourceUrl,
-          clipStart: Number(selectedSong.clipStart ?? selectedSong.startOffset ?? clipStart ?? 0),
-          clipDuration: Number(selectedSong.clipDuration ?? clipDuration ?? 15),
-        }
+            title: selectedSong.title,
+            artist: selectedSong.artist,
+            artwork: selectedSong.artwork || selectedSong.thumbnail,
+            audioUrl: selectedSong.audioUrl,
+            sourceUrl: selectedSong.sourceUrl,
+            clipStart: Number(selectedSong.clipStart ?? selectedSong.startOffset ?? clipStart ?? 0),
+            clipDuration: Number(selectedSong.clipDuration ?? clipDuration ?? 15),
+            position: musicPos,
+            sticker: { theme: STICKER_THEMES[stickerThemeIndex] || "classic" },
+          }
         : null,
     };
 
@@ -226,7 +241,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
       await createGroupVibe(activeGroupId, formData, tempPreviewPayload);
       handleClose();
     } catch (e) {
-      // Error handled in store
+      // Handled in store
     }
   };
 
@@ -259,7 +274,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
           ref={canvasRef}
           className="relative flex-1 flex flex-col items-center justify-center overflow-hidden bg-slate-900 select-none touch-none"
           style={
-            mode === "text"
+            mode === "text" || (!file && !text && selectedSong)
               ? { background: BACKGROUND_GRADIENTS[gradientIndex] }
               : {}
           }
@@ -282,6 +297,22 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
                   className="w-full h-full object-contain"
                 />
               )
+            ) : selectedSong ? (
+              /* Music-Only Preview State */
+              <div className="flex flex-col items-center justify-center text-white text-center p-8 space-y-4">
+                <div className="w-40 h-40 rounded-3xl bg-slate-950 border border-white/20 shadow-2xl flex items-center justify-center overflow-hidden group">
+                  <img
+                    src={selectedSong.artwork || selectedSong.thumbnail || "/music-placeholder.png"}
+                    alt={selectedSong.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                </div>
+                <p className="text-lg font-black text-white">{selectedSong.title}</p>
+                <p className="text-xs text-white/75">{selectedSong.artist}</p>
+                <span className="text-[10px] bg-rose-500/30 text-rose-300 px-3 py-1 rounded-full border border-rose-400/40">
+                  Music Story
+                </span>
+              </div>
             ) : (
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -292,7 +323,7 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
                 </div>
                 <div>
                   <p className="font-semibold text-white">Tap to upload Photo or Video</p>
-                  <p className="text-xs text-white/50">MP4, WebM, PNG, JPG supported</p>
+                  <p className="text-xs text-white/50">Or choose a song below for a Music Story</p>
                 </div>
               </div>
             )
@@ -306,44 +337,30 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             />
           )}
 
-          {/* Draggable Music Sticker Overlay */}
+          {/* Draggable Instagram Music Sticker Overlay */}
           {selectedSong && (
             <div
-              className="absolute z-30 cursor-grab active:cursor-grabbing touch-none select-none transition-transform active:scale-105"
+              className="absolute z-30 touch-none select-none transition-transform active:scale-105"
               style={{
                 left: `${musicPos.x}%`,
                 top: `${musicPos.y}%`,
                 transform: "translate(-50%, -50%)",
               }}
-              onPointerDown={handleMusicPointerDown}
-              onTouchStart={handleMusicPointerDown}
             >
-              <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/30 text-white shadow-2xl max-w-xs ring-2 ring-rose-500/50 hover:border-rose-400">
-                <img
-                  src={selectedSong.artwork || selectedSong.thumbnail || "/music-placeholder.png"}
-                  alt="Song cover"
-                  className="w-10 h-10 rounded-xl object-cover shadow pointer-events-none"
-                  draggable={false}
-                />
-                <div className="flex-1 min-w-0 pointer-events-none">
-                  <p className="text-xs font-bold truncate drop-shadow">{selectedSong.title}</p>
-                  <p className="text-[10px] text-white/80 truncate drop-shadow">{selectedSong.artist || "Unknown artist"}</p>
-                </div>
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    clearSong();
-                    audioManager.stop();
-                  }}
-                  className="text-white/60 hover:text-white p-1 rounded-full hover:bg-white/20 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <InstagramMusicSticker
+                music={{
+                  ...selectedSong,
+                  sticker: { theme: STICKER_THEMES[stickerThemeIndex] },
+                }}
+                isPlaying={true}
+                isEditable={true}
+                onThemeChange={cycleStickerTheme}
+                onRemove={() => {
+                  clearSong();
+                  audioManager.stop();
+                }}
+                onPointerDown={handleMusicPointerDown}
+              />
             </div>
           )}
 
@@ -374,12 +391,13 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
         {/* Bottom Toolbar & Action Bar */}
         <div className="p-4 bg-base-200 border-t border-base-content/10 flex items-center justify-between gap-2 z-20">
           <div className="flex items-center gap-2">
-            {/* Mode Selector */}
+            {/* Mode Selectors */}
             <button
               type="button"
               onClick={() => setMode("media")}
-              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${mode === "media" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
-                }`}
+              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                mode === "media" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
+              }`}
             >
               <Image className="w-4 h-4" />
               Media
@@ -387,15 +405,16 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             <button
               type="button"
               onClick={() => setMode("text")}
-              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${mode === "text" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
-                }`}
+              className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                mode === "text" ? "bg-primary text-primary-content" : "bg-base-300 hover:bg-base-100"
+              }`}
             >
               <Type className="w-4 h-4" />
               Text
             </button>
 
-            {/* Gradient Switcher if Text Mode */}
-            {mode === "text" && (
+            {/* Gradient Switcher */}
+            {(mode === "text" || (!file && selectedSong)) && (
               <button
                 type="button"
                 onClick={() => setGradientIndex((prev) => (prev + 1) % BACKGROUND_GRADIENTS.length)}
@@ -410,13 +429,14 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
             <button
               type="button"
               onClick={() => openPicker()}
-              className={`p-2.5 rounded-xl flex items-center gap-1 text-xs font-medium transition-all ${selectedSong
+              className={`p-2.5 rounded-xl flex items-center gap-1 text-xs font-medium transition-all ${
+                selectedSong
                   ? "bg-rose-500 text-white animate-pulse"
                   : "bg-base-300 hover:bg-base-100"
-                }`}
+              }`}
             >
               <Music className="w-4 h-4" />
-              {selectedSong ? "Change Music" : "Add Music"}
+              {selectedSong ? "Change Song" : "Add Song"}
             </button>
           </div>
 
@@ -424,7 +444,10 @@ export const GroupVibeCreatorModal = ({ groupId: propsGroupId, groupName: propsG
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || (mode === "media" && !file) || (mode === "text" && !text.trim())}
+            disabled={
+              isSubmitting ||
+              (!file && !text.trim() && !selectedSong)
+            }
             className="btn btn-primary btn-circle shadow-lg hover:scale-105 transition-transform"
           >
             {isSubmitting ? (

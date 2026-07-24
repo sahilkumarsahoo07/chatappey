@@ -1,25 +1,27 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   X,
-  Play,
-  Pause,
-  Eye,
-  Trash2,
-  Send,
-  Music,
-  ChevronLeft,
-  ChevronRight,
-  Heart,
   Volume2,
   VolumeX,
+  Trash2,
+  Eye,
+  Send,
+  Heart,
+  ChevronLeft,
+  ChevronRight,
+  Share2,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useGroupVibeStore } from "../../store/useGroupVibeStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { audioManager } from "../../lib/audioManager";
-import { GroupVibeViewersDrawer } from "./GroupVibeViewersDrawer";
+import { groupVibePreloader } from "../../lib/groupVibePreloader";
+import { InstagramMusicSticker } from "./InstagramMusicSticker";
+import { MusicOnlyVibeView } from "./MusicOnlyVibeView";
 import { formatDistanceToNow } from "date-fns";
 
-const REACTION_EMOJIS = ["❤️", "😂", "🔥", "😍", "😮", "😢", "👏"];
+const REACTION_EMOJIS = ["❤️", "🔥", "😂", "😍", "👏", "😮"];
 
 export const GroupVibeViewerModal = () => {
   const {
@@ -30,64 +32,60 @@ export const GroupVibeViewerModal = () => {
     setViewerOpen,
     nextVibe,
     prevVibe,
+    deleteVibe,
     reactToVibe,
     replyToVibe,
-    deleteVibe,
     fetchVibeViewers,
+    viewersDrawerOpen,
+    viewersList,
+    viewersLoading,
+    closeViewersDrawer,
     floatingReactions,
   } = useGroupVibeStore();
 
-  const authUser = useAuthStore((s) => s.authUser);
+  const authUser = useAuthStore((state) => state.authUser);
 
+  const [isMuted, setIsMuted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [replyText, setReplyText] = useState("");
-  const [isMuted, setIsMuted] = useState(false);
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
-  const videoRef = useRef(null);
-  const touchStartY = useRef(null);
-  const progressTimerRef = useRef(null);
-  const isPausedRef = useRef(isPaused);
+  // Swipe & touch gesture state
+  const touchStartY = useRef(0);
+  const touchStartX = useRef(0);
+  const isHolding = useRef(false);
+  const holdTimer = useRef(null);
 
-  const rawVibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
+  const vibes = activeViewerGroupId ? groupVibesMap[activeViewerGroupId] || [] : [];
+  const currentVibe = vibes[activeVibeIndex] || null;
+  const isCreator = currentVibe && authUser && String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser._id);
 
-  // Deduplicate and filter out deleted/invalid vibes for clean viewer segments
-  const vibes = React.useMemo(() => {
-    const seen = new Set();
-    return rawVibes.filter((v) => {
-      if (!v || !v._id || v.deleted) return false;
-      const idStr = String(v._id);
-      if (seen.has(idStr)) return false;
-      seen.add(idStr);
-      return true;
-    });
-  }, [rawVibes]);
+  // Determine slide duration (default 5s for photo/text, custom for music clip)
+  const durationSec = currentVibe?.music?.clipDuration
+    ? Number(currentVibe.music.clipDuration)
+    : currentVibe?.duration || 5;
 
-  const currentVibe = vibes[activeVibeIndex];
-
+  // --- PRELOAD NEIGHBORS ON VIBE CHANGE ---
   useEffect(() => {
-    isPausedRef.current = isPaused;
-    if (isPaused) {
-      audioManager.pause();
-    } else if (isViewerOpen && currentVibe?.music && !isMuted) {
-      audioManager.resume();
+    if (isViewerOpen && vibes.length > 0) {
+      groupVibePreloader.preloadNeighbors(vibes, activeVibeIndex);
     }
-  }, [isPaused, isMuted, isViewerOpen, currentVibe?._id]);
+  }, [isViewerOpen, activeViewerGroupId, activeVibeIndex, vibes]);
 
-  const isCreator = currentVibe && String(currentVibe.creator?._id || currentVibe.creatorId?._id || currentVibe.creatorId) === String(authUser?._id);
-
-  // Audio & Progress Sync Engine
+  // --- AUDIO & PROGRESS SYNCHRONIZATION ENGINE ---
   useEffect(() => {
-    if (!isViewerOpen || !currentVibe) return;
+    if (!isViewerOpen || !currentVibe) {
+      audioManager.stop();
+      return;
+    }
 
     setProgress(0);
-    const durationSec = Math.max(
-      3,
-      currentVibe.music?.clipDuration || currentVibe.duration || (currentVibe.music ? 15 : 5)
-    );
-    const durationMs = durationSec * 1000;
-    const intervalMs = 50;
-    const increment = (intervalMs / durationMs) * 100;
+    setIsBuffering(false);
+
+    let progressInterval = null;
+    let audioStarted = false;
 
     // Handle music playback
     if (currentVibe?.music && !isMuted) {
@@ -95,6 +93,8 @@ export const GroupVibeViewerModal = () => {
       const sourceUrl = currentVibe.music.sourceUrl || "";
       const title = currentVibe.music.title || "";
       const artist = currentVibe.music.artist || "";
+      const startSec = Number(currentVibe.music.clipStart ?? currentVibe.music.startOffset ?? 0);
+      const clipDuration = Number(currentVibe.music.clipDuration ?? durationSec);
 
       const getApiBaseUrl = () => {
         if (import.meta.env.MODE === "development") {
@@ -105,341 +105,444 @@ export const GroupVibeViewerModal = () => {
 
       const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
 
-      const playAudioWithFallback = () => {
-        const startSec = Number(currentVibe.music.clipStart ?? currentVibe.music.startOffset ?? 0);
+      const primaryUrl = audioUrl || streamProxyUrl;
+      const fallbackUrl = audioUrl ? streamProxyUrl : "";
 
+      const startPlayback = (targetUrl, isFallback = false) => {
         audioManager.play({
-          id: `vibe_music_${currentVibe._id}`,
-          url: streamProxyUrl,
+          id: `vibe_${currentVibe._id}_${isFallback ? "proxy" : "direct"}`,
+          url: targetUrl,
           volume: 0.9,
           loop: true,
+          clipStart: startSec,
+          clipDuration: clipDuration,
+          onPlaying: () => {
+            setIsBuffering(false);
+            audioStarted = true;
+          },
+          onWaiting: () => {
+            setIsBuffering(true);
+          },
           onError: () => {
-            if (audioUrl) {
-              audioManager.play({
-                id: `vibe_music_direct_${currentVibe._id}`,
-                url: audioUrl,
-                volume: 0.9,
-                loop: true,
-              });
-              if (startSec > 0) {
-                audioManager.seek(startSec);
-              }
+            if (!isFallback && fallbackUrl) {
+              startPlayback(fallbackUrl, true);
+            } else {
+              setIsBuffering(false);
+              audioStarted = true; // allow story to proceed silently if audio fails
             }
           },
         });
-
-        if (startSec > 0) {
-          audioManager.seek(startSec);
-        }
       };
 
-      playAudioWithFallback();
+      startPlayback(primaryUrl, false);
     } else {
       audioManager.stop();
+      audioStarted = true; // No music, start progress timer right away
     }
 
-    if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    // --- Story Timer Engine (Updates progress only when NOT buffering and NOT paused) ---
+    const startTime = Date.now();
+    const totalMs = durationSec * 1000;
 
-    progressTimerRef.current = setInterval(() => {
-      if (!isPausedRef.current) {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(progressTimerRef.current);
-            nextVibe();
-            return 100;
-          }
-          return prev + increment;
-        });
+    progressInterval = setInterval(() => {
+      if (isPaused || viewersDrawerOpen) return;
+
+      // Wait if media/audio is buffering
+      if (currentVibe?.music && !isMuted && !audioStarted) {
+        setIsBuffering(true);
+        return;
       }
-    }, intervalMs);
+
+      setProgress((prev) => {
+        const nextVal = prev + (100 / (totalMs / 50));
+        if (nextVal >= 100) {
+          clearInterval(progressInterval);
+          nextVibe();
+          return 100;
+        }
+        return nextVal;
+      });
+    }, 50);
 
     return () => {
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      if (progressInterval) clearInterval(progressInterval);
       audioManager.stop();
     };
-  }, [isViewerOpen, activeViewerGroupId, activeVibeIndex, isMuted, currentVibe?._id]);
+  }, [
+    isViewerOpen,
+    activeViewerGroupId,
+    activeVibeIndex,
+    currentVibe?._id,
+    isMuted,
+    isPaused,
+    viewersDrawerOpen,
+    durationSec,
+  ]);
 
-  // Touch Swipe Down to close
-  const handleTouchStart = (e) => {
-    touchStartY.current = e.touches[0].clientY;
-    setIsPaused(true);
-  };
-
-  const handleTouchEnd = (e) => {
-    setIsPaused(false);
-    if (touchStartY.current !== null) {
-      const touchEndY = e.changedTouches[0].clientY;
-      const diffY = touchEndY - touchStartY.current;
-      if (diffY > 100) {
+  // --- KEYBOARD SHORTCUTS ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!isViewerOpen) return;
+      if (e.key === "ArrowRight" || e.key === " ") {
+        nextVibe();
+      } else if (e.key === "ArrowLeft") {
+        prevVibe();
+      } else if (e.key === "Escape") {
         setViewerOpen(false);
       }
-    }
-  };
-
-  const handleReplySubmit = async (e) => {
-    e.preventDefault();
-    if (!replyText.trim() || !currentVibe) return;
-    const textToSend = replyText.trim();
-    setReplyText("");
-    await replyToVibe(activeViewerGroupId, currentVibe._id, textToSend);
-  };
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isViewerOpen, nextVibe, prevVibe, setViewerOpen]);
 
   if (!isViewerOpen || !currentVibe) return null;
 
+  // --- HANDLERS ---
+  const handleReplySubmit = async (e) => {
+    e.preventDefault();
+    if (!replyText.trim() || isSendingReply) return;
+    setIsSendingReply(true);
+    try {
+      await replyToVibe(activeViewerGroupId, currentVibe._id, replyText);
+      setReplyText("");
+    } catch (e) {
+      // Handled in store
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (window.confirm("Are you sure you want to delete this Group Vibe?")) {
+      deleteVibe(activeViewerGroupId, currentVibe._id);
+    }
+  };
+
+  // Touch gesture handlers for Hold & Swipe Down
+  const handleTouchStart = (e) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchStartX.current = e.touches[0].clientX;
+    holdTimer.current = setTimeout(() => {
+      isHolding.current = true;
+      setIsPaused(true);
+    }, 200);
+  };
+
+  const handleTouchEnd = (e) => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    if (isHolding.current) {
+      isHolding.current = false;
+      setIsPaused(false);
+      return;
+    }
+
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffY = touchEndY - touchStartY.current;
+
+    // Swipe down > 80px to close
+    if (diffY > 80) {
+      setViewerOpen(false);
+      return;
+    }
+
+    // Tap left/right 30% boundaries
+    const screenWidth = window.innerWidth;
+    const clickX = e.changedTouches[0].clientX;
+    if (clickX < screenWidth * 0.3) {
+      prevVibe();
+    } else if (clickX > screenWidth * 0.7) {
+      nextVibe();
+    }
+  };
+
+  const isMusicOnly =
+    (currentVibe.mediaType === "music" || (!currentVibe.mediaUrl && !currentVibe.text)) &&
+    currentVibe.music;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black sm:bg-black/95 sm:backdrop-blur-lg select-none animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 sm:bg-black/90 backdrop-blur-2xl no-select safe-top safe-bottom">
+      {/* Viewer Main Shell */}
       <div
-        className="relative w-full h-full sm:h-[95vh] sm:max-h-[840px] sm:max-w-md bg-slate-950 sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border-0 sm:border border-white/10"
-        onTouchStart={(e) => {
-          audioManager.resume();
-          handleTouchStart(e);
-        }}
+        onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        onMouseDown={() => {
-          audioManager.resume();
-          setIsPaused(true);
-        }}
-        onMouseUp={() => setIsPaused(false)}
+        className="relative w-full h-full sm:max-w-[420px] sm:h-[92vh] sm:rounded-3xl overflow-hidden bg-black shadow-2xl flex flex-col justify-between"
       >
-        {/* Floating Live Reactions Layer */}
-        <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-          {floatingReactions.map((p) => (
-            <div
-              key={p.id}
-              className="absolute bottom-20 text-3xl animate-vibe-float opacity-0"
-              style={{ left: `${p.x}%` }}
-            >
-              {p.emoji}
+        {/* ==================================================================== */}
+        {/* 1. MEDIA DISPLAY AREA */}
+        {/* ==================================================================== */}
+        <div className="absolute inset-0 z-0 bg-black flex items-center justify-center">
+          {/* Buffering Spinner Overlay */}
+          {isBuffering && (
+            <div className="absolute z-30 inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+              <div className="p-3 rounded-full bg-black/60 border border-white/20 text-white shadow-2xl animate-spin">
+                <Loader2 className="w-8 h-8 text-rose-400" />
+              </div>
             </div>
-          ))}
-        </div>
+          )}
 
-        {/* Top Segmented Progress Bar */}
-        <div className="absolute top-3 inset-x-3 z-30 flex gap-1.5 px-2">
-          {vibes.map((v, idx) => (
-            <div
-              key={v._id}
-              className="flex-1 h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm"
-            >
-              <div
-                className="h-full bg-white transition-all duration-75 ease-linear"
-                style={{
-                  width:
-                    idx < activeVibeIndex
-                      ? "100%"
-                      : idx === activeVibeIndex
-                      ? `${progress}%`
-                      : "0%",
-                }}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Story Header */}
-        <div className="absolute top-7 inset-x-0 z-30 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent text-white">
-          <div className="flex items-center gap-2.5">
-            <img
-              src={currentVibe.creator?.profilePic || "/avatar.png"}
-              alt={currentVibe.creator?.fullName}
-              className="w-9 h-9 rounded-full object-cover border border-white/30"
-            />
-            <div className="min-w-0">
-              <p className="font-bold text-xs leading-tight truncate">
-                {currentVibe.creator?.fullName}
-              </p>
-              <p className="text-[10px] text-white/70">
-                {formatDistanceToNow(new Date(currentVibe.createdAt), { addSuffix: true })}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Audio Toggle */}
-            {currentVibe.music?.audioUrl && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsMuted(!isMuted);
-                }}
-                className="p-1.5 rounded-full bg-black/40 text-white/80 hover:text-white"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-rose-400" />}
-              </button>
-            )}
-
-            {/* Play/Pause */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsPaused(!isPaused);
-              }}
-              className="p-1.5 rounded-full bg-black/40 text-white/80 hover:text-white"
-            >
-              {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            </button>
-
-            {/* Delete button if creator */}
-            {isCreator && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteVibe(activeViewerGroupId, currentVibe._id);
-                }}
-                className="p-1.5 rounded-full bg-rose-500/20 text-rose-400 hover:bg-rose-500/40"
-                title="Delete Group Vibe"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setViewerOpen(false);
-              }}
-              className="p-1.5 rounded-full bg-black/40 text-white/80 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Media / Text Story Layer */}
-        <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden">
-          {currentVibe.mediaType === "video" ? (
+          {/* MODE A: Music-Only Vibe */}
+          {isMusicOnly ? (
+            <MusicOnlyVibeView vibe={currentVibe} isPlaying={!isPaused && !isBuffering} />
+          ) : currentVibe.mediaType === "video" ? (
+            /* MODE B: Video Vibe */
             <video
-              ref={videoRef}
               src={currentVibe.mediaUrl}
               autoPlay
-              loop
               playsInline
-              muted={isMuted || !!currentVibe.music?.audioUrl}
-              className="w-full h-full object-contain"
+              muted={isMuted || !!currentVibe.music}
+              loop
+              className="w-full h-full object-cover"
+              onWaiting={() => setIsBuffering(true)}
+              onPlaying={() => setIsBuffering(false)}
             />
           ) : currentVibe.mediaType === "photo" ? (
+            /* MODE C: Photo Vibe */
             <img
               src={currentVibe.mediaUrl}
               alt="Group Vibe"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-cover"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center p-8 text-center bg-gradient-to-tr from-purple-800 via-indigo-900 to-slate-900 text-white font-bold text-2xl sm:text-3xl">
+            /* MODE D: Text Vibe */
+            <div className="w-full h-full flex items-center justify-center p-8 text-center bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 text-white font-extrabold text-2xl sm:text-3xl leading-relaxed animate-aurora-bg">
               {currentVibe.text}
             </div>
           )}
 
-          {/* Music Sticker Overlay */}
-          {currentVibe.music?.title && (
+          {/* OVERLAY: Instagram Music Sticker (for Photo, Video, and Text Vibes with Music) */}
+          {!isMusicOnly && currentVibe.music && (
             <div
-              className="absolute z-20 pointer-events-none transition-all duration-150"
+              className="absolute z-20 pointer-events-none"
               style={{
                 left: `${currentVibe.music.position?.x ?? 50}%`,
-                top: `${currentVibe.music.position?.y ?? 24}%`,
+                top: `${currentVibe.music.position?.y ?? 25}%`,
                 transform: "translate(-50%, -50%)",
               }}
             >
-              <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-black/75 backdrop-blur-md border border-white/20 text-white shadow-xl">
-                <Music className="w-4 h-4 text-rose-400 animate-spin-slow" />
-                <div className="text-left leading-none">
-                  <p className="text-xs font-bold truncate max-w-[160px]">{currentVibe.music.title}</p>
-                  <p className="text-[10px] text-white/70 truncate max-w-[160px]">{currentVibe.music.artist}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Caption Overlay if Photo/Video */}
-          {currentVibe.mediaType !== "text" && currentVibe.text && (
-            <div className="absolute bottom-24 inset-x-4 z-20 pointer-events-none">
-              <div className="p-3 rounded-2xl bg-black/60 backdrop-blur-md border border-white/10 text-white text-center text-sm font-medium">
-                {currentVibe.text}
-              </div>
-            </div>
-          )}
-
-          {/* Tap Zones for Prev/Next */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              prevVibe();
-            }}
-            className="absolute left-0 top-20 bottom-24 w-1/3 z-20 cursor-pointer"
-          />
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              nextVibe();
-            }}
-            className="absolute right-0 top-20 bottom-24 w-1/3 z-20 cursor-pointer"
-          />
-        </div>
-
-        {/* Bottom Bar: Reaction Emojis & Reply Input */}
-        <div className="absolute bottom-0 inset-x-0 z-30 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent text-white flex flex-col gap-2">
-          {/* Reaction Bar */}
-          <div className="flex items-center justify-between px-2 gap-1 overflow-x-auto no-scrollbar">
-            {REACTION_EMOJIS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  reactToVibe(activeViewerGroupId, currentVibe._id, emoji);
-                }}
-                className={`text-xl p-2 rounded-full transition-transform active:scale-125 hover:bg-white/10 ${
-                  currentVibe.myReaction === emoji ? "bg-rose-500/30 border border-rose-400/50 scale-110" : ""
-                }`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-
-          {/* Reply Form & Viewers Button */}
-          <div className="flex items-center gap-2">
-            <form onSubmit={handleReplySubmit} className="flex-1 flex items-center relative">
-              <input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onFocus={() => setIsPaused(true)}
-                onBlur={() => setIsPaused(false)}
-                placeholder="Reply to Group Vibe..."
-                className="w-full px-4 py-2.5 rounded-full bg-white/10 backdrop-blur-md text-white placeholder-white/50 border border-white/20 focus:outline-none focus:border-rose-400 text-xs sm:text-sm"
+              <InstagramMusicSticker
+                music={currentVibe.music}
+                isPlaying={!isPaused && !isBuffering}
               />
-              <button
-                type="submit"
-                disabled={!replyText.trim()}
-                className="absolute right-2 p-1.5 rounded-full bg-rose-500 text-white disabled:opacity-40"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
+            </div>
+          )}
+        </div>
 
-            {/* Viewer Count Launcher */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                fetchVibeViewers(activeViewerGroupId, currentVibe._id);
-              }}
-              className="flex items-center gap-1 px-3 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold hover:bg-white/20 transition-colors"
-            >
-              <Eye className="w-4 h-4 text-rose-400" />
-              <span>{currentVibe.viewCount || 0}</span>
-            </button>
+        {/* ==================================================================== */}
+        {/* 2. TOP INSTAGRAM BAR (Progress, Creator Avatar, Actions) */}
+        {/* ==================================================================== */}
+        <div
+          className={`relative z-20 p-3 pt-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-200 ${
+            isHolding.current ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          {/* Segmented Progress Bars */}
+          <div className="flex gap-1.5 mb-3">
+            {vibes.map((v, idx) => {
+              let fillWidth = "0%";
+              if (idx < activeVibeIndex) fillWidth = "100%";
+              else if (idx === activeVibeIndex) fillWidth = `${progress}%`;
+
+              return (
+                <div key={v._id || idx} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-white transition-all duration-75 ease-linear rounded-full"
+                    style={{ width: fillWidth }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* User Info & Controls */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <img
+                src={currentVibe.creator?.profilePic || "/avatar.png"}
+                alt="Avatar"
+                className="w-9 h-9 rounded-full object-cover border-2 border-rose-500 shadow-md"
+              />
+              <div className="leading-tight">
+                <p className="text-sm font-bold text-white drop-shadow">
+                  {currentVibe.creator?.fullName || "Group Member"}
+                </p>
+                <p className="text-[10px] text-white/75 drop-shadow">
+                  {currentVibe.createdAt
+                    ? formatDistanceToNow(new Date(currentVibe.createdAt), { addSuffix: true })
+                    : "Just now"}
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 text-white">
+              {currentVibe.music && (
+                <button
+                  type="button"
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 hover:bg-black/60 transition-colors"
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-white" />}
+                </button>
+              )}
+
+              {isCreator && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-rose-400 hover:bg-rose-600/30 transition-colors"
+                  title="Delete Vibe"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setViewerOpen(false)}
+                className="p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 hover:bg-black/60 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Viewers Drawer */}
-        <GroupVibeViewersDrawer />
+        {/* Floating live reaction particles */}
+        <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
+          {floatingReactions.map((particle) => (
+            <div
+              key={particle.id}
+              className="absolute text-3xl animate-float-up opacity-90"
+              style={{ left: `${particle.x}%`, bottom: "120px" }}
+            >
+              {particle.emoji}
+            </div>
+          ))}
+        </div>
+
+        {/* ==================================================================== */}
+        {/* 3. BOTTOM INSTAGRAM BAR (Reply, Reactions, View Count) */}
+        {/* ==================================================================== */}
+        <div
+          className={`relative z-20 p-3 pb-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent transition-opacity duration-200 ${
+            isHolding.current ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          {/* Reaction Shortcuts Bar */}
+          <div className="flex items-center justify-between gap-1 mb-2.5 px-2 py-1.5 rounded-full bg-black/40 backdrop-blur-xl border border-white/10">
+            {REACTION_EMOJIS.map((emoji) => {
+              const isSelected = currentVibe.myReaction === emoji;
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => reactToVibe(activeViewerGroupId, currentVibe._id, emoji)}
+                  className={`text-xl p-1.5 rounded-full transition-transform active:scale-125 hover:scale-110 ${
+                    isSelected ? "bg-white/20 ring-2 ring-rose-400 scale-110" : ""
+                  }`}
+                >
+                  {emoji}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Reply Form / Viewers Launcher */}
+          <div className="flex items-center gap-2">
+            {!isCreator ? (
+              <form onSubmit={handleReplySubmit} className="flex-1 flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder={`Reply to ${currentVibe.creator?.fullName?.split(" ")[0] || "story"}...`}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-full bg-black/60 border border-white/20 text-white placeholder-white/50 text-xs focus:outline-none focus:border-rose-400 backdrop-blur-md"
+                />
+                <button
+                  type="submit"
+                  disabled={!replyText.trim() || isSendingReply}
+                  className="p-2.5 rounded-full bg-rose-500 text-white disabled:opacity-40 hover:bg-rose-600 transition-colors shadow-lg"
+                >
+                  {isSendingReply ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fetchVibeViewers(activeViewerGroupId, currentVibe._id)}
+                className="flex-1 flex items-center justify-between px-4 py-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs font-semibold hover:bg-white/20 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-rose-400" />
+                  <span>{currentVibe.viewCount || 1} {currentVibe.viewCount === 1 ? "View" : "Views"}</span>
+                </div>
+                <span className="text-[10px] text-white/70">Tap to see who viewed</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* ==================================================================== */}
+      {/* 4. VIEWERS DRAWER MODAL (Creator Only) */}
+      {/* ==================================================================== */}
+      {viewersDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-0 sm:p-4">
+          <div className="w-full sm:max-w-md bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-3xl max-h-[70vh] flex flex-col overflow-hidden text-white shadow-2xl">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-rose-400" />
+                <h3 className="font-bold text-sm">Story Viewers</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeViewersDrawer}
+                className="p-1 rounded-full text-white/60 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-3">
+              {viewersLoading ? (
+                <div className="flex justify-center p-6">
+                  <Loader2 className="w-6 h-6 text-rose-400 animate-spin" />
+                </div>
+              ) : viewersList.length === 0 ? (
+                <p className="text-center text-xs text-white/60 p-6">No viewers yet.</p>
+              ) : (
+                viewersList.map((viewer) => (
+                  <div
+                    key={viewer._id || viewer.userId}
+                    className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={viewer.profilePic || "/avatar.png"}
+                        alt={viewer.fullName}
+                        className="w-9 h-9 rounded-full object-cover border border-white/20"
+                      />
+                      <div>
+                        <p className="text-xs font-bold">{viewer.fullName || "User"}</p>
+                        <p className="text-[10px] text-white/50">
+                          {viewer.viewedAt
+                            ? formatDistanceToNow(new Date(viewer.viewedAt), { addSuffix: true })
+                            : "Recently"}
+                        </p>
+                      </div>
+                    </div>
+                    {viewer.reaction && (
+                      <span className="text-lg bg-black/40 px-2 py-1 rounded-full border border-white/10">
+                        {viewer.reaction}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

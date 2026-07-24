@@ -168,7 +168,7 @@ export const streamMusicProxy = async (req, res) => {
         }
 
         const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 6000);
+        const t = setTimeout(() => ctrl.abort(), 2500);
 
         const testRes = await fetch(streamUrl, {
           headers,

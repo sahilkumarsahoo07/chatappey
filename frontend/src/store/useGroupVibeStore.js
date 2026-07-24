@@ -13,6 +13,7 @@ import {
   updateGroupVibePermissionsApi,
 } from "../lib/groupVibeApi";
 import { audioManager } from "../lib/audioManager";
+import { groupVibePreloader } from "../lib/groupVibePreloader";
 import { useAuthStore } from "./useAuthStore";
 
 export const useGroupVibeStore = create((set, get) => ({
@@ -127,6 +128,9 @@ export const useGroupVibeStore = create((set, get) => ({
         groupVibesMap: { ...state.groupVibesMap, [groupId]: vibes },
         loadingGroupId: null,
       }));
+      if (vibes.length > 0) {
+        groupVibePreloader.preloadNeighbors(vibes, 0);
+      }
       return vibes;
     } catch (e) {
       console.error("fetchGroupVibes:", e);
