@@ -102,11 +102,13 @@ function formatStatus(doc, viewerId) {
           title: obj.music.title || "",
           artist: obj.music.artist || "",
           thumbnail: obj.music.thumbnail || "",
+          artwork: obj.music.thumbnail || "",
           audioUrl: obj.music.audioUrl,
           duration: obj.music.duration || 0,
           quality: obj.music.quality || "",
           sourceUrl: obj.music.sourceUrl || "",
           startOffset: Number(obj.music.startOffset) || 0,
+          clipStart: Number(obj.music.startOffset ?? obj.music.clipStart) || 0,
           clipDuration: Number(obj.music.clipDuration) || 15,
           sticker: {
             x: obj.music.sticker?.x ?? 0.5,
@@ -238,29 +240,30 @@ export const uploadStatus = async (req, res) => {
           typeof req.body.music === "string"
             ? JSON.parse(req.body.music)
             : req.body.music;
-        if (raw?.audioUrl && raw?.title) {
-          const startOffset = Math.max(0, Number(raw.startOffset) || 0);
+        if (raw?.audioUrl && (raw?.title || raw?.name)) {
+          const startOffset = Math.max(0, Number(raw.startOffset ?? raw.clipStart) || 0);
           const clipDuration = Math.min(
-            30,
+            60,
             Math.max(5, Number(raw.clipDuration) || 15)
           );
           music = {
             id: String(raw.id || "").slice(0, 80),
-            title: String(raw.title || "").slice(0, 200),
+            title: String(raw.title || raw.name || "").slice(0, 200),
             artist: String(raw.artist || "").slice(0, 200),
-            thumbnail: String(raw.thumbnail || "").slice(0, 500),
+            thumbnail: String(raw.thumbnail || raw.artwork || "").slice(0, 500),
             audioUrl: String(raw.audioUrl).slice(0, 2000),
             duration: Math.max(0, Number(raw.duration) || 0),
             quality: String(raw.quality || "").slice(0, 40),
             sourceUrl: String(raw.sourceUrl || "").slice(0, 500),
             startOffset,
+            clipStart: startOffset,
             clipDuration,
             sticker: {
               x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
               y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
               scale: Math.min(2.5, Math.max(0.6, Number(raw.sticker?.scale) ?? 1)),
               rotation: Number(raw.sticker?.rotation) || 0,
-              theme: ["classic", "dark", "neon", "minimal"].includes(raw.sticker?.theme)
+              theme: ["classic", "dark", "neon", "minimal", "rounded", "compact", "vinyl"].includes(raw.sticker?.theme)
                 ? raw.sticker.theme
                 : "classic",
             },

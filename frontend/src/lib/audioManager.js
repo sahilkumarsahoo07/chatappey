@@ -104,19 +104,37 @@ class AudioManager {
     }
 
     // Event listeners
+    const handleLoadedMetadata = () => {
+      console.log(`[Audio:${id}] event: loadedmetadata (duration: ${audio.duration}s)`);
+      if (startSec > 0) audio.currentTime = startSec;
+    };
+
+    const handleCanPlay = () => {
+      console.log(`[Audio:${id}] event: canplay`);
+    };
+
+    const handlePlay = () => {
+      console.log(`[Audio:${id}] event: play`);
+    };
+
     const handlePlaying = () => {
+      console.log(`[Audio:${id}] event: playing`);
       this.notifyState("playing", id);
       if (onPlaying) onPlaying();
     };
 
     const handleWaiting = () => {
+      console.log(`[Audio:${id}] event: waiting`);
       this.notifyState("buffering", id);
       if (onWaiting) onWaiting();
     };
 
+    const handleStalled = () => {
+      console.log(`[Audio:${id}] event: stalled`);
+    };
+
     const handleTimeUpdate = () => {
       if (onTimeUpdate) onTimeUpdate(audio.currentTime);
-      // Custom Clip Loop Bound handling
       if (endSec > 0 && audio.currentTime >= endSec) {
         if (loop) {
           audio.currentTime = startSec;
@@ -128,24 +146,34 @@ class AudioManager {
     };
 
     const handleEnded = () => {
+      console.log(`[Audio:${id}] event: ended`);
       this.notifyState("ended", id);
       if (onEnded) onEnded();
     };
 
     const handleError = (e) => {
+      console.error(`[Audio:${id}] event: error`, e);
       this.notifyState("error", id);
       if (onError) onError(e);
     };
 
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("play", handlePlay);
     audio.addEventListener("playing", handlePlaying);
     audio.addEventListener("waiting", handleWaiting);
+    audio.addEventListener("stalled", handleStalled);
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("error", handleError);
 
     this.eventCleanup = () => {
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("canplay", handleCanPlay);
+      audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("playing", handlePlaying);
       audio.removeEventListener("waiting", handleWaiting);
+      audio.removeEventListener("stalled", handleStalled);
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);

@@ -9,6 +9,8 @@ import {
   Volume2,
   VolumeX,
   Pause,
+  Music,
+  Disc,
 } from "lucide-react";
 import { useStatusStore } from "../../store/useStatusStore";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -23,30 +25,15 @@ import { haptic } from "../../lib/haptics";
 import { buildQualityUrl, selectFastestMediaUrl } from "../../lib/mediaDelivery";
 import DoubleTapLike from "../DoubleTapLike";
 import MusicSticker from "./MusicSticker";
-import { parseStoryMusicApi } from "../../lib/storyMusicApi";
+import { audioManager } from "../../lib/audioManager";
 import "./storyMusic.css";
 
 const IMAGE_MS = 5000;
 const HOLD_MS = 180; // distinguish tap vs hold
 const SWIPE_PX = 56;
 
-const musicRefreshedSet = new Set();
-
-function isAudioUrlExpired(url) {
-  if (!url) return true;
-  try {
-    const u = new URL(url);
-    const expire = u.searchParams.get("expire");
-    if (expire) {
-      const expireTimeMs = Number(expire) * 1000;
-      return Date.now() >= (expireTimeMs - 30000);
-    }
-  } catch (e) {}
-  return false;
-}
-
 /**
- * Full-screen WhatsApp-style story viewer.
+ * Full-screen Instagram/WhatsApp-style story viewer.
  */
 function StatusViewer() {
   const authUser = useAuthStore((s) => s.authUser);
@@ -82,13 +69,12 @@ function StatusViewer() {
   const [muted, setMuted] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
-  const [musicLoading, setMusicLoading] = useState(false);
+  const [audioError, setAudioError] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [entering, setEntering] = useState(true);
   const [mediaSrc, setMediaSrc] = useState("");
 
   const videoRef = useRef(null);
-  const musicRef = useRef(null);
   const mediaStageRef = useRef(null);
   const holdingRef = useRef(false);
   const holdTimerRef = useRef(null);
@@ -106,7 +92,8 @@ function StatusViewer() {
   const status = group?.statuses?.[viewerStatusIndex];
   const isOwn = !!(group?.isOwn || group?.user?._id === authUser?._id);
   const isVideo = status?.mediaType === "video";
-  const hasMusic = !!(status?.music?.audioUrl);
+  const hasMusic = !!(status?.music?.audioUrl || status?.music?.sourceUrl);
+  const isMusicOnly = hasMusic && (!status?.mediaUrl || status?.mediaUrl === "" || status?.mediaUrl === "blank");
 
   const { particles, centerHeart, removeParticle } = useStoryReactionFx({
     enabled: isOwn && isViewerOpen && !!status?._id,
@@ -138,7 +125,7 @@ function StatusViewer() {
       setViewerIndices(viewerGroupIndex + 1, 0);
       return;
     }
-    // End of all stories → close (WhatsApp behavior)
+    // End of all stories → close (Instagram/WhatsApp behavior)
     if (!closingEndRef.current) {
       closingEndRef.current = true;
       closeViewer();
@@ -192,24 +179,28 @@ function StatusViewer() {
     holdingRef.current = false;
     pausedRef.current = false;
     setPaused(false);
-    setMediaReady(false);
-    setMediaLoading(true);
-    setMusicLoading(false);
+    setAudioError(false);
     setMediaError(false);
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
 
-    // Use original URL immediately so stories never stick on a blank/loading state
-    // while CDN probing runs. Videos must not get image transforms applied.
+    if (isMusicOnly || !status?.mediaUrl) {
+      setMediaReady(true);
+      setMediaLoading(false);
+      setMediaSrc("");
+      return;
+    }
+
+    setMediaReady(false);
+    setMediaLoading(true);
+
     if (status?.mediaUrl) {
       const immediate = buildQualityUrl(status.mediaUrl, undefined, {
         isVideo: status.mediaType === "video",
       });
       setMediaSrc(immediate || status.mediaUrl);
-    } else {
-      setMediaSrc("");
     }
 
     let cancelled = false;
@@ -226,7 +217,7 @@ function StatusViewer() {
     return () => {
       cancelled = true;
     };
-  }, [status?._id, status?.mediaUrl, status?.mediaType]);
+  }, [status?._id, status?.mediaUrl, status?.mediaType, isMusicOnly]);
 
   // Record unique view
   useEffect(() => {
@@ -249,7 +240,6 @@ function StatusViewer() {
       img.decoding = "async";
       img.src = nextStatus.mediaUrl;
     } else {
-      // Prefer thumbnail first, then warm video
       if (nextStatus.thumbnailUrl) {
         const thumb = new Image();
         thumb.src = nextStatus.thumbnailUrl;
@@ -262,9 +252,9 @@ function StatusViewer() {
     }
   }, [group, viewerStatusIndex, viewerGroupIndex, viewerGroups]);
 
-  // Image timer — only after media ready; pauses on hold / viewers / hidden / music loading
+  // Image & Music timer — progress increments smoothly; pauses on hold / viewers / hidden
   useEffect(() => {
-    if (!isViewerOpen || !status || isVideo || showViewersPanel || !mediaReady || musicLoading) {
+    if (!isViewerOpen || !status || isVideo || showViewersPanel || !mediaReady) {
       return;
     }
 
@@ -296,66 +286,23 @@ function StatusViewer() {
     goNext,
     showViewersPanel,
     mediaReady,
-    musicLoading,
   ]);
 
-  // Music URL check and auto-refresh before playing
+  // Audio Playback Engine via Centralized Audio Manager
   useEffect(() => {
     const music = status?.music;
-    if (!isViewerOpen || !music?.sourceUrl) return;
-
-    let isCurrent = true;
-
-    const checkAndRefresh = async () => {
-      const isExpired = !music.audioUrl || isAudioUrlExpired(music.audioUrl);
-      if (isExpired && !musicRefreshedSet.has(status._id)) {
-        musicRefreshedSet.add(status._id);
-        setMusicLoading(true);
-        try {
-          const data = await parseStoryMusicApi(music.sourceUrl);
-          if (data?.song?.audioUrl && isCurrent) {
-            useStatusStore.getState().patchStatusInFeed(status._id, {
-              music: {
-                ...music,
-                audioUrl: data.song.audioUrl,
-              },
-            });
-          }
-        } catch (err) {
-          console.warn("Failed to refresh status music:", err);
-        } finally {
-          if (isCurrent) setMusicLoading(false);
-        }
-      }
-    };
-
-    checkAndRefresh();
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [isViewerOpen, status?._id, status?.music]);
-
-  // Story soundtrack — autoplay, pause with hold/sheet, respect mute
-  useEffect(() => {
-    const music = status?.music;
-    const audio = musicRef.current;
-    if (!audio) return;
-
-    audio.pause();
-    audio.removeAttribute("src");
-
-    if (!isViewerOpen || (!music?.audioUrl && !music?.sourceUrl)) {
-      audio.load();
+    if (!isViewerOpen || !music || (!music.audioUrl && !music.sourceUrl)) {
+      audioManager.stop();
+      setAudioError(false);
       return;
     }
 
-    const start = Math.max(0, Number(music.startOffset) || 0);
-    const clip = Math.max(5, Number(music.clipDuration) || 15);
     const audioUrl = music.audioUrl || "";
     const sourceUrl = music.sourceUrl || "";
     const title = music.title || "";
     const artist = music.artist || "";
+    const startSec = Number(music.clipStart ?? music.startOffset ?? 0);
+    const clipDuration = Number(music.clipDuration ?? 15);
 
     const getApiBaseUrl = () => {
       if (import.meta.env.MODE === "development") {
@@ -364,70 +311,66 @@ function StatusViewer() {
       return "https://chatappey.onrender.com";
     };
 
-    const baseUrl = getApiBaseUrl();
-    const streamProxyUrl = `${baseUrl}/api/music/stream?url=${encodeURIComponent(audioUrl)}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
+    const streamProxyUrl = `${getApiBaseUrl()}/api/music/stream?url=${encodeURIComponent(
+      audioUrl
+    )}&sourceUrl=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(
+      artist
+    )}`;
 
-    audio.src = streamProxyUrl || audioUrl;
-    audio.loop = false;
-    audio.muted = muted;
-    audio.currentTime = start;
+    const primaryUrl = audioUrl || streamProxyUrl;
+    const fallbackUrl = audioUrl ? streamProxyUrl : "";
 
-    const onTime = () => {
-      if (audio.currentTime >= start + clip - 0.05) {
-        audio.pause();
-      }
+    console.log("🔊 Story loaded music:", {
+      storyId: status._id,
+      music,
+      audioUrl: primaryUrl,
+      clipStart: startSec,
+      clipDuration,
+    });
+
+    const startPlayback = (targetUrl, isFallback = false) => {
+      audioManager.play({
+        id: `story_${status._id}_${isFallback ? "proxy" : "direct"}`,
+        url: targetUrl,
+        volume: isVideo ? 0.6 : 1.0,
+        loop: false,
+        clipStart: startSec,
+        clipDuration: clipDuration,
+        onPlaying: () => {
+          console.log(`▶️ Audio playing event for story: ${status._id}`);
+          setAudioError(false);
+        },
+        onWaiting: () => {
+          console.log(`⏳ Audio buffering event for story: ${status._id}`);
+        },
+        onError: (err) => {
+          console.warn(`⚠️ Audio playback error for story: ${status._id}`, err);
+          if (!isFallback && fallbackUrl) {
+            console.log("🔄 Retrying audio with fallback proxy stream...");
+            startPlayback(fallbackUrl, true);
+          } else {
+            setAudioError(true);
+          }
+        },
+      });
     };
-    audio.addEventListener("timeupdate", onTime);
 
-    const onError = async () => {
-      if (!music?.sourceUrl || musicRefreshedSet.has(status._id)) return;
-      musicRefreshedSet.add(status._id);
-      setMusicLoading(true);
-      try {
-        const data = await parseStoryMusicApi(music.sourceUrl);
-        if (data?.song?.audioUrl) {
-          useStatusStore.getState().patchStatusInFeed(status._id, {
-            music: {
-              ...music,
-              audioUrl: data.song.audioUrl,
-            },
-          });
-        }
-      } catch (err) {
-        console.warn("Failed to refresh music on error:", err);
-      } finally {
-        setMusicLoading(false);
-      }
-    };
-    audio.addEventListener("error", onError);
-
-    const tryPlay = () => {
-      if (pausedRef.current || holdingRef.current || document.hidden || muted) return;
-      audio.play().catch(() => {});
-    };
-
-    audio.addEventListener("canplay", tryPlay, { once: true });
-    tryPlay();
+    if (!muted && !pausedRef.current && !holdingRef.current && !showViewersPanel) {
+      startPlayback(primaryUrl);
+    }
 
     return () => {
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("error", onError);
-      audio.pause();
+      audioManager.stop();
     };
-  }, [isViewerOpen, status?._id, status?.music?.audioUrl, muted]);
+  }, [isViewerOpen, status?._id, status?.music, isVideo, muted]);
 
+  // Synchronize audioManager with play/pause/mute state
   useEffect(() => {
-    const audio = musicRef.current;
-    if (!audio || !hasMusic) return;
-    audio.muted = muted;
-    if (muted) {
-      audio.pause();
-      return;
-    }
-    if (!paused && isViewerOpen && !holdingRef.current && !document.hidden) {
-      audio.play().catch(() => {});
-    } else {
-      audio.pause();
+    if (!hasMusic) return;
+    if (muted || paused || showViewersPanel || holdingRef.current || document.hidden) {
+      audioManager.pause();
+    } else if (isViewerOpen) {
+      audioManager.resume();
     }
   }, [muted, paused, isViewerOpen, hasMusic, showViewersPanel]);
 
@@ -435,15 +378,12 @@ function StatusViewer() {
   useEffect(() => {
     pausedRef.current = paused;
     if (paused) {
-      if (!isVideo) {
-        // freeze image progress
-      }
       videoRef.current?.pause();
-      musicRef.current?.pause();
+      if (hasMusic) audioManager.pause();
     } else if (isViewerOpen && !holdingRef.current && !document.hidden) {
       startRef.current = performance.now();
       videoRef.current?.play().catch(() => {});
-      if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
+      if (hasMusic && !muted) audioManager.resume();
     }
   }, [paused, isViewerOpen, isVideo, hasMusic, muted]);
 
@@ -456,13 +396,13 @@ function StatusViewer() {
       pausedRef.current = true;
       setPaused(true);
       videoRef.current?.pause();
-      musicRef.current?.pause();
+      if (hasMusic) audioManager.pause();
     } else if (isViewerOpen && !holdingRef.current && !document.hidden) {
       startRef.current = performance.now();
       pausedRef.current = false;
       setPaused(false);
       videoRef.current?.play().catch(() => {});
-      if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
+      if (hasMusic && !muted) audioManager.resume();
     }
   }, [showViewersPanel, isViewerOpen, isVideo, hasMusic, muted]);
 
@@ -477,20 +417,20 @@ function StatusViewer() {
         pausedRef.current = true;
         setPaused(true);
         videoRef.current?.pause();
-        musicRef.current?.pause();
+        if (hasMusic) audioManager.pause();
       } else if (!holdingRef.current && !showViewersPanel) {
         startRef.current = performance.now();
         pausedRef.current = false;
         setPaused(false);
         videoRef.current?.play().catch(() => {});
-        if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
+        if (hasMusic && !muted) audioManager.resume();
       }
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [isViewerOpen, isVideo, showViewersPanel, hasMusic, muted]);
 
-  // Keyboard
+  // Keyboard navigation
   useEffect(() => {
     if (!isViewerOpen) return;
     const onKey = (e) => {
@@ -546,168 +486,167 @@ function StatusViewer() {
       pausedRef.current = true;
       setPaused(true);
       videoRef.current?.pause();
-      musicRef.current?.pause();
+      if (hasMusic) audioManager.pause();
     }, HOLD_MS);
-  }, [isVideo]);
+  }, [isVideo, hasMusic]);
 
   const endHold = useCallback(() => {
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
-    if (!holdingRef.current) return;
-    holdingRef.current = false;
-    if (showViewersPanel) return;
-    startRef.current = performance.now();
-    pausedRef.current = false;
-    setPaused(false);
-    videoRef.current?.play().catch(() => {});
-    if (hasMusic && !muted) musicRef.current?.play().catch(() => {});
+    if (holdingRef.current) {
+      holdingRef.current = false;
+      if (!showViewersPanel) {
+        startRef.current = performance.now();
+        pausedRef.current = false;
+        setPaused(false);
+        videoRef.current?.play().catch(() => {});
+        if (hasMusic && !muted) audioManager.resume();
+      }
+    }
   }, [showViewersPanel, hasMusic, muted]);
-
-  const onTouchStart = (e) => {
-    touchStartX.current = e.touches[0]?.clientX || 0;
-    touchStartY.current = e.touches[0]?.clientY || 0;
-  };
-
-  const onTouchEnd = (e) => {
-    const x = e.changedTouches[0]?.clientX || 0;
-    const y = e.changedTouches[0]?.clientY || 0;
-    const dx = x - touchStartX.current;
-    const dy = y - touchStartY.current;
-    if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) goNext();
-      else goPrev();
-      return;
-    }
-    if (isOwn && status?._id && dy < -SWIPE_PX && Math.abs(dy) > Math.abs(dx)) {
-      openViewersPanel(status._id, "overview");
-    }
-  };
-
-  const segments = useMemo(() => group?.statuses || [], [group]);
 
   const onImageLoad = useCallback(() => {
     setMediaLoading(false);
     setMediaReady(true);
-    setMediaError(false);
   }, []);
 
   if (!isViewerOpen || !group || !status) return null;
 
+  const user = group.user || {};
+  const userPic = user.profilePic || defaultImg;
+  const userName = isOwn ? "Your story" : user.fullName || "User";
+
   return createPortal(
     <div
-      className={`fixed inset-0 z-[200] bg-black text-white select-none touch-none transition-opacity duration-200 ${
+      className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-200 ${
         entering ? "opacity-0" : "opacity-100"
       }`}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
       role="dialog"
       aria-modal="true"
-      aria-label="Status viewer"
+      aria-label="Story Viewer"
     >
-      {/* Progress bars */}
-      <div className="absolute top-0 inset-x-0 z-30 px-2 pt-[max(10px,env(safe-area-inset-top))] flex gap-1 pointer-events-none">
-        {segments.map((s, i) => {
-          let fill = 0;
-          if (i < viewerStatusIndex) fill = 1;
-          else if (i === viewerStatusIndex) fill = progress;
-          return (
-            <div
-              key={s._id}
-              className="flex-1 h-[2.5px] rounded-full bg-white/30 overflow-hidden"
-            >
+      {/* Segmented progress bar */}
+      <div className="absolute top-0 left-0 right-0 z-30 p-2 pt-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
+        <div className="flex gap-1.5 px-2">
+          {group.statuses.map((st, idx) => {
+            let fill = "w-0";
+            if (idx < viewerStatusIndex) fill = "w-full";
+            else if (idx === viewerStatusIndex) fill = "";
+            return (
               <div
-                className="h-full bg-white rounded-full will-change-[width]"
-                style={{ width: `${fill * 100}%` }}
-              />
-            </div>
-          );
-        })}
+                key={st._id || idx}
+                className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"
+              >
+                <div
+                  className={`h-full bg-white transition-all duration-75 ease-linear ${
+                    idx === viewerStatusIndex ? "" : fill
+                  }`}
+                  style={
+                    idx === viewerStatusIndex
+                      ? { width: `${Math.min(100, Math.max(0, progress * 100))}%` }
+                      : undefined
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Header */}
-      <div className="absolute top-5 inset-x-0 z-30 px-3 pt-[max(8px,env(safe-area-inset-top))] flex items-center gap-3">
-        <img
-          src={group.user?.profilePic || defaultImg}
-          alt=""
-          className="w-9 h-9 rounded-full object-cover ring-2 ring-white/30"
-        />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate drop-shadow">
-            {isOwn ? "My status" : group.user?.fullName}
-          </p>
-          <p className="text-[11px] text-white/70 drop-shadow">
-            {formatStatusTime(status.createdAt)}
-          </p>
+      {/* Header bar */}
+      <div className="absolute top-4 left-0 right-0 z-30 px-4 pt-4 flex items-center justify-between text-white drop-shadow-md">
+        <div className="flex items-center gap-3">
+          <img
+            src={userPic}
+            alt=""
+            className="w-10 h-10 rounded-full object-cover border-2 border-white/40"
+          />
+          <div>
+            <div className="font-semibold text-sm leading-tight flex items-center gap-2">
+              <span>{userName}</span>
+              {hasMusic && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] backdrop-blur-md">
+                  <Music className="w-3 h-3 text-pink-400 animate-spin" style={{ animationDuration: '3s' }} />
+                  {status.music.title}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-white/70">
+              {formatStatusTime(status.createdAt)}
+            </span>
+          </div>
         </div>
-        {paused && (
-          <span className="text-white/70" aria-hidden>
-            <Pause className="w-4 h-4" />
-          </span>
-        )}
-        {(isVideo || hasMusic) && (
-          <button
-            type="button"
-            className="p-2 rounded-full hover:bg-white/10"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMuted((m) => !m);
-            }}
-            aria-label={muted ? "Unmute" : "Mute"}
-          >
-            {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
-        )}
-        {isOwn && (
-          <>
+
+        <div className="flex items-center gap-1">
+          {audioError && (
+            <span className="text-[11px] bg-red-500/30 border border-red-500/40 text-red-200 px-2 py-0.5 rounded-full">
+              Music unavailable
+            </span>
+          )}
+          {hasMusic && (
             <button
               type="button"
               className="p-2 rounded-full hover:bg-white/10"
               onClick={(e) => {
                 e.stopPropagation();
-                openViewersPanel(status._id, "overview");
+                setMuted((m) => !m);
               }}
-              aria-label="Viewers"
+              aria-label={muted ? "Unmute" : "Mute"}
             >
-              <Eye className="w-5 h-5" />
+              {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5 text-pink-400" />}
             </button>
-            <button
-              type="button"
-              className="p-2 rounded-full hover:bg-white/10 text-red-300"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm("Delete this status?")) {
-                  deleteStatus(status._id);
-                }
-              }}
-              aria-label="Delete"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          className="p-2 rounded-full hover:bg-white/10"
-          onClick={closeViewer}
-          aria-label="Close"
-        >
-          <X className="w-6 h-6" />
-        </button>
+          )}
+          {isOwn && (
+            <>
+              <button
+                type="button"
+                className="p-2 rounded-full hover:bg-white/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openViewersPanel(status._id, "overview");
+                }}
+                aria-label="Viewers"
+              >
+                <Eye className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                className="p-2 rounded-full hover:bg-white/10 text-red-300"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm("Delete this status?")) {
+                    deleteStatus(status._id);
+                  }
+                }}
+                aria-label="Delete"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="p-2 rounded-full hover:bg-white/10"
+            onClick={closeViewer}
+            aria-label="Close"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
       </div>
 
       {/* Media stage */}
       <div
         ref={mediaStageRef}
-        className="absolute inset-0 flex items-center justify-center bg-black"
+        className="absolute inset-0 flex items-center justify-center bg-black overflow-hidden"
         onPointerDown={beginHold}
         onPointerUp={endHold}
         onPointerLeave={endHold}
         onPointerCancel={endHold}
       >
-        <audio ref={musicRef} preload="auto" playsInline />
-        {(mediaLoading || musicLoading) && !mediaError && (
+        {mediaLoading && !mediaError && (
           <span className="absolute z-10 loading loading-spinner loading-lg text-white/70" />
         )}
         {mediaError && (
@@ -728,7 +667,39 @@ function StatusViewer() {
           </div>
         )}
 
-        {isVideo ? (
+        {isMusicOnly ? (
+          /* Music-Only Story Renderer */
+          <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-black p-8 text-center select-none">
+            {/* Ambient Animated Blurred Backdrop */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-pink-500/20 via-purple-600/30 to-blue-500/20 blur-3xl animate-pulse" />
+            
+            {/* Rotating Vinyl/Cover Artwork */}
+            <div className="relative z-10 mb-8">
+              <div className={`w-48 h-48 rounded-full border-4 border-white/20 shadow-2xl overflow-hidden flex items-center justify-center bg-base-300 ${!paused && !muted ? "animate-spin" : ""}`} style={{ animationDuration: "12s" }}>
+                {status.music.thumbnail || status.music.artwork ? (
+                  <img
+                    src={status.music.thumbnail || status.music.artwork}
+                    alt={status.music.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Disc className="w-24 h-24 text-white/60" />
+                )}
+              </div>
+              <div className="absolute inset-0 rounded-full border-2 border-white/30 pointer-events-none" />
+            </div>
+
+            {/* Song Info */}
+            <div className="relative z-10 space-y-2 max-w-xs">
+              <h3 className="text-2xl font-black text-white drop-shadow-md line-clamp-2">
+                {status.music.title}
+              </h3>
+              <p className="text-sm font-medium text-white/80 drop-shadow">
+                {status.music.artist}
+              </p>
+            </div>
+          </div>
+        ) : isVideo ? (
           <DoubleTapLike
             className="max-w-full max-h-full w-full h-full flex items-center justify-center z-[5]"
             disabled={isOwn}
@@ -759,7 +730,6 @@ function StatusViewer() {
               onTimeUpdate={onVideoTime}
               onEnded={goNext}
               onError={() => {
-                // Fall back to original URL if transformed/CDN URL fails
                 if (mediaSrc && mediaSrc !== status.mediaUrl) {
                   setMediaSrc(status.mediaUrl);
                   setMediaError(false);
@@ -798,7 +768,7 @@ function StatusViewer() {
           </DoubleTapLike>
         )}
 
-        {hasMusic && (
+        {hasMusic && !isMusicOnly && (
           <MusicSticker
             music={status.music}
             playing={!muted && !paused}
@@ -830,86 +800,58 @@ function StatusViewer() {
           }}
           onPointerDown={(e) => e.stopPropagation()}
         />
-      </div>
 
-      {isOwn && (
+        {paused && !showViewersPanel && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[16] bg-black/20">
+            <Pause className="w-14 h-14 text-white/80 drop-shadow-lg" />
+          </div>
+        )}
+
+        {/* Reaction Floating FX */}
         <StoryReactionOverlay
           particles={particles}
           centerHeart={centerHeart}
-          onParticleDone={removeParticle}
+          onRemoveParticle={removeParticle}
         />
-      )}
+      </div>
 
-      {isOwn && status.caption && (
-        <div className="absolute bottom-20 inset-x-0 z-30 px-6 text-center pointer-events-none">
-          <p className="text-sm sm:text-base font-medium drop-shadow-lg leading-relaxed">
+      {/* Caption overlay */}
+      {status.caption && (
+        <div className="absolute bottom-24 left-0 right-0 z-20 px-6 text-center pointer-events-none">
+          <p className="inline-block bg-black/60 backdrop-blur-md text-white text-sm px-4 py-2 rounded-2xl max-w-[85vw] break-words shadow-lg">
             {status.caption}
           </p>
         </div>
       )}
 
-      {!isOwn && (
-        <StatusEngagementBar
-          status={status}
-          isOwn={false}
-          authUserId={authUser?._id}
-          onLike={toggleLike}
-          onReact={reactToStatus}
-          onLoadComments={loadComments}
-          onAddComment={addComment}
-          onDeleteComment={removeComment}
-          paused={paused}
-          setPaused={setPaused}
-        />
-      )}
+      {/* Instagram/WhatsApp Engagement Bar */}
+      <StatusEngagementBar
+        statusId={status._id}
+        isOwn={isOwn}
+        liked={status.likedByMe}
+        likeCount={status.likeCount || 0}
+        commentCount={status.commentCount || 0}
+        myReaction={status.myReaction}
+        reactionSummary={reactionSummary}
+        onToggleLike={() => toggleLike(status._id)}
+        onReact={(emoji) => reactToStatus(status._id, emoji)}
+        onAddComment={(text, replyTo) => addComment(status._id, text, replyTo)}
+        onOpenViewers={(tab) => openViewersPanel(status._id, tab)}
+      />
 
-      {isOwn && status && (
-        <StoryOwnerBar
-          status={status}
-          reactionSummary={reactionSummary}
-          onAddStatus={() => {
-            closeViewer();
-            openCreate();
-          }}
-          onOpenInsights={(tab) => openViewersPanel(status._id, tab || "overview")}
-        />
-      )}
-
-      <button
-        type="button"
-        className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 items-center justify-center hover:bg-white/20"
-        onClick={goPrev}
-        aria-label="Previous"
-      >
-        <ChevronLeft className="w-6 h-6" />
-      </button>
-      <button
-        type="button"
-        className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white/10 items-center justify-center hover:bg-white/20"
-        onClick={goNext}
-        aria-label="Next"
-      >
-        <ChevronRight className="w-6 h-6" />
-      </button>
-
+      {/* Insights Drawer Sheet */}
       <StatusInsightsSheet
-        open={showViewersPanel}
+        isOpen={showViewersPanel}
+        statusId={status._id}
         tab={insightsTab}
         onTabChange={setInsightsTab}
         onClose={closeViewersPanel}
-        loading={isViewersLoading}
         viewers={viewersList}
         likes={likesList}
         reactions={reactionsList}
         comments={commentsList}
-        onDeleteComment={async (commentId) => {
-          const ok = await removeComment(status._id, commentId);
-          if (ok) {
-            useStatusStore.setState((s) => ({
-              commentsList: s.commentsList.filter((c) => c._id !== commentId),
-            }));
-          }
-        }}
+        loading={isViewersLoading}
+        onRemoveComment={(commentId) => removeComment(status._id, commentId)}
       />
     </div>,
     document.body

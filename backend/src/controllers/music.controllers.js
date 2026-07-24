@@ -167,15 +167,7 @@ export const streamMusicProxy = async (req, res) => {
           headers["Range"] = req.headers.range;
         }
 
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 2500);
-
-        const testRes = await fetch(streamUrl, {
-          headers,
-          signal: ctrl.signal,
-        });
-        clearTimeout(t);
-
+        const testRes = await fetch(streamUrl, { headers });
         if (testRes.ok || testRes.status === 206) {
           response = testRes;
         }

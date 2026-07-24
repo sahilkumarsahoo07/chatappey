@@ -292,7 +292,7 @@ export const useStatusStore = create((set, get) => ({
           privacy,
           excludedUserIds,
           includedUserIds,
-          music: music?.audioUrl ? music : undefined,
+          music: (music?.audioUrl || music?.title) ? music : undefined,
         },
         (p) => set({ uploadProgress: Math.max(5, Math.min(99, p)) })
       );
