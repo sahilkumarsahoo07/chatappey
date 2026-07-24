@@ -67,6 +67,8 @@ export const useStoryMusicStore = create((set, get) => ({
   clipDuration: 30,
   startOffset: 0,
   stickerTheme: "classic",
+  backgroundTheme: "purple",
+  layoutStyle: "style1",
 
   openPicker: () => {
     set({ isOpen: true, searchError: null });
@@ -85,6 +87,8 @@ export const useStoryMusicStore = create((set, get) => ({
       clipDuration: 30,
       startOffset: 0,
       stickerTheme: "classic",
+      backgroundTheme: "purple",
+      layoutStyle: "style1",
     });
   },
 
@@ -249,21 +253,26 @@ export const useStoryMusicStore = create((set, get) => ({
   },
 
   setStickerTheme: (theme) => set({ stickerTheme: theme }),
+  setBackgroundTheme: (theme) => set({ backgroundTheme: theme }),
+  setLayoutStyle: (style) => set({ layoutStyle: style }),
 
   confirmSelection: () => {
-    const { previewSong, startOffset, clipDuration, stickerTheme } = get();
+    const { previewSong, startOffset, clipDuration, stickerTheme, backgroundTheme, layoutStyle } = get();
     if (!previewSong) return null;
     const song = {
       ...previewSong,
       startOffset,
       clipStart: startOffset,
       clipDuration,
+      backgroundTheme: backgroundTheme || "purple",
+      layoutStyle: layoutStyle || "style1",
+      stickerStyle: stickerTheme || "classic",
       sticker: {
         x: 0.5,
-        y: 0.72,
+        y: 0.5,
         scale: 1,
         rotation: 0,
-        theme: stickerTheme,
+        theme: stickerTheme || "classic",
       },
     };
     set({
@@ -277,6 +286,8 @@ export const useStoryMusicStore = create((set, get) => ({
       clipDuration: 30,
       startOffset: 0,
       stickerTheme: "classic",
+      backgroundTheme: "purple",
+      layoutStyle: "style1",
     });
     return song;
   },

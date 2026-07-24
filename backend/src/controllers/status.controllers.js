@@ -96,26 +96,29 @@ function formatStatus(doc, viewerId) {
     thumbnailUrl: obj.thumbnailUrl || "",
     duration: obj.duration,
     caption: obj.caption || "",
-    music: obj.music?.audioUrl
+    music: (obj.music?.audioUrl || obj.music?.title)
       ? {
           id: obj.music.id || "",
           title: obj.music.title || "",
           artist: obj.music.artist || "",
-          thumbnail: obj.music.thumbnail || "",
-          artwork: obj.music.thumbnail || "",
-          audioUrl: obj.music.audioUrl,
+          thumbnail: obj.music.thumbnail || obj.music.artwork || "",
+          artwork: obj.music.artwork || obj.music.thumbnail || "",
+          audioUrl: obj.music.audioUrl || "",
           duration: obj.music.duration || 0,
           quality: obj.music.quality || "",
           sourceUrl: obj.music.sourceUrl || "",
           startOffset: Number(obj.music.startOffset) || 0,
           clipStart: Number(obj.music.startOffset ?? obj.music.clipStart) || 0,
           clipDuration: Number(obj.music.clipDuration) || 15,
+          backgroundTheme: obj.music.backgroundTheme || "purple",
+          stickerStyle: obj.music.stickerStyle || "classic",
+          layoutStyle: obj.music.layoutStyle || "style1",
           sticker: {
             x: obj.music.sticker?.x ?? 0.5,
             y: obj.music.sticker?.y ?? 0.72,
             scale: obj.music.sticker?.scale ?? 1,
             rotation: obj.music.sticker?.rotation ?? 0,
-            theme: obj.music.sticker?.theme || "classic",
+            theme: obj.music.sticker?.theme || obj.music.stickerStyle || "classic",
           },
         }
       : null,
@@ -199,28 +202,52 @@ async function broadcastStatusEvent(event, statusDoc, ownerId) {
 export const uploadStatus = async (req, res) => {
   try {
     const media = req.files?.media?.[0];
-    if (!media) {
-      return res.status(400).json({ error: "Media file is required" });
-    }
-    assertMediaSize(media);
 
-    const isVideo = media.mimetype.startsWith("video/");
-    const isImage = media.mimetype.startsWith("image/");
-    if (!isVideo && !isImage) {
-      return res.status(400).json({ error: "Invalid media type" });
+    let music = undefined;
+    if (req.body.music) {
+      try {
+        const raw =
+          typeof req.body.music === "string"
+            ? JSON.parse(req.body.music)
+            : req.body.music;
+        if ((raw?.audioUrl || raw?.sourceUrl || raw?.title) && (raw?.title || raw?.name)) {
+          const startOffset = Math.max(0, Number(raw.startOffset ?? raw.clipStart) || 0);
+          const clipDuration = Math.min(
+            60,
+            Math.max(5, Number(raw.clipDuration) || 15)
+          );
+          music = {
+            id: String(raw.id || "").slice(0, 80),
+            title: String(raw.title || raw.name || "").slice(0, 200),
+            artist: String(raw.artist || "").slice(0, 200),
+            thumbnail: String(raw.thumbnail || raw.artwork || "").slice(0, 500),
+            artwork: String(raw.artwork || raw.thumbnail || "").slice(0, 500),
+            audioUrl: String(raw.audioUrl || "").slice(0, 2000),
+            duration: Math.max(0, Number(raw.duration) || 0),
+            quality: String(raw.quality || "").slice(0, 40),
+            sourceUrl: String(raw.sourceUrl || "").slice(0, 500),
+            startOffset,
+            clipStart: startOffset,
+            clipDuration,
+            backgroundTheme: String(raw.backgroundTheme || "purple").slice(0, 50),
+            stickerStyle: String(raw.stickerStyle || "classic").slice(0, 50),
+            layoutStyle: String(raw.layoutStyle || "style1").slice(0, 50),
+            sticker: {
+              x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
+              y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
+              scale: Math.min(2.5, Math.max(0.6, Number(raw.sticker?.scale) ?? 1)),
+              rotation: Number(raw.sticker?.rotation) || 0,
+              theme: raw.sticker?.theme || raw.stickerStyle || "classic",
+            },
+          };
+        }
+      } catch (e) {
+        console.warn("Invalid music payload on status upload:", e.message);
+      }
     }
 
-    let duration = Number(req.body.duration);
-    if (isImage) {
-      duration = IMAGE_DURATION;
-    } else {
-      if (!Number.isFinite(duration) || duration <= 0) {
-        return res.status(400).json({ error: "Video duration is required" });
-      }
-      if (duration > MAX_DURATION) {
-        return res.status(400).json({ error: `Video must be ${MAX_DURATION}s or less` });
-      }
-      duration = Math.min(MAX_DURATION, Math.ceil(duration * 10) / 10);
+    if (!media && !music) {
+      return res.status(400).json({ error: "Media file or Music selection is required" });
     }
 
     const privacy = req.body.privacy || "contacts";
@@ -233,88 +260,80 @@ export const uploadStatus = async (req, res) => {
     const excludedUserIds = privacy === "contacts_except" ? parseIdList(req.body.excludedUserIds) : [];
     const includedUserIds = privacy === "only_share_with" ? parseIdList(req.body.includedUserIds) : [];
 
-    let music = undefined;
-    if (req.body.music) {
-      try {
-        const raw =
-          typeof req.body.music === "string"
-            ? JSON.parse(req.body.music)
-            : req.body.music;
-        if (raw?.audioUrl && (raw?.title || raw?.name)) {
-          const startOffset = Math.max(0, Number(raw.startOffset ?? raw.clipStart) || 0);
-          const clipDuration = Math.min(
-            60,
-            Math.max(5, Number(raw.clipDuration) || 15)
-          );
-          music = {
-            id: String(raw.id || "").slice(0, 80),
-            title: String(raw.title || raw.name || "").slice(0, 200),
-            artist: String(raw.artist || "").slice(0, 200),
-            thumbnail: String(raw.thumbnail || raw.artwork || "").slice(0, 500),
-            audioUrl: String(raw.audioUrl).slice(0, 2000),
-            duration: Math.max(0, Number(raw.duration) || 0),
-            quality: String(raw.quality || "").slice(0, 40),
-            sourceUrl: String(raw.sourceUrl || "").slice(0, 500),
-            startOffset,
-            clipStart: startOffset,
-            clipDuration,
-            sticker: {
-              x: Math.min(1, Math.max(0, Number(raw.sticker?.x) ?? 0.5)),
-              y: Math.min(1, Math.max(0, Number(raw.sticker?.y) ?? 0.72)),
-              scale: Math.min(2.5, Math.max(0.6, Number(raw.sticker?.scale) ?? 1)),
-              rotation: Number(raw.sticker?.rotation) || 0,
-              theme: ["classic", "dark", "neon", "minimal", "rounded", "compact", "vinyl"].includes(raw.sticker?.theme)
-                ? raw.sticker.theme
-                : "classic",
-            },
-          };
-        }
-      } catch (e) {
-        console.warn("Invalid music payload on status upload:", e.message);
-      }
-    }
-
     if (privacy === "only_share_with" && includedUserIds.length === 0) {
       return res.status(400).json({ error: "Select at least one contact to share with" });
     }
 
-    const resourceType = isVideo ? "video" : "image";
-    const uploaded = await uploadBufferToCloudinary(media.buffer, {
-      folder: "chatappey_status",
-      resourceType,
-      publicIdHint: media.originalname,
-      mime: media.mimetype,
-    });
-
+    let mediaType = "image";
+    let mediaUrl = "";
     let thumbnailUrl = "";
-    const thumbFile = req.files?.thumbnail?.[0];
-    if (thumbFile) {
-      assertMediaSize(thumbFile);
-      const thumbUp = await uploadBufferToCloudinary(thumbFile.buffer, {
-        folder: "chatappey_status/thumbs",
-        resourceType: "image",
-        publicIdHint: `thumb_${media.originalname}`,
-        mime: thumbFile.mimetype,
+    let publicId = "";
+    let duration = Number(req.body.duration);
+
+    if (media) {
+      assertMediaSize(media);
+      const isVideo = media.mimetype.startsWith("video/");
+      const isImage = media.mimetype.startsWith("image/");
+      if (!isVideo && !isImage) {
+        return res.status(400).json({ error: "Invalid media type" });
+      }
+
+      mediaType = isVideo ? "video" : "image";
+      if (isImage) {
+        duration = IMAGE_DURATION;
+      } else {
+        if (!Number.isFinite(duration) || duration <= 0) {
+          return res.status(400).json({ error: "Video duration is required" });
+        }
+        duration = Math.min(MAX_DURATION, Math.ceil(duration * 10) / 10);
+      }
+
+      const resourceType = isVideo ? "video" : "image";
+      const uploaded = await uploadBufferToCloudinary(media.buffer, {
+        folder: "chatappey_status",
+        resourceType,
+        publicIdHint: media.originalname,
+        mime: media.mimetype,
       });
-      thumbnailUrl = thumbUp.secure_url;
-    } else if (isVideo) {
-      thumbnailUrl = videoThumbnailFromResult(uploaded);
+
+      mediaUrl = uploaded.secure_url;
+      publicId = uploaded.public_id;
+
+      const thumbFile = req.files?.thumbnail?.[0];
+      if (thumbFile) {
+        assertMediaSize(thumbFile);
+        const thumbUp = await uploadBufferToCloudinary(thumbFile.buffer, {
+          folder: "chatappey_status/thumbs",
+          resourceType: "image",
+          publicIdHint: `thumb_${media.originalname}`,
+          mime: thumbFile.mimetype,
+        });
+        thumbnailUrl = thumbUp.secure_url;
+      } else if (isVideo) {
+        thumbnailUrl = getDerivedThumbnailUrl(uploaded.public_id, "video");
+      } else {
+        thumbnailUrl = uploaded.secure_url;
+      }
     } else {
-      thumbnailUrl = uploaded.secure_url;
+      // Music-Only Story
+      mediaType = "music";
+      mediaUrl = music?.artwork || music?.thumbnail || "";
+      thumbnailUrl = music?.artwork || music?.thumbnail || "";
+      duration = music?.clipDuration || 15;
     }
 
     const now = new Date();
     // Image stories with music use the selected clip length (Instagram-like)
-    if (isImage && music?.clipDuration) {
+    if (mediaType === "image" && music?.clipDuration) {
       duration = Math.min(MAX_DURATION, Math.max(5, Number(music.clipDuration) || IMAGE_DURATION));
     }
 
     const status = await Status.create({
       userId: req.user._id,
-      mediaType: isVideo ? "video" : "image",
-      mediaUrl: uploaded.secure_url,
+      mediaType,
+      mediaUrl,
       thumbnailUrl,
-      publicId: uploaded.public_id,
+      publicId,
       duration,
       caption,
       privacy,

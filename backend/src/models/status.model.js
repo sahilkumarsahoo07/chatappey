@@ -82,12 +82,12 @@ const statusSchema = new mongoose.Schema(
     },
     mediaType: {
       type: String,
-      enum: ["image", "video"],
+      enum: ["image", "video", "music", "text"],
       required: true,
     },
     mediaUrl: {
       type: String,
-      required: true,
+      default: "",
     },
     thumbnailUrl: {
       type: String,
@@ -100,7 +100,7 @@ const statusSchema = new mongoose.Schema(
     duration: {
       type: Number,
       default: 5,
-      max: 30,
+      max: 60,
     },
     caption: {
       type: String,
@@ -113,13 +113,18 @@ const statusSchema = new mongoose.Schema(
       title: { type: String, default: "" },
       artist: { type: String, default: "" },
       thumbnail: { type: String, default: "" },
+      artwork: { type: String, default: "" },
       audioUrl: { type: String, default: "" },
       duration: { type: Number, default: 0 },
       quality: { type: String, default: "" },
       sourceUrl: { type: String, default: "" },
       /** Clip selection (seconds) */
       startOffset: { type: Number, default: 0 },
+      clipStart: { type: Number, default: 0 },
       clipDuration: { type: Number, default: 15 },
+      backgroundTheme: { type: String, default: "purple" },
+      stickerStyle: { type: String, default: "classic" },
+      layoutStyle: { type: String, default: "style1" },
       /** Sticker layout */
       sticker: {
         x: { type: Number, default: 0.5 },
@@ -128,7 +133,6 @@ const statusSchema = new mongoose.Schema(
         rotation: { type: Number, default: 0 },
         theme: {
           type: String,
-          enum: ["classic", "dark", "neon", "minimal"],
           default: "classic",
         },
       },

@@ -280,7 +280,9 @@ export const useStatusStore = create((set, get) => ({
     }
     set({ isUploading: true, uploadProgress: 0, uploadError: null });
     try {
-      const prepared = await prepareStatusMedia(file);
+      const prepared = file
+        ? await prepareStatusMedia(file)
+        : { media: null, thumbnail: null, duration: music?.clipDuration || 15, mediaType: "music" };
       set({ uploadProgress: 5 });
 
       const data = await uploadStatusApi(

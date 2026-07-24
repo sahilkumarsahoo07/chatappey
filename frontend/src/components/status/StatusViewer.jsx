@@ -25,6 +25,7 @@ import { haptic } from "../../lib/haptics";
 import { buildQualityUrl, selectFastestMediaUrl } from "../../lib/mediaDelivery";
 import DoubleTapLike from "../DoubleTapLike";
 import MusicSticker from "./MusicSticker";
+import MusicStoryCanvas from "./MusicStoryCanvas";
 import { audioManager } from "../../lib/audioManager";
 import "./storyMusic.css";
 
@@ -93,7 +94,9 @@ function StatusViewer() {
   const isOwn = !!(group?.isOwn || group?.user?._id === authUser?._id);
   const isVideo = status?.mediaType === "video";
   const hasMusic = !!(status?.music?.audioUrl || status?.music?.sourceUrl);
-  const isMusicOnly = hasMusic && (!status?.mediaUrl || status?.mediaUrl === "" || status?.mediaUrl === "blank");
+  const isMusicOnly =
+    status?.mediaType === "music" ||
+    (hasMusic && (!status?.mediaUrl || status?.mediaUrl === "" || status?.mediaUrl === "blank"));
 
   const { particles, centerHeart, removeParticle } = useStoryReactionFx({
     enabled: isOwn && isViewerOpen && !!status?._id,
@@ -252,20 +255,28 @@ function StatusViewer() {
     }
   }, [group, viewerStatusIndex, viewerGroupIndex, viewerGroups]);
 
-  // Image & Music timer — progress increments smoothly; pauses on hold / viewers / hidden
+  // Image, Music & Video smooth 60fps timer — progress increments smoothly; pauses on hold / viewers / hidden
   useEffect(() => {
-    if (!isViewerOpen || !status || isVideo || showViewersPanel || !mediaReady) {
+    if (!isViewerOpen || !status || showViewersPanel || !mediaReady) {
       return;
     }
 
     const tick = (now) => {
       if (!pausedRef.current && !holdingRef.current && !document.hidden) {
-        const total = elapsedRef.current + (now - startRef.current);
-        const p = Math.min(1, total / durationMs);
-        setProgress(p);
-        if (p >= 1) {
-          goNext();
-          return;
+        if (isVideo && videoRef.current) {
+          const v = videoRef.current;
+          if (v.duration && Number.isFinite(v.duration) && v.duration > 0) {
+            const p = Math.min(1, v.currentTime / v.duration);
+            setProgress(p);
+          }
+        } else {
+          const total = elapsedRef.current + (now - startRef.current);
+          const p = Math.min(1, total / durationMs);
+          setProgress(p);
+          if (p >= 1) {
+            goNext();
+            return;
+          }
         }
       } else {
         startRef.current = now;
@@ -531,23 +542,20 @@ function StatusViewer() {
       <div className="absolute top-0 left-0 right-0 z-30 p-2 pt-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
         <div className="flex gap-1.5 px-2">
           {group.statuses.map((st, idx) => {
-            let fill = "w-0";
-            if (idx < viewerStatusIndex) fill = "w-full";
-            else if (idx === viewerStatusIndex) fill = "";
+            const isCurrent = idx === viewerStatusIndex;
+            const isPast = idx < viewerStatusIndex;
+            const scale = isCurrent ? Math.min(1, Math.max(0, progress)) : isPast ? 1 : 0;
             return (
               <div
                 key={st._id || idx}
                 className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden"
               >
                 <div
-                  className={`h-full bg-white transition-all duration-75 ease-linear ${
-                    idx === viewerStatusIndex ? "" : fill
-                  }`}
-                  style={
-                    idx === viewerStatusIndex
-                      ? { width: `${Math.min(100, Math.max(0, progress * 100))}%` }
-                      : undefined
-                  }
+                  className="h-full bg-white origin-left will-change-transform"
+                  style={{
+                    transform: `scaleX(${scale})`,
+                    transition: isCurrent ? "none" : "transform 0.15s ease-out",
+                  }}
                 />
               </div>
             );
@@ -669,35 +677,11 @@ function StatusViewer() {
 
         {isMusicOnly ? (
           /* Music-Only Story Renderer */
-          <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-black p-8 text-center select-none">
-            {/* Ambient Animated Blurred Backdrop */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-pink-500/20 via-purple-600/30 to-blue-500/20 blur-3xl animate-pulse" />
-            
-            {/* Rotating Vinyl/Cover Artwork */}
-            <div className="relative z-10 mb-8">
-              <div className={`w-48 h-48 rounded-full border-4 border-white/20 shadow-2xl overflow-hidden flex items-center justify-center bg-base-300 ${!paused && !muted ? "animate-spin" : ""}`} style={{ animationDuration: "12s" }}>
-                {status.music.thumbnail || status.music.artwork ? (
-                  <img
-                    src={status.music.thumbnail || status.music.artwork}
-                    alt={status.music.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <Disc className="w-24 h-24 text-white/60" />
-                )}
-              </div>
-              <div className="absolute inset-0 rounded-full border-2 border-white/30 pointer-events-none" />
-            </div>
-
-            {/* Song Info */}
-            <div className="relative z-10 space-y-2 max-w-xs">
-              <h3 className="text-2xl font-black text-white drop-shadow-md line-clamp-2">
-                {status.music.title}
-              </h3>
-              <p className="text-sm font-medium text-white/80 drop-shadow">
-                {status.music.artist}
-              </p>
-            </div>
+          <div className="relative w-full h-full flex flex-col items-center justify-center">
+            <MusicStoryCanvas
+              music={status.music}
+              isPlaying={mediaReady && isViewerOpen && !paused && !muted}
+            />
           </div>
         ) : isVideo ? (
           <DoubleTapLike

@@ -9,6 +9,8 @@ import {
   UserX,
   UserCheck,
   Music2,
+  Type,
+  Sparkles,
 } from "lucide-react";
 import { useStatusStore } from "../../store/useStatusStore";
 import { useChatStore } from "../../store/useChatStore";
@@ -24,6 +26,7 @@ import {
 import defaultImg from "../../public/avatar.png";
 import StoryMusicPicker from "./StoryMusicPicker";
 import MusicSticker from "./MusicSticker";
+import MusicStoryCanvas from "./MusicStoryCanvas";
 import "./storyMusic.css";
 
 const PRIVACY_OPTIONS = [
@@ -76,6 +79,8 @@ export default function CreateStatusModal() {
   const openMusicPicker = useStoryMusicStore((s) => s.openPicker);
   const clearSelectedMusic = useStoryMusicStore((s) => s.clearSelected);
   const updateSelectedSticker = useStoryMusicStore((s) => s.updateSelectedSticker);
+  const setBackgroundTheme = useStoryMusicStore((s) => s.setBackgroundTheme);
+  const setLayoutStyle = useStoryMusicStore((s) => s.setLayoutStyle);
 
   const friends = useMemo(
     () => (users || []).filter((u) => u.isFriend),
@@ -156,7 +161,7 @@ export default function CreateStatusModal() {
   };
 
   const handleSubmit = async () => {
-    if (!file || isUploading || validating || submitLock.current) return;
+    if ((!file && !selectedMusic) || isUploading || validating || submitLock.current) return;
 
     if (privacy === "only_share_with" && included.length === 0) {
       setLocalError("Select at least one friend to share with");
@@ -188,16 +193,19 @@ export default function CreateStatusModal() {
 
   const isVideo = file ? isVideoFile(file) : false;
   const displayError = localError || uploadError;
-  const canPost = !!file && !isUploading && !validating && !submitLock.current;
+  const canPost = (!!file || !!selectedMusic) && !isUploading && !validating && !submitLock.current;
 
   return (
     <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-[statusFadeIn_0.2s_ease-out]">
       <div className="bg-base-100 w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-base-300 max-h-[92dvh] flex flex-col overflow-hidden animate-[statusSheetUp_0.28s_ease-out]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
           <div>
-            <h2 className="font-bold text-lg">Add status</h2>
+            <h2 className="font-bold text-lg flex items-center gap-2">
+              <span>Create Story</span>
+              <Sparkles className="w-4 h-4 text-amber-500" />
+            </h2>
             <p className="text-xs text-base-content/50">
-              Photo or video (max {MAX_VIDEO_SECONDS}s) · expires in 24h
+              Photo, Video, Text or Music Story · expires in 24h
             </p>
           </div>
           <button
@@ -211,8 +219,69 @@ export default function CreateStatusModal() {
           </button>
         </div>
 
+        {/* 4 Mode Option Tabs */}
+        <div className="grid grid-cols-4 gap-2 px-5 pt-3 pb-1 border-b border-base-200 bg-base-200/30">
+          <button
+            type="button"
+            onClick={() => {
+              if (inputRef.current) {
+                inputRef.current.accept = "image/*";
+                inputRef.current.click();
+              }
+            }}
+            disabled={isUploading}
+            className={`py-2 px-1 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              file && !isVideo ? "bg-primary text-primary-content shadow-sm" : "hover:bg-base-200 text-base-content/70"
+            }`}
+          >
+            <ImagePlus className="w-4 h-4" />
+            <span>Photo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (inputRef.current) {
+                inputRef.current.accept = "video/*";
+                inputRef.current.click();
+              }
+            }}
+            disabled={isUploading}
+            className={`py-2 px-1 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              file && isVideo ? "bg-primary text-primary-content shadow-sm" : "hover:bg-base-200 text-base-content/70"
+            }`}
+          >
+            <Film className="w-4 h-4" />
+            <span>Video</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (inputRef.current) {
+                inputRef.current.accept = "image/*,video/*";
+                inputRef.current.click();
+              }
+            }}
+            disabled={isUploading}
+            className="py-2 px-1 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition hover:bg-base-200 text-base-content/70"
+          >
+            <Type className="w-4 h-4" />
+            <span>Text</span>
+          </button>
+          <button
+            type="button"
+            onClick={openMusicPicker}
+            disabled={isUploading}
+            className={`py-2 px-1 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              selectedMusic && !file ? "bg-primary text-primary-content shadow-sm" : "hover:bg-base-200 text-base-content/70"
+            }`}
+          >
+            <Music2 className="w-4 h-4" />
+            <span>Music</span>
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {!file ? (
+          {!file && !selectedMusic ? (
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -223,24 +292,55 @@ export default function CreateStatusModal() {
                 <span className="loading loading-spinner loading-md text-primary" />
               ) : (
                 <>
-                  <div className="flex gap-3">
-                    <span className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                      <ImagePlus className="w-6 h-6" />
+                  <div className="flex gap-2">
+                    <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                      <ImagePlus className="w-5 h-5" />
                     </span>
-                    <span className="w-12 h-12 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center">
-                      <Film className="w-6 h-6" />
+                    <span className="w-10 h-10 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center">
+                      <Film className="w-5 h-5" />
+                    </span>
+                    <span className="w-10 h-10 rounded-2xl bg-accent/10 text-accent flex items-center justify-center">
+                      <Music2 className="w-5 h-5" />
                     </span>
                   </div>
-                  <p className="font-semibold">Add status</p>
+                  <p className="font-semibold text-sm">Add Photo, Video or Music</p>
                   <p className="text-xs text-base-content/45 px-6 text-center">
-                    JPG, PNG, WebP · MP4, MOV, WebM
+                    Tap Music above for Music Story
                     <br />
-                    Images ≤ {formatMb(MAX_IMAGE_BYTES)} · Videos ≤{" "}
-                    {formatMb(MAX_VIDEO_BYTES)}
+                    Images ≤ {formatMb(MAX_IMAGE_BYTES)} · Videos ≤ {formatMb(MAX_VIDEO_BYTES)}
                   </p>
                 </>
               )}
             </button>
+          ) : selectedMusic && !file ? (
+            /* Music Only Story Canvas */
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl h-[320px] sm:h-[360px] border border-white/10 group">
+              <MusicStoryCanvas
+                music={selectedMusic}
+                editable={true}
+                containerRef={previewStageRef}
+                onThemeChange={(t) => setBackgroundTheme(t)}
+                onLayoutChange={(l) => setLayoutStyle(l)}
+              />
+              <div className="absolute top-3 right-3 flex gap-2 z-40">
+                <button
+                  type="button"
+                  onClick={openMusicPicker}
+                  disabled={isUploading}
+                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
+                >
+                  Change Song
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelectedMusic}
+                  disabled={isUploading}
+                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
           ) : (
             <div
               ref={previewStageRef}
