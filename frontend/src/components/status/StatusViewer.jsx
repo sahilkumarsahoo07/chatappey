@@ -551,6 +551,11 @@ function StatusViewer() {
     setMediaReady(true);
   }, []);
 
+  const isMentioned = useMemo(() => {
+    if (!status?.mentions || !authUser?._id) return false;
+    return status.mentions.some((m) => String(m.userId) === String(authUser._id));
+  }, [status, authUser]);
+
   if (!isViewerOpen || !group || !status) return null;
 
   const user = group.user || {};
@@ -558,10 +563,6 @@ function StatusViewer() {
   const userName = isOwn ? "Your story" : user.fullName || "User";
 
   const isReStory = status?.mediaType === "restory";
-  const isMentioned = useMemo(() => {
-    if (!status?.mentions || !authUser?._id) return false;
-    return status.mentions.some((m) => String(m.userId) === String(authUser._id));
-  }, [status, authUser]);
 
   return createPortal(
     <div
