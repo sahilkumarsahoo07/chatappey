@@ -30,6 +30,7 @@ import GroupMessageInfoDialog from "./chat/GroupMessageInfoDialog";
 import { isMessageDeleted } from "../lib/messageDelete";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
 import { useThemeStore } from "../store/useThemeStore";
+import { BUBBLE_STYLES } from "../constants/appearance";
 import { useShallow } from "zustand/react/shallow";
 import "./ChatContainer.css";
 
