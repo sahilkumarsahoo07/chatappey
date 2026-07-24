@@ -616,7 +616,7 @@ const ChatContainer = () => {
                       </div>
                     )}
 
-                    {message.storyRef && (
+                    {Boolean(message.storyRef?.statusId) && (
                       <div
                         onClick={(e) => {
                           e.stopPropagation();

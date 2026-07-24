@@ -46,9 +46,9 @@ const messageSchema = new mongoose.Schema(
         },
         storyRef: {
             statusId: { type: mongoose.Schema.Types.ObjectId, ref: "Status" },
-            mediaUrl: { type: String, default: "" },
-            mediaType: { type: String, default: "image" },
-            caption: { type: String, default: "" },
+            mediaUrl: { type: String },
+            mediaType: { type: String },
+            caption: { type: String },
         },
         deletedFor: {
             type: [mongoose.Schema.Types.ObjectId],
