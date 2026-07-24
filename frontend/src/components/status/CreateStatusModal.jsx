@@ -268,14 +268,15 @@ export default function CreateStatusModal() {
                   editable
                   containerRef={previewStageRef}
                   onChange={updateSelectedSticker}
+                  onRemove={clearSelectedMusic}
                 />
               )}
-              <div className="absolute top-3 right-3 flex gap-2">
+              <div className="absolute top-3 right-3 flex gap-2 z-40">
                 <button
                   type="button"
                   onClick={() => inputRef.current?.click()}
                   disabled={isUploading}
-                  className="px-3 py-1.5 rounded-full bg-black/55 text-white text-xs font-semibold disabled:opacity-40"
+                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
                 >
                   Change
                 </button>
@@ -283,13 +284,13 @@ export default function CreateStatusModal() {
                   type="button"
                   onClick={clearFile}
                   disabled={isUploading}
-                  className="px-3 py-1.5 rounded-full bg-black/55 text-white text-xs font-semibold disabled:opacity-40"
+                  className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors disabled:opacity-40"
                 >
                   Remove
                 </button>
               </div>
               {isVideo && videoMeta && (
-                <span className="absolute bottom-3 left-3 text-[11px] font-semibold px-2 py-1 rounded-full bg-black/55 text-white">
+                <span className="absolute bottom-3 left-3 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white z-40">
                   {videoMeta.duration.toFixed(1)}s / {MAX_VIDEO_SECONDS}s
                 </span>
               )}
@@ -310,21 +311,23 @@ export default function CreateStatusModal() {
                 type="button"
                 disabled={isUploading}
                 onClick={openMusicPicker}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                className={`flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition overflow-hidden ${
                   selectedMusic
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-base-300 hover:bg-base-200/60"
                 }`}
               >
-                <Music2 className="w-4 h-4" />
-                {selectedMusic ? selectedMusic.title : "Add music"}
+                <Music2 className="w-4 h-4 shrink-0" />
+                <span className="truncate max-w-[220px]">
+                  {selectedMusic ? selectedMusic.title : "Add music"}
+                </span>
               </button>
               {selectedMusic && (
                 <button
                   type="button"
                   disabled={isUploading}
                   onClick={clearSelectedMusic}
-                  className="px-3 py-2.5 rounded-xl border border-base-300 text-xs font-semibold hover:bg-base-200"
+                  className="px-3 py-2.5 rounded-xl border border-base-300 text-xs font-semibold hover:bg-base-200 shrink-0"
                 >
                   Remove
                 </button>

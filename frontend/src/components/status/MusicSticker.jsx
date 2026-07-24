@@ -1,8 +1,9 @@
 import { memo, useCallback, useRef } from "react";
+import { InstagramMusicSticker, STICKER_THEMES } from "../groupVibes/InstagramMusicSticker";
 import "./storyMusic.css";
 
 /**
- * Draggable Instagram-style music sticker.
+ * Draggable Instagram-style music sticker for Status stories.
  * Position uses normalized 0–1 coordinates relative to parent.
  */
 function MusicSticker({
@@ -11,8 +12,9 @@ function MusicSticker({
   editable = false,
   onChange,
   containerRef,
+  onRemove,
 }) {
-  if (!music?.title) return null;
+  if (!music || (!music.title && !music.name)) return null;
 
   const sticker = music.sticker || { x: 0.5, y: 0.72, scale: 1, rotation: 0, theme: "classic" };
   const dragRef = useRef({ active: false, ox: 0, oy: 0 });
@@ -36,8 +38,8 @@ function MusicSticker({
     (e) => {
       if (!dragRef.current.active || !containerRef?.current || !onChange) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = (e.clientX - dragRef.current.ox) / rect.width;
-      const y = (e.clientY - dragRef.current.oy) / rect.height;
+      const x = Math.min(0.9, Math.max(0.1, (e.clientX - dragRef.current.ox) / rect.width));
+      const y = Math.min(0.9, Math.max(0.1, (e.clientY - dragRef.current.oy) / rect.height));
       onChange({ x, y });
     },
     [containerRef, onChange]
@@ -46,6 +48,14 @@ function MusicSticker({
   const onPointerUp = useCallback(() => {
     dragRef.current.active = false;
   }, []);
+
+  const handleThemeCycle = useCallback(() => {
+    if (!editable || !onChange) return;
+    const currentTheme = sticker.theme || "classic";
+    const currentIdx = STICKER_THEMES.indexOf(currentTheme);
+    const nextTheme = STICKER_THEMES[(currentIdx + 1) % STICKER_THEMES.length];
+    onChange({ theme: nextTheme });
+  }, [editable, onChange, sticker.theme]);
 
   const onWheel = useCallback(
     (e) => {
@@ -59,33 +69,22 @@ function MusicSticker({
 
   return (
     <div
-      className="music-sticker"
+      className="absolute z-30 select-none pointer-events-auto"
       style={{
         left: `${(sticker.x ?? 0.5) * 100}%`,
         top: `${(sticker.y ?? 0.72) * 100}%`,
         transform: `translate(-50%, -50%) scale(${sticker.scale || 1}) rotate(${sticker.rotation || 0}deg)`,
       }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
       onWheel={onWheel}
     >
-      <div className={`music-sticker-inner theme-${sticker.theme || "classic"}`}>
-        <img
-          className="music-sticker-cover"
-          src={music.thumbnail || "/avatar.png"}
-          alt=""
-          draggable={false}
-        />
-        <div className="music-sticker-text">
-          <div className="t">{music.title}</div>
-          <div className="a">{music.artist || "Unknown"}</div>
-        </div>
-        <div className={`music-eq${playing ? "" : " is-paused"}`} aria-hidden>
-          <i /><i /><i />
-        </div>
-      </div>
+      <InstagramMusicSticker
+        music={music}
+        isPlaying={playing}
+        isEditable={editable}
+        onThemeChange={handleThemeCycle}
+        onRemove={onRemove}
+        onPointerDown={onPointerDown}
+      />
     </div>
   );
 }
