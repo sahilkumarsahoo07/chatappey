@@ -510,9 +510,9 @@ const GroupChatContainer = () => {
 
         let borderRadiusClass = "";
         if (isMyMessage) {
-            borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tr-xs" : isLastInGroup ? "rounded-2xl rounded-br-xs" : "rounded-2xl";
+            borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-br-md" : "rounded-2xl";
         } else {
-            borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tl-xs" : isLastInGroup ? "rounded-2xl rounded-bl-xs" : "rounded-2xl";
+            borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-bl-md" : "rounded-2xl";
         }
 
         const DateSeparator = showDateSeparator ? (

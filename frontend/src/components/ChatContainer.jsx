@@ -442,15 +442,15 @@ const ChatContainer = () => {
       bubbleBgColor = isMyMessage ? "bg-[#DCF8C6] text-[#111b21]" : "bg-[#FFFFFF] text-[#111b21]";
     }
 
-    // Border radius logic matching WhatsApp bubble tails
+    // Border radius logic preserving classic rounded-2xl bubble shape
     let borderRadiusClass = "";
     if (authUser?.bubbleStyle) {
       const customRadius = BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '16px';
       borderRadiusClass = `rounded-[${customRadius}]`;
     } else if (isMyMessage) {
-      borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tr-xs" : isLastInGroup ? "rounded-2xl rounded-br-xs" : "rounded-2xl";
+      borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-br-md" : "rounded-2xl";
     } else {
-      borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tl-xs" : isLastInGroup ? "rounded-2xl rounded-bl-xs" : "rounded-2xl";
+      borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-bl-md" : "rounded-2xl";
     }
 
     return (
