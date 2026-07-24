@@ -244,12 +244,20 @@ export default function CreateStatusModal() {
           ) : (
             <div
               ref={previewStageRef}
-              className="relative rounded-2xl overflow-hidden bg-black aspect-[9/12] max-h-[320px] flex items-center justify-center"
+              className="relative rounded-2xl overflow-hidden bg-slate-950 w-full h-[320px] sm:h-[360px] flex items-center justify-center border border-white/10 shadow-inner group"
             >
+              {!isVideo && (
+                <img
+                  src={previewUrl}
+                  alt=""
+                  aria-hidden
+                  className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110 pointer-events-none"
+                />
+              )}
               {isVideo ? (
                 <video
                   src={previewUrl}
-                  className="max-w-full max-h-full"
+                  className="relative z-10 max-w-full max-h-full object-contain rounded-lg"
                   controls
                   muted
                   playsInline
@@ -258,7 +266,7 @@ export default function CreateStatusModal() {
                 <img
                   src={previewUrl}
                   alt="Preview"
-                  className="max-w-full max-h-full object-contain"
+                  className="relative z-10 max-w-full max-h-full object-contain drop-shadow-xl rounded-lg"
                 />
               )}
               {selectedMusic && (

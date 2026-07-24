@@ -23,31 +23,37 @@ function MusicSticker({
     (e) => {
       if (!editable || !containerRef?.current) return;
       e.stopPropagation();
-      e.currentTarget.setPointerCapture?.(e.pointerId);
       const rect = containerRef.current.getBoundingClientRect();
       dragRef.current = {
         active: true,
         ox: e.clientX - sticker.x * rect.width,
         oy: e.clientY - sticker.y * rect.height,
       };
-    },
-    [editable, containerRef, sticker.x, sticker.y]
-  );
 
-  const onPointerMove = useCallback(
-    (e) => {
-      if (!dragRef.current.active || !containerRef?.current || !onChange) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.min(0.9, Math.max(0.1, (e.clientX - dragRef.current.ox) / rect.width));
-      const y = Math.min(0.9, Math.max(0.1, (e.clientY - dragRef.current.oy) / rect.height));
-      onChange({ x, y });
-    },
-    [containerRef, onChange]
-  );
+      const handlePointerMove = (moveEvent) => {
+        if (!dragRef.current.active || !containerRef.current || !onChange) return;
+        const currentRect = containerRef.current.getBoundingClientRect();
+        const rawX = (moveEvent.clientX - dragRef.current.ox) / currentRect.width;
+        const rawY = (moveEvent.clientY - dragRef.current.oy) / currentRect.height;
+        // Smoothly allow positioning anywhere within the stage bounds (0.02 to 0.98)
+        const x = Math.min(0.98, Math.max(0.02, rawX));
+        const y = Math.min(0.98, Math.max(0.02, rawY));
+        onChange({ x, y });
+      };
 
-  const onPointerUp = useCallback(() => {
-    dragRef.current.active = false;
-  }, []);
+      const handlePointerUp = () => {
+        dragRef.current.active = false;
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+      };
+
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+    },
+    [editable, containerRef, sticker.x, sticker.y, onChange]
+  );
 
   const handleThemeCycle = useCallback(() => {
     if (!editable || !onChange) return;
