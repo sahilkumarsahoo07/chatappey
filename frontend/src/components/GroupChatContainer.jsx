@@ -29,6 +29,7 @@ import DeletedMessageBubble from "./chat/DeletedMessageBubble";
 import GroupMessageInfoDialog from "./chat/GroupMessageInfoDialog";
 import { isMessageDeleted } from "../lib/messageDelete";
 import { useChatFeaturesStore } from "../store/useChatFeaturesStore";
+import { useThemeStore } from "../store/useThemeStore";
 import { useShallow } from "zustand/react/shallow";
 import "./ChatContainer.css";
 
@@ -74,6 +75,7 @@ const formatSystemMessageText = (text, authUser) => {
 };
 
 const GroupChatContainer = () => {
+    const { theme } = useThemeStore();
     const {
         selectedGroup,
         groupMessages,

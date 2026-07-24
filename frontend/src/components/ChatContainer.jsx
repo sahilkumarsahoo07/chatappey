@@ -96,6 +96,7 @@ const ChatContainer = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [wallpaper, setWallpaper] = useState(getDefaultWallpaper());
   const blockedUsersCache = useRef(null);
+  const { theme } = useThemeStore();
   const toggleStar = useChatFeaturesStore((s) => s.toggleStar);
   const isStarred = useChatFeaturesStore((s) => s.isStarred);
   const loadStarredIds = useChatFeaturesStore((s) => s.loadStarredIds);
@@ -147,7 +148,6 @@ const ChatContainer = () => {
     editMessage: state.editMessage,
   })));
   const { authUser, getOneBlockedUser, unblockUser, subscribeToBlockEvents } = useAuthStore();
-  const { theme } = useThemeStore();
   const messageEndRef = useRef(null);
   const containerRef = useRef(null);
   const prevSelectedUserIdRef = useRef(null);
@@ -593,8 +593,8 @@ const ChatContainer = () => {
                           loading="lazy"
                           decoding="async"
                           className={`rounded-xl mb-2 transition-opacity ${message.image.toLowerCase().includes('.gif')
-                              ? 'w-[200px] md:w-[260px] h-auto object-cover bg-black/5 dark:bg-white/5'
-                              : 'max-w-[200px] md:max-w-[280px] cursor-pointer hover:opacity-90'
+                            ? 'w-[200px] md:w-[260px] h-auto object-cover bg-black/5 dark:bg-white/5'
+                            : 'max-w-[200px] md:max-w-[280px] cursor-pointer hover:opacity-90'
                             }`}
                           onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
                           onLoad={handleImageLoad}
