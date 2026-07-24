@@ -13,7 +13,8 @@ import { useThemeStore } from "../store/useThemeStore";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import { sortMessages } from "../lib/messageSync";
 import defaultImg from "../public/avatar.png";
-import { Ban, Check, CheckCheck, ChevronDown, Download, Forward, Search, UserPlus, Reply, FileText, Pin, Clock, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Ban, Check, CheckCheck, ChevronDown, Download, Forward, Search, UserPlus, Reply, FileText, Pin, Clock, X, ZoomIn, ZoomOut, AtSign } from "lucide-react";
+import { useStatusStore } from "../store/useStatusStore";
 import "./ChatContainer.css";
 import { Dialog, DialogTitle, DialogActions, Button, Typography, DialogContent, Avatar, List, ListItem, ListItemAvatar, ListItemText, Divider, Box, InputAdornment, TextField, } from "@mui/material";
 import toast from "react-hot-toast";
@@ -612,6 +613,34 @@ const ChatContainer = () => {
                           })}
                         </div>
                         <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
+                      </div>
+                    )}
+
+                    {message.storyRef && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          useStatusStore.getState().openViewerForStatusId(message.storyRef.statusId);
+                        }}
+                        className="mb-2 p-2 bg-black/40 rounded-xl border border-white/10 cursor-pointer hover:bg-black/60 transition flex items-center gap-3"
+                      >
+                        {message.storyRef.mediaUrl && (
+                          <img
+                            src={message.storyRef.mediaUrl}
+                            alt=""
+                            className="w-10 h-14 object-cover rounded-lg shrink-0 border border-white/10"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-pink-400">
+                            <AtSign className="w-3.5 h-3.5" />
+                            <span>Story Mention</span>
+                          </div>
+                          <p className="text-xs text-white/90 font-medium truncate">
+                            {message.storyRef.caption || "Tap to view story"}
+                          </p>
+                          <span className="text-[10px] text-primary font-bold hover:underline">View Story →</span>
+                        </div>
                       </div>
                     )}
 

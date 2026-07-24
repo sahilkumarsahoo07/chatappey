@@ -89,10 +89,26 @@ export const useStatusStore = create((set, get) => ({
   insightsTab: "overview", // overview | views | likes | reactions | comments
 
   isCreateOpen: false,
+  reStoryData: null,
 
-  openCreate: () => set({ isCreateOpen: true, uploadError: null, uploadProgress: 0 }),
+  openCreate: () => set({ isCreateOpen: true, reStoryData: null, uploadError: null, uploadProgress: 0 }),
+  openReStory: (status) =>
+    set({
+      isCreateOpen: true,
+      reStoryData: {
+        originalStatusId: status._id,
+        originalUserId: status.userId?._id || status.userId,
+        originalUsername: status.userId?.username || status.userId?.fullName || "User",
+        originalDisplayName: status.userId?.fullName || "User",
+        originalMediaUrl: status.mediaUrl,
+        originalMediaType: status.mediaType,
+        originalThumbnailUrl: status.thumbnailUrl || status.mediaUrl,
+      },
+      uploadError: null,
+      uploadProgress: 0,
+    }),
   closeCreate: () =>
-    set({ isCreateOpen: false, isUploading: false, uploadProgress: 0, uploadError: null }),
+    set({ isCreateOpen: false, reStoryData: null, isUploading: false, uploadProgress: 0, uploadError: null }),
 
   loadFeed: async (silent = false) => {
     if (!silent) set({ isFeedLoading: true });
@@ -273,7 +289,7 @@ export const useStatusStore = create((set, get) => ({
     });
   },
 
-  uploadStatus: async ({ file, caption = "", privacy = "contacts", excludedUserIds, includedUserIds, music }) => {
+  uploadStatus: async ({ file, caption = "", privacy = "contacts", excludedUserIds, includedUserIds, music, mentions, restory }) => {
     if (get().isUploading) {
       toast.error("An upload is already in progress");
       return;
@@ -295,6 +311,8 @@ export const useStatusStore = create((set, get) => ({
           excludedUserIds,
           includedUserIds,
           music: (music?.audioUrl || music?.title) ? music : undefined,
+          mentions,
+          restory,
         },
         (p) => set({ uploadProgress: Math.max(5, Math.min(99, p)) })
       );
@@ -384,6 +402,23 @@ export const useStatusStore = create((set, get) => ({
       commentsList: [],
       insightsTab: "overview",
     });
+  },
+
+  openViewerForStatusId: async (statusId) => {
+    let feed = get().feed;
+    if (!feed || feed.length === 0) {
+      await get().loadFeed(true);
+      feed = get().feed;
+    }
+    for (let gIdx = 0; gIdx < feed.length; gIdx++) {
+      const g = feed[gIdx];
+      const sIdx = g.statuses.findIndex((s) => String(s._id) === String(statusId));
+      if (sIdx !== -1) {
+        get().openViewer(feed, gIdx, sIdx);
+        return;
+      }
+    }
+    toast.error("Story expired or unavailable");
   },
 
   closeViewer: () =>

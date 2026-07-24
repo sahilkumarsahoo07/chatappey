@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import Status from "../models/status.model.js";
 import User from "../models/user.model.js";
+import Notification from "../models/notification.model.js";
+import Message from "../models/message.model.js";
 import {
   uploadBufferToCloudinary,
   videoThumbnailFromResult,
@@ -88,6 +90,38 @@ function formatStatus(doc, viewerId) {
     reactionSummary[r.emoji] = (reactionSummary[r.emoji] || 0) + 1;
   }
 
+  const ownerStr = ownerIdOf(obj);
+
+  // PRIVACY ENFORCEMENT: Only return mentions to story owner OR the specific mentioned user
+  const rawMentions = obj.mentions || [];
+  const visibleMentions = rawMentions
+    .filter((m) => {
+      const mentionedIdStr = (m.userId?._id || m.userId)?.toString?.() || "";
+      return viewerStr === ownerStr || viewerStr === mentionedIdStr;
+    })
+    .map((m) => ({
+      userId: (m.userId?._id || m.userId)?.toString?.() || "",
+      username: m.username || "",
+      displayName: m.displayName || "",
+      x: m.x ?? 0.5,
+      y: m.y ?? 0.5,
+      scale: m.scale ?? 1,
+      rotation: m.rotation ?? 0,
+      style: m.style || "default",
+    }));
+
+  const restoryData = obj.restory?.originalStatusId
+    ? {
+        originalStatusId: obj.restory.originalStatusId,
+        originalUserId: obj.restory.originalUserId,
+        originalUsername: obj.restory.originalUsername || "",
+        originalDisplayName: obj.restory.originalDisplayName || "",
+        originalMediaUrl: obj.restory.originalMediaUrl || "",
+        originalMediaType: obj.restory.originalMediaType || "image",
+        originalThumbnailUrl: obj.restory.originalThumbnailUrl || "",
+      }
+    : null;
+
   return {
     _id: obj._id,
     userId: user || obj.userId,
@@ -122,6 +156,8 @@ function formatStatus(doc, viewerId) {
           },
         }
       : null,
+    mentions: visibleMentions,
+    restory: restoryData,
     privacy: obj.privacy,
     createdAt: obj.createdAt,
     expiresAt: obj.expiresAt,
@@ -246,8 +282,58 @@ export const uploadStatus = async (req, res) => {
       }
     }
 
-    if (!media && !music) {
-      return res.status(400).json({ error: "Media file or Music selection is required" });
+    // Parse Mentions (@username)
+    let mentions = [];
+    if (req.body.mentions) {
+      try {
+        const rawM = typeof req.body.mentions === "string" ? JSON.parse(req.body.mentions) : req.body.mentions;
+        if (Array.isArray(rawM)) {
+          const seen = new Set();
+          for (const m of rawM) {
+            const uId = String(m.userId || "").trim();
+            if (uId && !seen.has(uId) && mongoose.Types.ObjectId.isValid(uId)) {
+              seen.add(uId);
+              mentions.push({
+                userId: uId,
+                username: String(m.username || "").slice(0, 50),
+                displayName: String(m.displayName || "").slice(0, 100),
+                x: Math.min(1, Math.max(0, Number(m.x) ?? 0.5)),
+                y: Math.min(1, Math.max(0, Number(m.y) ?? 0.5)),
+                scale: Math.min(2.5, Math.max(0.5, Number(m.scale) ?? 1)),
+                rotation: Number(m.rotation) || 0,
+                style: String(m.style || "default").slice(0, 30),
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Invalid mentions payload:", e.message);
+      }
+    }
+
+    // Parse Re-Story
+    let restory = undefined;
+    if (req.body.restory) {
+      try {
+        const rawR = typeof req.body.restory === "string" ? JSON.parse(req.body.restory) : req.body.restory;
+        if (rawR?.originalStatusId && mongoose.Types.ObjectId.isValid(rawR.originalStatusId)) {
+          restory = {
+            originalStatusId: rawR.originalStatusId,
+            originalUserId: rawR.originalUserId,
+            originalUsername: String(rawR.originalUsername || ""),
+            originalDisplayName: String(rawR.originalDisplayName || ""),
+            originalMediaUrl: String(rawR.originalMediaUrl || ""),
+            originalMediaType: String(rawR.originalMediaType || "image"),
+            originalThumbnailUrl: String(rawR.originalThumbnailUrl || ""),
+          };
+        }
+      } catch (e) {
+        console.warn("Invalid restory payload:", e.message);
+      }
+    }
+
+    if (!media && !music && !restory) {
+      return res.status(400).json({ error: "Media file, Music selection, or Re-Story is required" });
     }
 
     const privacy = req.body.privacy || "contacts";
@@ -270,7 +356,12 @@ export const uploadStatus = async (req, res) => {
     let publicId = "";
     let duration = Number(req.body.duration);
 
-    if (media) {
+    if (restory) {
+      mediaType = "restory";
+      mediaUrl = restory.originalMediaUrl || "";
+      thumbnailUrl = restory.originalThumbnailUrl || restory.originalMediaUrl || "";
+      duration = IMAGE_DURATION;
+    } else if (media) {
       assertMediaSize(media);
       const isVideo = media.mimetype.startsWith("video/");
       const isImage = media.mimetype.startsWith("image/");
@@ -340,17 +431,104 @@ export const uploadStatus = async (req, res) => {
       excludedUserIds,
       includedUserIds,
       viewers: [],
+      mentions,
       expiresAt: new Date(now.getTime() + DAY_MS),
       ...(music ? { music } : {}),
+      ...(restory ? { restory } : {}),
     });
 
     const populated = await Status.findById(status._id).populate(
       "userId",
-      "fullName profilePic"
+      "fullName profilePic username"
     );
 
-    // Live push — no refresh needed for friends / allowed audience
+    // Live push to feed
     await broadcastStatusEvent("status:created", populated, req.user._id);
+
+    // Dispatch Mention Notifications & Direct System Chat Messages
+    if (mentions.length > 0) {
+      const senderName = req.user.fullName || req.user.username || "Someone";
+      for (const m of mentions) {
+        const targetUserId = m.userId.toString();
+        if (targetUserId === req.user._id.toString()) continue;
+
+        // 1. Notification center
+        try {
+          await Notification.create({
+            userId: targetUserId,
+            type: "story_mention",
+            fromUserId: req.user._id,
+            statusId: status._id,
+            message: `${senderName} mentioned you in a Story`,
+          });
+        } catch (err) {
+          console.error("Mention Notification error:", err.message);
+        }
+
+        // 2. Direct System Chat Message
+        try {
+          const chatMsg = await Message.create({
+            senderId: req.user._id,
+            receiverId: targetUserId,
+            text: `📷 ${senderName} mentioned you in a Story`,
+            messageType: "story_mention",
+            storyRef: {
+              statusId: status._id,
+              mediaUrl: status.mediaUrl,
+              mediaType: status.mediaType,
+              caption: status.caption,
+            },
+          });
+
+          const receiverSocketId = getReceiverSocketId(targetUserId);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit("new_message", chatMsg);
+            io.to(receiverSocketId).emit("status:mentioned", {
+              status: formatStatus(populated, targetUserId),
+              sender: {
+                _id: req.user._id,
+                fullName: req.user.fullName,
+                username: req.user.username,
+                profilePic: req.user.profilePic,
+              },
+            });
+          }
+        } catch (err) {
+          console.error("Mention Chat Message error:", err.message);
+        }
+      }
+    }
+
+    // Dispatch Re-Story Notification to original owner
+    if (restory && restory.originalUserId) {
+      const origOwnerId = restory.originalUserId.toString();
+      if (origOwnerId !== req.user._id.toString()) {
+        try {
+          const reStoryName = req.user.fullName || req.user.username || "Someone";
+          await Notification.create({
+            userId: origOwnerId,
+            type: "story_restory",
+            fromUserId: req.user._id,
+            statusId: status._id,
+            message: `${reStoryName} added your Story to their Story`,
+          });
+          const ownerSocketId = getReceiverSocketId(origOwnerId);
+          if (ownerSocketId) {
+            io.to(ownerSocketId).emit("status:restoried", {
+              statusId: status._id,
+              restoriedBy: {
+                _id: req.user._id,
+                fullName: req.user.fullName,
+                username: req.user.username,
+                profilePic: req.user.profilePic,
+              },
+            });
+          }
+        } catch (err) {
+          console.error("Re-Story Notification error:", err.message);
+        }
+      }
+    }
 
     return res.status(201).json({
       status: formatStatus(populated, req.user._id),

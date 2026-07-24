@@ -39,6 +39,17 @@ const messageSchema = new mongoose.Schema(
         fileName: {
             type: String, // Original filename with extension
         },
+        messageType: {
+            type: String,
+            enum: ["text", "image", "video", "audio", "file", "story_mention", "story_restory"],
+            default: "text",
+        },
+        storyRef: {
+            statusId: { type: mongoose.Schema.Types.ObjectId, ref: "Status" },
+            mediaUrl: { type: String, default: "" },
+            mediaType: { type: String, default: "image" },
+            caption: { type: String, default: "" },
+        },
         deletedFor: {
             type: [mongoose.Schema.Types.ObjectId],
             ref: "User",

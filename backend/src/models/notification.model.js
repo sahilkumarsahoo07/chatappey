@@ -9,13 +9,17 @@ const notificationSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ["friend_request", "request_accepted", "request_rejected", "request_message"],
+            enum: ["friend_request", "request_accepted", "request_rejected", "request_message", "story_mention", "story_restory"],
             required: true,
         },
         fromUserId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true,
+        },
+        statusId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Status",
         },
         friendRequestId: {
             type: mongoose.Schema.Types.ObjectId,

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import toast from "react-hot-toast";
 import {
   X,
   ChevronLeft,
@@ -11,6 +12,8 @@ import {
   Pause,
   Music,
   Disc,
+  Share2,
+  AtSign,
 } from "lucide-react";
 import { useStatusStore } from "../../store/useStatusStore";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -26,6 +29,7 @@ import { buildQualityUrl, selectFastestMediaUrl } from "../../lib/mediaDelivery"
 import DoubleTapLike from "../DoubleTapLike";
 import MusicSticker from "./MusicSticker";
 import MusicStoryCanvas from "./MusicStoryCanvas";
+import StoryMentionSticker from "./StoryMentionSticker";
 import { audioManager } from "../../lib/audioManager";
 import "./storyMusic.css";
 
@@ -58,6 +62,7 @@ function StatusViewer() {
     isViewersLoading,
     closeViewersPanel,
     openCreate,
+    openReStory,
     toggleLike,
     reactToStatus,
     loadComments,
@@ -529,6 +534,12 @@ function StatusViewer() {
   const userPic = user.profilePic || defaultImg;
   const userName = isOwn ? "Your story" : user.fullName || "User";
 
+  const isReStory = status?.mediaType === "restory";
+  const isMentioned = useMemo(() => {
+    if (!status?.mentions || !authUser?._id) return false;
+    return status.mentions.some((m) => String(m.userId) === String(authUser._id));
+  }, [status, authUser]);
+
   return createPortal(
     <div
       className={`fixed inset-0 z-[200] bg-black flex items-center justify-center transition-opacity duration-200 ${
@@ -675,7 +686,28 @@ function StatusViewer() {
           </div>
         )}
 
-        {isMusicOnly ? (
+        {isReStory ? (
+          /* Re-Story Canvas Renderer */
+          <div className="relative w-full h-full flex flex-col items-center justify-center p-6 bg-gradient-to-b from-indigo-950 via-purple-950 to-slate-950">
+            <div className="relative z-10 w-full max-w-[280px] bg-black/60 backdrop-blur-2xl border border-white/20 rounded-3xl p-4 shadow-2xl flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-white px-1">
+                <Share2 className="w-4 h-4 text-pink-400" />
+                <span className="truncate">@{status.restory?.originalUsername}</span>
+              </div>
+              <div className="relative aspect-[9/14] w-full rounded-2xl overflow-hidden shadow-lg border border-white/10">
+                <img
+                  src={status.restory?.originalMediaUrl || status.mediaUrl}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onLoad={onImageLoad}
+                />
+                <div className="absolute bottom-2 left-2 right-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white/90 font-medium truncate">
+                  Originally shared by {status.restory?.originalDisplayName || "User"}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : isMusicOnly ? (
           /* Music-Only Story Renderer */
           <div className="relative w-full h-full flex flex-col items-center justify-center">
             <MusicStoryCanvas
@@ -761,6 +793,26 @@ function StatusViewer() {
           />
         )}
 
+        {/* Render Mention Stickers */}
+        {status.mentions?.map((m) => (
+          <StoryMentionSticker
+            key={m.userId}
+            mention={m}
+            editable={false}
+            onTapMention={(item) => {
+              toast(`Mentioned @${item.username || item.displayName}`, {
+                icon: "🏷️",
+                style: {
+                  borderRadius: "16px",
+                  background: "#18181b",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                },
+              });
+            }}
+          />
+        ))}
+
         {/* Tap zones — leave center + bottom free for double-tap / engagement */}
         <button
           type="button"
@@ -805,6 +857,24 @@ function StatusViewer() {
           <p className="inline-block bg-black/60 backdrop-blur-md text-white text-sm px-4 py-2 rounded-2xl max-w-[85vw] break-words shadow-lg">
             {status.caption}
           </p>
+        </div>
+      )}
+
+      {/* Instagram-style Re-Story Button for Mentioned Users */}
+      {isMentioned && !isOwn && (
+        <div className="absolute bottom-20 left-0 right-0 z-30 flex justify-center pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openReStory(status);
+              closeViewer();
+            }}
+            className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 text-white font-bold text-xs shadow-2xl hover:scale-105 active:scale-95 transition flex items-center gap-2 border border-white/20 animate-bounce"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Add this to your story</span>
+          </button>
         </div>
       )}
 

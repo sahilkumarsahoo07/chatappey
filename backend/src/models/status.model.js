@@ -72,6 +72,24 @@ const commentSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const mentionSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    username: { type: String, default: "" },
+    displayName: { type: String, default: "" },
+    x: { type: Number, default: 0.5 },
+    y: { type: Number, default: 0.5 },
+    scale: { type: Number, default: 1 },
+    rotation: { type: Number, default: 0 },
+    style: { type: String, default: "default" },
+  },
+  { _id: false }
+);
+
 const statusSchema = new mongoose.Schema(
   {
     userId: {
@@ -82,7 +100,7 @@ const statusSchema = new mongoose.Schema(
     },
     mediaType: {
       type: String,
-      enum: ["image", "video", "music", "text"],
+      enum: ["image", "video", "music", "text", "restory"],
       required: true,
     },
     mediaUrl: {
@@ -152,6 +170,19 @@ const statusSchema = new mongoose.Schema(
     comments: {
       type: [commentSchema],
       default: [],
+    },
+    mentions: {
+      type: [mentionSchema],
+      default: [],
+    },
+    restory: {
+      originalStatusId: { type: mongoose.Schema.Types.ObjectId, ref: "Status" },
+      originalUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      originalUsername: { type: String, default: "" },
+      originalDisplayName: { type: String, default: "" },
+      originalMediaUrl: { type: String, default: "" },
+      originalMediaType: { type: String, default: "image" },
+      originalThumbnailUrl: { type: String, default: "" },
     },
     privacy: {
       type: String,
