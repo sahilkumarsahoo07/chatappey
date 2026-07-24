@@ -35,9 +35,9 @@ function MusicSticker({
         const currentRect = containerRef.current.getBoundingClientRect();
         const rawX = (moveEvent.clientX - dragRef.current.ox) / currentRect.width;
         const rawY = (moveEvent.clientY - dragRef.current.oy) / currentRect.height;
-        // Smoothly allow positioning anywhere within the stage bounds (0.02 to 0.98)
-        const x = Math.min(0.98, Math.max(0.02, rawX));
-        const y = Math.min(0.98, Math.max(0.02, rawY));
+        // Keep sticker strictly bounded inside the photo stage (15%-85% X, 10%-90% Y)
+        const x = Math.min(0.85, Math.max(0.15, rawX));
+        const y = Math.min(0.90, Math.max(0.10, rawY));
         onChange({ x, y });
       };
 
