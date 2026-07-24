@@ -74,6 +74,8 @@ const StatusEngagementBar = memo(function StatusEngagementBar({
     }
   };
 
+  if (!status) return null;
+
   if (isOwn) {
     return (
       <div className="absolute bottom-0 inset-x-0 z-30 pb-[max(12px,env(safe-area-inset-bottom))] px-4 pt-8 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">

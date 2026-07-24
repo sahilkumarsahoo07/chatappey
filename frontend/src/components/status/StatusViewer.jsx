@@ -826,17 +826,16 @@ function StatusViewer() {
 
       {/* Instagram/WhatsApp Engagement Bar */}
       <StatusEngagementBar
-        statusId={status._id}
+        status={status}
         isOwn={isOwn}
-        liked={status.likedByMe}
-        likeCount={status.likeCount || 0}
-        commentCount={status.commentCount || 0}
-        myReaction={status.myReaction}
-        reactionSummary={reactionSummary}
-        onToggleLike={() => toggleLike(status._id)}
+        authUserId={authUser?._id}
+        onLike={() => toggleLike(status._id)}
         onReact={(emoji) => reactToStatus(status._id, emoji)}
-        onAddComment={(text, replyTo) => addComment(status._id, text, replyTo)}
-        onOpenViewers={(tab) => openViewersPanel(status._id, tab)}
+        onLoadComments={(sid) => loadComments(sid)}
+        onAddComment={(sid, text, replyTo) => addComment(sid, text, replyTo)}
+        onDeleteComment={(sid, commentId) => removeComment(sid, commentId)}
+        paused={paused}
+        setPaused={setPaused}
       />
 
       {/* Insights Drawer Sheet */}
