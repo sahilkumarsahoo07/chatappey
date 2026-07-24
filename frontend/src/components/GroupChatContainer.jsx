@@ -508,11 +508,19 @@ const GroupChatContainer = () => {
             bubbleBgColor = isMyMessage ? "bg-[#DCF8C6] text-[#111b21]" : "bg-[#FFFFFF] text-[#111b21]";
         }
 
-        let borderRadiusClass = "";
-        if (isMyMessage) {
-            borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-br-md" : "rounded-2xl";
-        } else {
-            borderRadiusClass = (isLastInGroup || isSingleInGroup) ? "rounded-2xl rounded-bl-md" : "rounded-2xl";
+        let customRadius = "16px";
+        if (authUser?.bubbleStyle) {
+            const foundStyle = BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle);
+            if (foundStyle) customRadius = foundStyle.borderRadius;
+        }
+
+        const bubbleStyle = { borderRadius: customRadius };
+        if (!authUser?.bubbleStyle) {
+            if (isMyMessage) {
+                bubbleStyle.borderRadius = (isLastInGroup || isSingleInGroup) ? "16px 16px 4px 16px" : "16px";
+            } else {
+                bubbleStyle.borderRadius = (isLastInGroup || isSingleInGroup) ? "16px 16px 16px 4px" : "16px";
+            }
         }
 
         const DateSeparator = showDateSeparator ? (
@@ -583,7 +591,8 @@ const GroupChatContainer = () => {
                             onLongPress={(el) => openMessageMenu(message._id, el)}
                         >
                             <div
-                                className={`relative flex flex-col w-fit max-w-full px-3 pt-2 pb-2.5 shadow-xs ${bubbleBgColor} ${borderRadiusClass} ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''} ${isDeleted ? "opacity-90" : ""}`}
+                                style={bubbleStyle}
+                                className={`relative flex flex-col w-fit max-w-full px-3 pt-2 pb-2.5 shadow-xs ${bubbleBgColor} ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''} ${isDeleted ? "opacity-90" : ""}`}
                             >
                                 {isDeleted ? (
                                     <>
