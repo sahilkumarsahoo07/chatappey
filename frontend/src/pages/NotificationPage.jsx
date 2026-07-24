@@ -3,6 +3,7 @@ import { Bell, UserPlus, MessageSquare, Check, X, Loader, User as UserIcon, Tras
 import { useNotificationStore } from "../store/useNotificationStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
+import { useStatusStore } from "../store/useStatusStore";
 import defaultImg from '../public/avatar.png';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -35,14 +36,22 @@ const NotificationPage = () => {
             fetchNotifications();
         };
 
+        const handleNewNotification = () => {
+            fetchNotifications();
+        };
+
         socket.on("friendRequestSent", handleFriendRequestSent);
         socket.on("friendRequestAccepted", handleFriendRequestAccepted);
         socket.on("newRequestMessage", handleNewRequestMessage);
+        socket.on("new_notification", handleNewNotification);
+        socket.on("status:mentioned", handleNewNotification);
 
         return () => {
             socket.off("friendRequestSent", handleFriendRequestSent);
             socket.off("friendRequestAccepted", handleFriendRequestAccepted);
             socket.off("newRequestMessage", handleNewRequestMessage);
+            socket.off("new_notification", handleNewNotification);
+            socket.off("status:mentioned", handleNewNotification);
         };
     }, [socket, fetchNotifications]);
 
@@ -90,7 +99,7 @@ const NotificationPage = () => {
     );
 
     const otherNotifications = notifications.filter(
-        n => n.type === "request_accepted" || n.type === "request_rejected"
+        n => n.type !== "friend_request" && n.type !== "request_message"
     );
 
     // Handle checkbox toggle
@@ -458,15 +467,26 @@ const NotificationPage = () => {
 
                                                     <div
                                                         className="flex-1 min-w-0 cursor-pointer"
-                                                        onClick={() => !notification.isRead && markAsRead(notification._id)}
+                                                        onClick={() => {
+                                                            if (!notification.isRead) markAsRead(notification._id);
+                                                            if (notification.statusId) {
+                                                                useStatusStore.getState().openViewerForStatusId(notification.statusId);
+                                                            }
+                                                        }}
                                                     >
                                                         <h3 className="font-bold text-base text-base-content group-hover:text-primary transition-colors">
-                                                            {notification.fromUserId?.fullName}
+                                                            {notification.fromUserId?.fullName || "Someone"}
                                                         </h3>
                                                         <p className="text-sm text-base-content/70 mt-1">
                                                             {notification.type === "request_accepted"
                                                                 ? "✅ Accepted your friend request"
-                                                                : "❌ Rejected your friend request"}
+                                                                : notification.type === "request_rejected"
+                                                                ? "❌ Rejected your friend request"
+                                                                : notification.type === "story_mention"
+                                                                ? "🏷️ Mentioned you in a Story (Tap to view)"
+                                                                : notification.type === "story_restory"
+                                                                ? "🔄 Re-storied your story (Tap to view)"
+                                                                : notification.message || "New notification"}
                                                         </p>
                                                         <p className="text-xs text-base-content/50 mt-2 flex items-center gap-1.5">
                                                             <Bell className="w-3 h-3" />

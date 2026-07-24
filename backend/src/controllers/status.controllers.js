@@ -454,13 +454,18 @@ export const uploadStatus = async (req, res) => {
 
         // 1. Notification center
         try {
-          await Notification.create({
+          const notif = await Notification.create({
             userId: targetUserId,
             type: "story_mention",
             fromUserId: req.user._id,
             statusId: status._id,
             message: `${senderName} mentioned you in a Story`,
           });
+          const populatedNotif = await Notification.findById(notif._id).populate("fromUserId", "fullName profilePic email");
+          const targetSid = getReceiverSocketId(targetUserId);
+          if (targetSid) {
+            io.to(targetSid).emit("new_notification", populatedNotif);
+          }
         } catch (err) {
           console.error("Mention Notification error:", err.message);
         }
