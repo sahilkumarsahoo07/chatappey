@@ -197,9 +197,18 @@ export const GroupVibeViewerModal = () => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isViewerOpen) return;
+
+      // Ignore shortcuts if the user is currently typing in an input or textarea
+      const targetTag = e.target?.tagName?.toUpperCase();
+      if (targetTag === "INPUT" || targetTag === "TEXTAREA" || e.target?.isContentEditable) {
+        return;
+      }
+
       if (e.key === "ArrowRight" || e.key === " ") {
+        e.preventDefault();
         nextVibe();
       } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
         prevVibe();
       } else if (e.key === "Escape") {
         setViewerOpen(false);
