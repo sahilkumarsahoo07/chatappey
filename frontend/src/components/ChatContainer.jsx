@@ -422,11 +422,19 @@ const ChatContainer = () => {
   const renderMessage = useCallback((message, index) => {
     const currentDateKey = getMessageDateKey(message.createdAt);
     const previousDateKey = index > 0 ? getMessageDateKey(sortedMessages[index - 1].createdAt) : null;
-    const showDateSeparator = currentDateKey !== previousDateKey;
-    const isFirstInGroup = index === 0 || showDateSeparator || sortedMessages[index - 1].senderId !== message.senderId;
-    const isLastInGroup = index === sortedMessages.length - 1 || sortedMessages[index + 1].senderId !== message.senderId || getMessageDateKey(sortedMessages[index + 1].createdAt) !== currentDateKey;
+    const nextDateKey = index < sortedMessages.length - 1 ? getMessageDateKey(sortedMessages[index + 1].createdAt) : null;
 
-    // Hardcode WhatsApp authentic colors when active, else fallback to primary theme colors
+    const showDateSeparator = currentDateKey !== previousDateKey;
+
+    const isPrevSame = index > 0 && !showDateSeparator && sortedMessages[index - 1].senderId === message.senderId && !isMessageDeleted(sortedMessages[index - 1]);
+    const isNextSame = index < sortedMessages.length - 1 && currentDateKey === nextDateKey && sortedMessages[index + 1].senderId === message.senderId && !isMessageDeleted(sortedMessages[index + 1]);
+
+    const isFirstInGroup = !isPrevSame && isNextSame;
+    const isMiddleInGroup = isPrevSame && isNextSame;
+    const isLastInGroup = isPrevSame && !isNextSame;
+    const isSingleInGroup = !isPrevSame && !isNextSame;
+
+    // Hardcode WhatsApp authentic colors when active, else fallback to theme colors
     const isWhatsApp = theme === 'whatsapp';
     const isMyMessage = message.senderId === authUser._id;
     let bubbleBgColor = isMyMessage ? "bg-primary text-primary-content" : "bg-base-200 text-base-content";
@@ -434,307 +442,337 @@ const ChatContainer = () => {
       bubbleBgColor = isMyMessage ? "bg-[#DCF8C6] text-[#111b21]" : "bg-[#FFFFFF] text-[#111b21]";
     }
 
+    // Border radius logic matching WhatsApp bubble tails
+    let borderRadiusClass = "";
+    if (authUser?.bubbleStyle) {
+      const customRadius = BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '16px';
+      borderRadiusClass = `rounded-[${customRadius}]`;
+    } else if (isMyMessage) {
+      borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tr-xs" : isLastInGroup ? "rounded-2xl rounded-br-xs" : "rounded-2xl";
+    } else {
+      borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tl-xs" : isLastInGroup ? "rounded-2xl rounded-bl-xs" : "rounded-2xl";
+    }
+
     return (
-      <div key={message.optimisticId || message._id} className={`${isLastInGroup ? (message.reactions?.length > 0 ? 'mb-7' : 'mb-4') : (message.reactions?.length > 0 ? 'mb-7' : 'mb-[2px]')} max-w-full min-w-0 box-border`}>
+      <div
+        key={message.optimisticId || message._id}
+        id={`msg-${message._id}`}
+        data-message-id={message._id}
+        className={`w-full flex flex-col ${(isLastInGroup || isSingleInGroup) ? (message.reactions?.length > 0 ? 'mb-6' : 'mb-3') : (message.reactions?.length > 0 ? 'mb-6' : 'mb-[3px]')} px-2 sm:px-4 box-border`}
+      >
         {showDateSeparator && (
-          <div className="flex justify-center my-4">
-            <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">{formatDateSeparator(message.createdAt)}</div>
+          <div className="flex justify-center my-4 select-none">
+            <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-xs backdrop-blur-sm">
+              {formatDateSeparator(message.createdAt)}
+            </div>
           </div>
         )}
 
         {message.status === 'scheduled' && message.senderId === authUser._id && (
-          <div className="text-center text-xs opacity-50 my-1">🕒 Scheduled for {new Date(message.scheduledFor || 0).toLocaleString()}</div>
+          <div className="text-center text-xs opacity-50 my-1 select-none">
+            🕒 Scheduled for {new Date(message.scheduledFor || 0).toLocaleString()}
+          </div>
         )}
 
-        <div id={`msg-${message._id}`} data-message-id={message._id} className={`chat ${isMyMessage ? "chat-end" : "chat-start"} ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
-          <div className={`chat-image avatar mx-1 md:mx-2 self-end mb-1 ${!isLastInGroup ? 'invisible' : ''}`}>
-            <div className="size-7 md:size-8 rounded-full shadow-sm">
-              <img src={message.senderId === authUser._id ? authUser.profilePic || defaultImg : selectedUser.profilePic || defaultImg} alt="profile pic" loading="lazy" />
+        {/* Outer Flex Alignment Row */}
+        <div className={`w-full flex ${isMyMessage ? "justify-end" : "justify-start"} items-end`}>
+          {/* Avatar column for incoming messages */}
+          {!isMyMessage && (
+            <div className="w-8 h-8 shrink-0 mr-2 self-end mb-0.5 select-none">
+              {(isLastInGroup || isSingleInGroup) ? (
+                <img
+                  src={selectedUser?.profilePic || defaultImg}
+                  alt={selectedUser?.fullName || "User"}
+                  className="w-8 h-8 rounded-full object-cover shadow-xs"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-8 h-8" />
+              )}
             </div>
-          </div>
-          <SwipeableMessageBubble
-            isMine={isMyMessage}
-            disabled={isMessageDeleted(message) || message.status === "scheduled"}
-            onReply={() => setReplyingToMessage(message)}
-            onLongPress={(el) => {
-              haptic("longPress");
-              openMessageMenu(message._id, el);
-            }}
-          >
-            <DoubleTapLike
-              className="group"
-              disabled={
-                message.senderId === authUser._id ||
-                isMessageDeleted(message)
-              }
-              onDoubleTap={() => sendReaction(message._id, "❤️")}
+          )}
+
+          {/* Message Content Container */}
+          <div className={`relative group max-w-[82%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[60%] min-w-[95px] flex flex-col ${searchActiveId === message._id ? "ring-2 ring-warning/60 rounded-xl" : ""}`}>
+            <SwipeableMessageBubble
+              isMine={isMyMessage}
+              disabled={isMessageDeleted(message) || message.status === "scheduled"}
+              onReply={() => setReplyingToMessage(message)}
+              onLongPress={(el) => {
+                haptic("longPress");
+                openMessageMenu(message._id, el);
+              }}
             >
-              <div className={`flex flex-col relative w-fit max-w-[78%] sm:max-w-[75%] px-3 pt-1.5 pb-2.5 min-w-[85px] shadow-sm ${bubbleBgColor}
-              ${isLastInGroup ? 'chat-bubble-wa' : ''}
-              ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''}
-              ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
-                style={{
-                  borderRadius: authUser?.bubbleStyle
-                    ? (message.senderId === authUser._id
-                      ? `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px')} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'}`
-                      : `${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px'} ${isLastInGroup ? '0px' : (BUBBLE_STYLES.find(s => s.value === authUser.bubbleStyle)?.borderRadius || '8px')}`)
-                    : (message.senderId === authUser._id
-                      ? (isLastInGroup ? '8px 8px 0px 8px' : '8px 8px 8px 8px')
-                      : (isLastInGroup ? '8px 8px 8px 0px' : '8px 8px 8px 8px'))
-                }}>
-                {isMessageDeleted(message) ? (
-                  <>
-                    <DeletedMessageBubble
-                      message={message}
-                      authUserId={authUser._id}
-                      isMyMessage={message.senderId === authUser._id}
-                    />
-                    {message.senderId === authUser._id && (
+              <DoubleTapLike
+                className="group/dtl"
+                disabled={message.senderId === authUser._id || isMessageDeleted(message)}
+                onDoubleTap={() => sendReaction(message._id, "❤️")}
+              >
+                <div
+                  className={`relative flex flex-col w-fit max-w-full px-3 pt-2 pb-2.5 shadow-xs ${bubbleBgColor} ${borderRadiusClass} ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''} ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
+                >
+                  {isMessageDeleted(message) ? (
+                    <>
+                      <DeletedMessageBubble
+                        message={message}
+                        authUserId={authUser._id}
+                        isMyMessage={isMyMessage}
+                      />
                       <div className="flex items-center justify-end gap-1 mt-1 text-[10.5px] opacity-70">
                         {message.isEdited && <span className="italic">(edited)</span>}
                         <span>{formatMessageTime(message.createdAt)}</span>
-                        <span className="flex items-center ml-0.5">
-                          {message.status === "read" ? <CheckCheck className="w-4 h-4 text-[#53bdeb]" /> :
-                            message.status === "delivered" ? <CheckCheck className="w-4 h-4" /> :
-                              <Check className="w-4 h-4" />}
-                        </span>
+                        {isMyMessage && (
+                          <span className="flex items-center ml-0.5">
+                            {message.status === "read" ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> :
+                              message.status === "delivered" ? <CheckCheck className="w-3.5 h-3.5 opacity-80" /> :
+                                <Check className="w-3.5 h-3.5 opacity-80" />}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {message.replyToMessage && (
-                      <div
-                        className={`mb-1.5 flex overflow-hidden rounded-lg transition-colors cursor-pointer relative border-l-[4px] ${message.senderId === authUser._id ? 'bg-primary-content/10 hover:bg-primary-content/20 border-primary-content/50' : 'bg-base-content/5 hover:bg-base-content/10 border-primary'}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const vibeId = message.replyToMessage?.vibeId;
-                          if (vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"))) {
-                            const targetGroupId = message.replyToMessage?.groupId || message.groupId;
-                            if (targetGroupId) {
-                              useGroupVibeStore.getState().openViewer(targetGroupId, vibeId || null);
-                              return;
+                    </>
+                  ) : (
+                    <>
+                      {/* Compact Reply Preview Inside Bubble */}
+                      {message.replyToMessage && (
+                        <div
+                          className={`mb-1.5 flex overflow-hidden rounded-lg transition-colors cursor-pointer relative border-l-[3.5px] p-2 text-xs select-none ${isMyMessage ? 'bg-black/10 dark:bg-black/20 border-white/70' : 'bg-black/10 dark:bg-black/20 border-primary'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const vibeId = message.replyToMessage?.vibeId;
+                            if (vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"))) {
+                              const targetGroupId = message.replyToMessage?.groupId || message.groupId;
+                              if (targetGroupId) {
+                                useGroupVibeStore.getState().openViewer(targetGroupId, vibeId || null);
+                                return;
+                              }
                             }
-                          }
-                          const element = document.getElementById(`msg-${message.replyTo}`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            element.classList.add('highlight-message');
-                            setTimeout(() => element.classList.remove('highlight-message'), 2000);
-                          } else {
-                            toast("Original message not loaded", { icon: '🔍' });
-                          }
-                        }}
-                      >
-                        <div className="flex-1 min-w-0 py-1.5 px-2.5 flex flex-col justify-center">
-                          <p className={`text-xs font-bold truncate leading-tight mb-0.5 ${message.senderId === authUser._id ? 'text-primary-content' : 'text-primary'}`}>
-                            {message.replyToMessage.senderId === authUser._id ? "You" : message.replyToMessage.senderName}
-                          </p>
-                          <p className={`text-xs truncate leading-tight ${message.senderId === authUser._id ? 'opacity-90 text-primary-content' : 'opacity-75'}`}>
-                            {message.replyToMessage.text || (message.replyToMessage.image ? "📷 Photo" : message.replyToMessage.video ? "🎥 Video" : message.replyToMessage.audio ? "🎵 Audio" : message.replyToMessage.file ? "📄 Document" : "")}
-                          </p>
-                        </div>
-
-                        {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && (
-                          <div className="w-12 h-auto shrink-0 relative bg-base-300">
-                            <img
-                              src={message.replyToMessage.image}
-                              alt="Thumbnail"
-                              className="absolute inset-0 w-full h-full object-cover"
-                              loading="lazy"
-                              onLoad={handleImageLoad}
-                            />
+                            const element = document.getElementById(`msg-${message.replyTo}`);
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              element.classList.add('highlight-message');
+                              setTimeout(() => element.classList.remove('highlight-message'), 2000);
+                            } else {
+                              toast("Original message not loaded", { icon: '🔍' });
+                            }
+                          }}
+                        >
+                          <div className="flex-1 min-w-0 py-0.5 px-1 flex flex-col justify-center">
+                            <p className={`text-[11.5px] font-bold truncate leading-tight mb-0.5 ${isMyMessage ? 'text-primary-content' : 'text-primary'}`}>
+                              {message.replyToMessage.senderId === authUser._id ? "You" : (selectedUser?.fullName || "Partner")}
+                            </p>
+                            <p className={`text-xs truncate leading-tight ${isMyMessage ? 'opacity-90 text-primary-content' : 'opacity-75'}`}>
+                              {message.replyToMessage.text || (message.replyToMessage.image ? "📷 Photo" : message.replyToMessage.video ? "🎥 Video" : message.replyToMessage.audio ? "🎵 Audio" : message.replyToMessage.file ? "📄 Document" : "")}
+                            </p>
                           </div>
-                        )}
-                      </div>
-                    )}
 
-                    {message.image && (
-                      <img
-                        src={message.image}
-                        alt="Attachment"
-                        loading="lazy"
-                        decoding="async"
-                        className={`rounded-xl mb-2 transition-opacity ${message.image.toLowerCase().includes('.gif')
-                            ? 'w-[200px] md:w-[260px] h-auto object-cover bg-black/5 dark:bg-white/5'
-                            : 'max-w-[200px] md:max-w-[280px] cursor-pointer hover:opacity-90'
-                          }`}
-                        onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
-                        onLoad={handleImageLoad}
-                      />
-                    )}
-
-                    {message.video && (
-                      <VideoMessage
-                        video={message.video}
-                        thumbnail={message.videoThumbnail}
-                        duration={message.videoDuration}
-                        isMyMessage={message.senderId === authUser._id}
-                      />
-                    )}
-
-                    {message.audio && (
-                      <VoiceMessagePlayer
-                        audioUrl={message.audio}
-                        isMyMessage={message.senderId === authUser._id}
-                      />
-                    )}
-
-                    {message.file && (
-                      <div className="flex items-center gap-3 p-3 bg-base-100/10 rounded-xl my-1 border border-base-content/10">
-                        <div className="p-2 bg-base-100/20 rounded-lg"><FileText size={20} /></div>
-                        <div className="flex-1 min-w-0">
-                          <a href={message.file} download={message.fileName || "download"} className="text-sm font-bold hover:underline truncate block">{message.fileName || "Attachment"}</a>
-                          <span className="text-xs opacity-60">Click to download</span>
-                        </div>
-                        <a href={message.file} download={message.fileName || "download"} className="btn btn-circle btn-xs btn-ghost bg-base-100/20 hover:bg-base-100/30"><Download size={14} /></a>
-                      </div>
-                    )}
-
-                    {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
-                      <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
-                        <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
-                        <div className="space-y-2">
-                          {message.poll.options.map((opt, i) => {
-                            const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
-                            const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
-                            const isVoted = opt.votes?.includes(authUser._id) || false;
-                            return (
-                              <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
-                                <div className="flex justify-between text-xs mb-1 font-medium">
-                                  <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
-                                  <span>{percent}%</span>
-                                </div>
-                                <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
-                                  <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
-                      </div>
-                    )}
-
-                    {Boolean(message.storyRef?.statusId) && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          useStatusStore.getState().openViewerForStatusId(message.storyRef.statusId);
-                        }}
-                        className="mb-2 p-2 bg-black/40 rounded-xl border border-white/10 cursor-pointer hover:bg-black/60 transition flex items-center gap-3"
-                      >
-                        {message.storyRef.mediaUrl && (
-                          <img
-                            src={message.storyRef.mediaUrl}
-                            alt=""
-                            className="w-10 h-14 object-cover rounded-lg shrink-0 border border-white/10"
-                          />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-pink-400">
-                            <AtSign className="w-3.5 h-3.5" />
-                            <span>Story Mention</span>
-                          </div>
-                          <p className="text-xs text-white/90 font-medium truncate">
-                            {message.storyRef.caption || "Tap to view story"}
-                          </p>
-                          <span className="text-[10px] text-primary font-bold hover:underline">View Story →</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {message.text && !message.audio && (
-                      <div className="relative">
-                        {message.isForwarded && (
-                          <div className="forwarded-badge mb-1 text-[11px] opacity-70 flex items-center gap-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
-                        )}
-                        <div className="relative px-0.5 pb-0.5">
-                          {editingMessageId === message._id ? (
-                            <MessageEditField
-                              initialText={message.text}
-                              onSave={(newText) => {
-                                editMessage(message._id, newText);
-                                setEditingMessageId(null);
-                              }}
-                              onCancel={() => setEditingMessageId(null)}
-                              isMyMessage={message.senderId === authUser._id}
-                            />
-                          ) : (
-                            <>
-                              <p className="text-[15px] md:text-base whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] leading-[1.3]">
-                                {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
-                                {/* Inline spacer to let time wrap nicely if short text */}
-                                <span className={`inline-block h-1 ${message.isEdited ? 'w-[125px] md:w-[130px]' : 'w-[70px] md:w-[75px]'}`}></span>
-                              </p>
-
-                              {/* YouTube Preview */}
-                              {(() => {
-                                const ytId = getYouTubeVideoId(message.text);
-                                if (ytId && !isMessageDeleted(message)) {
-                                  return <YouTubePreview ytId={ytId} />;
-                                }
-                                return null;
-                              })()}
-                            </>
+                          {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && (
+                            <div className="w-10 h-10 shrink-0 relative bg-base-300 rounded overflow-hidden ml-2">
+                              <img
+                                src={message.replyToMessage.image}
+                                alt="Thumbnail"
+                                className="absolute inset-0 w-full h-full object-cover"
+                                loading="lazy"
+                                onLoad={handleImageLoad}
+                              />
+                            </div>
                           )}
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    <MessageReactions messageId={message._id} reactions={message.reactions} senderId={message.senderId} />
+                      {/* Image Attachment */}
+                      {message.image && (
+                        <img
+                          src={message.image}
+                          alt="Attachment"
+                          loading="lazy"
+                          decoding="async"
+                          className={`rounded-xl mb-2 transition-opacity ${message.image.toLowerCase().includes('.gif')
+                              ? 'w-[200px] md:w-[260px] h-auto object-cover bg-black/5 dark:bg-white/5'
+                              : 'max-w-[200px] md:max-w-[280px] cursor-pointer hover:opacity-90'
+                            }`}
+                          onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
+                          onLoad={handleImageLoad}
+                        />
+                      )}
 
-                    {message.status !== 'scheduled' &&
-                      message.senderId !== authUser._id &&
-                      !message.reactions?.some(r => r.userId === authUser._id) && (
-                        <div className={`absolute bottom-full ${message.senderId === authUser._id ? 'right-0' : 'left-0'} 
-                      hidden md:flex pb-1.5
-                      opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 pointer-events-none group-hover:pointer-events-auto`}
+                      {/* Video Attachment */}
+                      {message.video && (
+                        <VideoMessage
+                          video={message.video}
+                          thumbnail={message.videoThumbnail}
+                          duration={message.videoDuration}
+                          isMyMessage={isMyMessage}
+                        />
+                      )}
+
+                      {/* Audio Voice Message */}
+                      {message.audio && (
+                        <VoiceMessagePlayer
+                          audioUrl={message.audio}
+                          isMyMessage={isMyMessage}
+                        />
+                      )}
+
+                      {/* File Attachment */}
+                      {message.file && (
+                        <div className="flex items-center gap-3 p-3 bg-base-100/10 rounded-xl my-1 border border-base-content/10">
+                          <div className="p-2 bg-base-100/20 rounded-lg"><FileText size={20} /></div>
+                          <div className="flex-1 min-w-0">
+                            <a href={message.file} download={message.fileName || "download"} className="text-sm font-bold hover:underline truncate block">{message.fileName || "Attachment"}</a>
+                            <span className="text-xs opacity-60">Click to download</span>
+                          </div>
+                          <a href={message.file} download={message.fileName || "download"} className="btn btn-circle btn-xs btn-ghost bg-base-100/20 hover:bg-base-100/30"><Download size={14} /></a>
+                        </div>
+                      )}
+
+                      {/* Poll Component */}
+                      {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
+                        <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
+                          <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
+                          <div className="space-y-2">
+                            {message.poll.options.map((opt, i) => {
+                              const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
+                              const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
+                              const isVoted = opt.votes?.includes(authUser._id) || false;
+                              return (
+                                <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
+                                  <div className="flex justify-between text-xs mb-1 font-medium">
+                                    <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
+                                    <span>{percent}%</span>
+                                  </div>
+                                  <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
+                                    <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
+                        </div>
+                      )}
+
+                      {/* Story Mention Card */}
+                      {Boolean(message.storyRef?.statusId) && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            useStatusStore.getState().openViewerForStatusId(message.storyRef.statusId);
+                          }}
+                          className="mb-2 p-2 bg-black/40 rounded-xl border border-white/10 cursor-pointer hover:bg-black/60 transition flex items-center gap-3"
                         >
-                          <div className="flex items-center gap-1 p-1 bg-base-100/90 backdrop-blur-sm rounded-full shadow-lg border border-base-200">
-                            {['👍', '❤️', '😂', '😮', '😢', '😡'].map(emoji => (
-                              <button
-                                key={emoji}
-                                onClick={(e) => { e.stopPropagation(); sendReaction(message._id, emoji); }}
-                                className="hover:scale-125 transition-transform px-1 text-sm"
-                              >
-                                {emoji}
-                              </button>
-                            ))}
+                          {message.storyRef.mediaUrl && (
+                            <img
+                              src={message.storyRef.mediaUrl}
+                              alt=""
+                              className="w-10 h-14 object-cover rounded-lg shrink-0 border border-white/10"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-pink-400">
+                              <AtSign className="w-3.5 h-3.5" />
+                              <span>Story Mention</span>
+                            </div>
+                            <p className="text-xs text-white/90 font-medium truncate">
+                              {message.storyRef.caption || "Tap to view story"}
+                            </p>
+                            <span className="text-[10px] text-primary font-bold hover:underline">View Story →</span>
                           </div>
                         </div>
                       )}
 
-                    {message.status !== 'scheduled' && editingMessageId !== message._id && (
-                      <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10.5px] ${isMyMessage ? (isWhatsApp ? 'text-[#111b21]/60' : 'text-primary-content/70') : 'text-base-content/60'} leading-none ${message.text && !message.audio ? 'absolute bottom-1.5 right-2' : ''}`}>
-                        {message.isEdited && !isMessageDeleted(message) && <span className="mr-0.5 opacity-80">Edited</span>}
-                        <span>{formatMessageTime(message.createdAt)}</span>
-                        {message.senderId === authUser._id && (
-                          <span className="flex items-center ml-0.5 -mr-0.5">
-                            {message.status === "read" ? <CheckCheck className="w-[15px] h-[15px] text-[#53bdeb]" /> :
-                              message.status === "delivered" ? <CheckCheck className="w-[15px] h-[15px]" /> :
-                                message.status === "scheduled" ? <Clock className="w-3 h-3 opacity-50" /> :
-                                  <Check className="w-[15px] h-[15px]" />}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                      {/* Text Content */}
+                      {message.text && !message.audio && (
+                        <div className="relative">
+                          {message.isForwarded && (
+                            <div className="forwarded-badge mb-1 text-[11px] opacity-70 flex items-center gap-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
+                          )}
+                          <div className="relative px-0.5 pb-0.5">
+                            {editingMessageId === message._id ? (
+                              <MessageEditField
+                                initialText={message.text}
+                                onSave={(newText) => {
+                                  editMessage(message._id, newText);
+                                  setEditingMessageId(null);
+                                }}
+                                onCancel={() => setEditingMessageId(null)}
+                                isMyMessage={isMyMessage}
+                              />
+                            ) : (
+                              <>
+                                <p className="text-[14.5px] sm:text-[15px] leading-[1.35] whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] text-left">
+                                  {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
+                                  {/* Reserved inline spacer forcing space for bottom-right timestamp */}
+                                  <span className={`inline-block h-0 select-none pointer-events-none ${isMyMessage ? (message.isEdited ? 'w-[105px]' : 'w-[68px]') : (message.isEdited ? 'w-[90px]' : 'w-[52px]')}`} aria-hidden="true"></span>
+                                </p>
 
-              {!isMessageDeleted(message) && message.status !== 'scheduled' && (
-                <MessageMenuTrigger
-                  isMine={message.senderId === authUser._id}
-                  onOpen={(el) => openMessageMenu(message._id, el)}
-                />
-              )}
-            </DoubleTapLike>
-          </SwipeableMessageBubble>
+                                {/* YouTube Preview */}
+                                {(() => {
+                                  const ytId = getYouTubeVideoId(message.text);
+                                  if (ytId && !isMessageDeleted(message)) {
+                                    return <YouTubePreview ytId={ytId} />;
+                                  }
+                                  return null;
+                                })()}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Message Reactions */}
+                      <MessageReactions messageId={message._id} reactions={message.reactions} senderId={message.senderId} />
+
+                      {/* Quick Emoji Reaction Pill */}
+                      {message.status !== 'scheduled' &&
+                        message.senderId !== authUser._id &&
+                        !message.reactions?.some(r => r.userId === authUser._id) && (
+                          <div className="absolute bottom-full left-0 hidden md:flex pb-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 pointer-events-none group-hover:pointer-events-auto">
+                            <div className="flex items-center gap-1 p-1 bg-base-100/90 backdrop-blur-sm rounded-full shadow-lg border border-base-200">
+                              {['👍', '❤️', '😂', '😮', '😢', '😡'].map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={(e) => { e.stopPropagation(); sendReaction(message._id, emoji); }}
+                                  className="hover:scale-125 transition-transform px-1 text-sm"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Timestamp & Ticks Locked to Bottom-Right */}
+                      {message.status !== 'scheduled' && editingMessageId !== message._id && (
+                        <div className={`absolute bottom-1 right-2 flex items-center gap-1 text-[10.5px] select-none pointer-events-none ${isMyMessage ? (isWhatsApp ? 'text-[#111b21]/60' : 'text-primary-content/75') : 'text-base-content/60'} leading-none`}>
+                          {message.isEdited && !isMessageDeleted(message) && <span className="mr-0.5 opacity-80 italic">Edited</span>}
+                          <span>{formatMessageTime(message.createdAt)}</span>
+                          {isMyMessage && (
+                            <span className="flex items-center ml-0.5">
+                              {message.status === "read" ? <CheckCheck className="w-[15px] h-[15px] text-[#53bdeb]" /> :
+                                message.status === "delivered" ? <CheckCheck className="w-[15px] h-[15px]" /> :
+                                  message.status === "scheduled" ? <Clock className="w-3 h-3 opacity-50" /> :
+                                    <Check className="w-[15px] h-[15px]" />}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </DoubleTapLike>
+            </SwipeableMessageBubble>
+
+            {!isMessageDeleted(message) && message.status !== 'scheduled' && (
+              <MessageMenuTrigger
+                isMine={isMyMessage}
+                onOpen={(el) => openMessageMenu(message._id, el)}
+              />
+            )}
+          </div>
         </div>
       </div>
     );
-  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage, searchQuery, searchActiveId, openMessageMenu, editMessage, setPreviewImage]);
+  }, [sortedMessages, authUser, selectedUser, handleImageLoad, votePoll, sendReaction, editingMessageId, setReplyingToMessage, searchQuery, searchActiveId, openMessageMenu, editMessage, setPreviewImage, theme]);
 
   if (!selectedUser.isFriend) {
     return (

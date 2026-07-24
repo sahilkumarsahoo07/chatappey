@@ -480,28 +480,51 @@ const GroupChatContainer = () => {
 
     const renderGroupMessage = useCallback((message, index) => {
         const msgs = sortedGroupMessages;
-        const isMyMessage = message.senderId?._id === authUser._id;
         const sender = message.senderId;
-        const showSender = !isMyMessage && (
-            index === 0 ||
-            msgs[index - 1]?.senderId?._id !== sender?._id
-        );
+        const senderId = sender?._id || sender;
+        const isMyMessage = senderId === authUser._id;
         const isDeleted = isMessageDeleted(message);
 
         const currentDateKey = getMessageDateKey(message.createdAt);
         const previousDateKey = index > 0 ? getMessageDateKey(msgs[index - 1].createdAt) : null;
+        const nextDateKey = index < msgs.length - 1 ? getMessageDateKey(msgs[index + 1].createdAt) : null;
         const showDateSeparator = currentDateKey !== previousDateKey;
 
+        const prevSenderId = msgs[index - 1]?.senderId?._id || msgs[index - 1]?.senderId;
+        const nextSenderId = msgs[index + 1]?.senderId?._id || msgs[index + 1]?.senderId;
+
+        const isPrevSame = index > 0 && !showDateSeparator && prevSenderId === senderId && !isMessageDeleted(msgs[index - 1]);
+        const isNextSame = index < msgs.length - 1 && currentDateKey === nextDateKey && nextSenderId === senderId && !isMessageDeleted(msgs[index + 1]);
+
+        const isFirstInGroup = !isPrevSame && isNextSame;
+        const isMiddleInGroup = isPrevSame && isNextSame;
+        const isLastInGroup = isPrevSame && !isNextSame;
+        const isSingleInGroup = !isPrevSame && !isNextSame;
+        const showSender = !isMyMessage && (isFirstInGroup || isSingleInGroup);
+
+        const isWhatsApp = theme === 'whatsapp';
+        let bubbleBgColor = isMyMessage ? "bg-primary text-primary-content" : "bg-base-200 text-base-content";
+        if (isWhatsApp) {
+            bubbleBgColor = isMyMessage ? "bg-[#DCF8C6] text-[#111b21]" : "bg-[#FFFFFF] text-[#111b21]";
+        }
+
+        let borderRadiusClass = "";
+        if (isMyMessage) {
+            borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tr-xs" : isLastInGroup ? "rounded-2xl rounded-br-xs" : "rounded-2xl";
+        } else {
+            borderRadiusClass = (isSingleInGroup || isFirstInGroup) ? "rounded-2xl rounded-tl-xs" : isLastInGroup ? "rounded-2xl rounded-bl-xs" : "rounded-2xl";
+        }
+
         const DateSeparator = showDateSeparator ? (
-            <div className="flex justify-center my-4">
-                <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-sm backdrop-blur-sm">
+            <div className="flex justify-center my-4 select-none">
+                <div className="bg-base-300/80 text-base-content/70 px-4 py-1.5 rounded-lg text-xs font-medium shadow-xs backdrop-blur-sm">
                     {formatDateSeparator(message.createdAt)}
                 </div>
             </div>
         ) : null;
 
         const UnreadDivider = index === firstUnreadIndex ? (
-            <div className="flex items-center justify-center my-4">
+            <div className="flex items-center justify-center my-4 select-none">
                 <div className="flex-grow border-t border-red-500/30"></div>
                 <span className="mx-4 text-xs font-semibold uppercase tracking-wider text-red-500 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
                     Unread Messages
@@ -525,230 +548,231 @@ const GroupChatContainer = () => {
         }
 
         return (
-            <div className="mb-4">
+            <div className={`w-full flex flex-col ${(isLastInGroup || isSingleInGroup) ? 'mb-3' : 'mb-[3px]'} px-2 sm:px-4 box-border`}>
                 {DateSeparator}
                 {UnreadDivider}
+                
+                {/* Outer Flex Row */}
                 <div
                     id={`msg-${message.realId || message._id}`}
                     data-message-id={message.realId || message._id}
-                    className={`flex ${isMyMessage ? "justify-end" : "justify-start"} ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}
+                    className={`w-full flex ${isMyMessage ? "justify-end" : "justify-start"} items-end`}
                 >
-                    <div className={`flex gap-2 max-w-[80%] ${isMyMessage ? "flex-row-reverse" : ""}`}>
-                        {!isMyMessage && showSender && (
-                            <img
-                                src={sender?.profilePic || defaultAvatar}
-                                alt={sender?.fullName}
-                                className="w-8 h-8 rounded-full object-cover self-end"
-                                loading="lazy"
-                            />
-                        )}
-                        {!isMyMessage && !showSender && (
-                            <div className="w-8" />
-                        )}
-
-                        <div className="relative group">
-                            {showSender && !isMyMessage && (
-                                <p className="text-xs text-base-content/60 mb-1 ml-1">
-                                    {sender?.fullName}
-                                </p>
+                    {/* Incoming Avatar Column */}
+                    {!isMyMessage && (
+                        <div className="w-8 h-8 shrink-0 mr-2 self-end mb-0.5 select-none">
+                            {(isLastInGroup || isSingleInGroup) ? (
+                                <img
+                                    src={sender?.profilePic || defaultAvatar}
+                                    alt={sender?.fullName || "Member"}
+                                    className="w-8 h-8 rounded-full object-cover shadow-xs"
+                                    loading="lazy"
+                                />
+                            ) : (
+                                <div className="w-8 h-8" />
                             )}
+                        </div>
+                    )}
 
-                            <SwipeableMessageBubble
-                                isMine={isMyMessage}
-                                disabled={false}
-                                onReply={isDeleted ? undefined : () => handleSwipeReply(message)}
-                                onLongPress={(el) => openMessageMenu(message._id, el)}
-                                className="group"
+                    {/* Message Bubble Container */}
+                    <div className={`relative group max-w-[82%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[60%] min-w-[95px] flex flex-col ${searchActiveId === message._id ? "ring-2 ring-amber-400/70 rounded-xl" : ""}`}>
+                        <SwipeableMessageBubble
+                            isMine={isMyMessage}
+                            disabled={isDeleted}
+                            onReply={isDeleted ? undefined : () => handleSwipeReply(message)}
+                            onLongPress={(el) => openMessageMenu(message._id, el)}
+                        >
+                            <div
+                                className={`relative flex flex-col w-fit max-w-full px-3 pt-2 pb-2.5 shadow-xs ${bubbleBgColor} ${borderRadiusClass} ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''} ${isDeleted ? "opacity-90" : ""}`}
                             >
-                                <div
-                                    className={`rounded-2xl p-3 w-fit max-w-full whitespace-pre-wrap break-words ${isMyMessage
-                                        ? "bg-primary text-primary-content rounded-br-md"
-                                        : "bg-base-200 text-base-content rounded-bl-md"
-                                        } ${isDeleted ? "opacity-90" : ""}`}
-                                >
-                                    {isDeleted ? (
+                                {isDeleted ? (
+                                    <>
                                         <DeletedMessageBubble
                                             message={message}
                                             authUserId={authUser._id}
                                             isMyMessage={isMyMessage}
                                         />
-                                    ) : (
+                                        <div className="flex items-center justify-end gap-1 mt-1 text-[10.5px] opacity-70">
+                                            {message.isEdited && <span className="italic">(edited)</span>}
+                                            <span>{formatMessageTime(message.createdAt)}</span>
+                                        </div>
+                                    </>
+                                ) : (
                                     <>
-                                    {message.replyToMessage && (
-                                        <div
-                                            className={`mb-2 p-2 rounded-lg border-l-4 cursor-pointer transition-colors ${
-                                                isMyMessage
-                                                    ? "bg-black/10 border-primary-content/50 hover:bg-black/20"
-                                                    : "bg-black/10 dark:bg-black/20 border-primary hover:bg-black/20 dark:hover:bg-black/30"
-                                            }`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const vibeId = message.replyToMessage?.vibeId;
-                                                const isVibeReply = vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"));
-                                                if (isVibeReply) {
-                                                    useGroupVibeStore.getState().openViewer(selectedGroup._id, vibeId || null);
-                                                    return;
-                                                }
-                                                const replyId = message.replyTo;
-                                                const idx = sortedGroupMessages.findIndex(m => String(m.realId || m._id) === String(replyId));
-                                                if (idx !== -1) {
-                                                    setScrollTarget(idx);
-                                                    setTimeout(() => {
-                                                        const el = document.getElementById(`msg-${replyId}`);
-                                                        if (el) {
-                                                            el.scrollIntoView({ behavior: "smooth", block: "center" });
-                                                            el.classList.add("highlight-message");
-                                                            setTimeout(() => el.classList.remove("highlight-message"), 2000);
-                                                        }
-                                                    }, 500);
-                                                } else {
-                                                    toast("Original message not loaded", { icon: "🔍" });
-                                                }
-                                            }}
-                                        >
-                                            <p className={`text-xs font-bold opacity-80 mb-0.5 ${isMyMessage ? "text-primary-content" : "text-primary"}`}>
-                                                {String(message.replyToMessage.senderId) === String(authUser._id) ||
-                                                message.replyToMessage.senderId?._id === authUser._id
-                                                    ? "You"
-                                                    : message.replyToMessage.senderName || "Member"}
+                                        {/* Sender Name for Incoming Group Messages */}
+                                        {showSender && !isMyMessage && (
+                                            <p className="text-[11.5px] font-bold text-primary mb-1 select-none truncate">
+                                                {sender?.fullName || "Member"}
                                             </p>
-                                            <div className="flex items-center gap-2">
+                                        )}
+
+                                        {/* Reply Preview Card */}
+                                        {message.replyToMessage && (
+                                            <div
+                                                className={`mb-1.5 flex overflow-hidden rounded-lg transition-colors cursor-pointer relative border-l-[3.5px] p-2 text-xs select-none ${isMyMessage ? 'bg-black/10 dark:bg-black/20 border-white/70' : 'bg-black/10 dark:bg-black/20 border-primary'}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const vibeId = message.replyToMessage?.vibeId;
+                                                    const isVibeReply = vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"));
+                                                    if (isVibeReply) {
+                                                        useGroupVibeStore.getState().openViewer(selectedGroup._id, vibeId || null);
+                                                        return;
+                                                    }
+                                                    const replyId = message.replyTo;
+                                                    const idx = sortedGroupMessages.findIndex(m => String(m.realId || m._id) === String(replyId));
+                                                    if (idx !== -1) {
+                                                        setScrollTarget(idx);
+                                                        setTimeout(() => {
+                                                            const el = document.getElementById(`msg-${replyId}`);
+                                                            if (el) {
+                                                                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                                                el.classList.add("highlight-message");
+                                                                setTimeout(() => el.classList.remove("highlight-message"), 2000);
+                                                            }
+                                                        }, 500);
+                                                    } else {
+                                                        toast("Original message not loaded", { icon: "🔍" });
+                                                    }
+                                                }}
+                                            >
+                                                <div className="flex-1 min-w-0 py-0.5 px-1 flex flex-col justify-center">
+                                                    <p className={`text-[11.5px] font-bold truncate leading-tight mb-0.5 ${isMyMessage ? 'text-primary-content' : 'text-primary'}`}>
+                                                        {String(message.replyToMessage.senderId) === String(authUser._id) ||
+                                                        message.replyToMessage.senderId?._id === authUser._id
+                                                            ? "You"
+                                                            : message.replyToMessage.senderName || "Member"}
+                                                    </p>
+                                                    <p className={`text-xs truncate leading-tight ${isMyMessage ? 'opacity-90 text-primary-content' : 'opacity-75'}`}>
+                                                        {message.replyToMessage.text || (message.replyToMessage.image ? "📷 Photo" : "")}
+                                                    </p>
+                                                </div>
                                                 {message.replyToMessage.image && !isMessageDeleted(message.replyToMessage) && (
-                                                    <img
-                                                        src={message.replyToMessage.image}
-                                                        alt="Thumbnail"
-                                                        className="w-8 h-8 rounded object-cover"
-                                                        loading="lazy"
-                                                        onLoad={handleImageLoad}
-                                                    />
+                                                    <div className="w-10 h-10 shrink-0 relative bg-base-300 rounded overflow-hidden ml-2">
+                                                        <img
+                                                            src={message.replyToMessage.image}
+                                                            alt="Thumbnail"
+                                                            className="absolute inset-0 w-full h-full object-cover"
+                                                            loading="lazy"
+                                                            onLoad={handleImageLoad}
+                                                        />
+                                                    </div>
                                                 )}
-                                                <p className="text-xs opacity-70 truncate max-w-[150px]">
-                                                    {message.replyToMessage.text ||
-                                                        (message.replyToMessage.image ? "Photo" : "")}
-                                                </p>
                                             </div>
-                                        </div>
-                                    )}
-                                    {message.isForwarded && (
-                                        <div className={`flex items-center gap-1 text-xs mb-1.5 ${isMyMessage ? "text-primary-content/70" : "text-base-content/50"}`}>
-                                            <Forward className="w-3 h-3" />
-                                            <span className="italic">Forwarded</span>
-                                        </div>
-                                    )}
-                                    {message.image && (
-                                        <img
-                                            src={message.image}
-                                            alt="Attachment"
-                                            loading="lazy"
-                                            decoding="async"
-                                            className={`rounded-lg mb-2 max-w-xs ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
-                                            onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
-                                            onLoad={handleImageLoad}
-                                        />
-                                    )}
-                                    {message.video && (
-                                        <VideoMessage
-                                            video={message.video}
-                                            thumbnail={message.videoThumbnail}
-                                            duration={message.videoDuration}
-                                            isMyMessage={isMyMessage}
-                                        />
-                                    )}
-                                    {message.audio && (
-                                        <VoiceMessagePlayer
-                                            audioUrl={message.audio}
-                                            isMyMessage={isMyMessage}
-                                        />
-                                    )}
-                                    {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
-                                        <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
-                                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
-                                            <div className="space-y-2">
-                                                {message.poll.options.map((opt, i) => {
-                                                    const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
-                                                    const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
-                                                    const isVoted = opt.votes?.includes(authUser._id) || false;
-                                                    return (
-                                                        <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
-                                                            <div className="flex justify-between text-xs mb-1 font-medium">
-                                                                <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
-                                                                <span>{percent}%</span>
-                                                            </div>
-                                                            <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
-                                                                <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                        )}
+
+                                        {message.isForwarded && (
+                                            <div className={`flex items-center gap-1 text-[11px] mb-1 opacity-70 ${isMyMessage ? "text-primary-content" : "text-base-content"}`}>
+                                                <Forward className="w-3 h-3" />
+                                                <span className="italic">Forwarded</span>
                                             </div>
-                                            <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
-                                        </div>
-                                    )}
-                                    {message.text && !message.audio && (
-                                        <div className="relative">
-                                            {message.isForwarded && (
-                                                <div className="forwarded-badge mb-1 text-[11px] opacity-70 flex items-center gap-1"><Forward className="w-3 h-3" /><span>Forwarded</span></div>
-                                            )}
-                                            <div className="relative px-0.5 pb-0.5">
-                                                {editingMessageId === message._id ? (
-                                                    <MessageEditField
-                                                        initialText={message.text}
-                                                        onSave={(newText) => {
-                                                            editGroupMessage(selectedGroup._id, message._id, newText);
-                                                            setEditingMessageId(null);
-                                                        }}
-                                                        onCancel={() => setEditingMessageId(null)}
-                                                        isMyMessage={isMyMessage}
-                                                    />
-                                                ) : (
-                                                    <>
-                                                        <p className="text-[15px] md:text-base whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] leading-[1.3]">
+                                        )}
+
+                                        {message.image && (
+                                            <img
+                                                src={message.image}
+                                                alt="Attachment"
+                                                loading="lazy"
+                                                decoding="async"
+                                                className={`rounded-xl mb-2 max-w-[200px] md:max-w-[280px] ${message.image.toLowerCase().includes('.gif') ? '' : 'cursor-pointer hover:opacity-90'} transition-opacity`}
+                                                onClick={() => !message.image.toLowerCase().includes('.gif') && setPreviewImage(message.image)}
+                                                onLoad={handleImageLoad}
+                                            />
+                                        )}
+
+                                        {message.video && (
+                                            <VideoMessage
+                                                video={message.video}
+                                                thumbnail={message.videoThumbnail}
+                                                duration={message.videoDuration}
+                                                isMyMessage={isMyMessage}
+                                            />
+                                        )}
+
+                                        {message.audio && (
+                                            <VoiceMessagePlayer
+                                                audioUrl={message.audio}
+                                                isMyMessage={isMyMessage}
+                                            />
+                                        )}
+
+                                        {message.poll && message.poll.question && message.poll.options && Array.isArray(message.poll.options) && message.poll.options.length > 0 && (
+                                            <div className="bg-base-100/10 p-3 rounded-xl my-1 w-full min-w-[220px] md:min-w-[260px] border border-base-content/10">
+                                                <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">{message.poll.question}</h4>
+                                                <div className="space-y-2">
+                                                    {message.poll.options.map((opt, i) => {
+                                                        const totalVotes = message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0);
+                                                        const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
+                                                        const isVoted = opt.votes?.includes(authUser._id) || false;
+                                                        return (
+                                                            <div key={i} className="relative cursor-pointer group" onClick={() => votePoll(message._id, i)}>
+                                                                <div className="flex justify-between text-xs mb-1 font-medium">
+                                                                    <span className={isVoted ? 'text-secondary' : ''}>{opt.text} {isVoted && '✓'}</span>
+                                                                    <span>{percent}%</span>
+                                                                </div>
+                                                                <div className="w-full h-2 bg-base-100/20 rounded-full overflow-hidden">
+                                                                    <div className={`h-full transition-all duration-500 ease-out ${isVoted ? 'bg-secondary' : 'bg-base-content/50'}`} style={{ width: `${percent}%` }}></div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="mt-3 text-xs opacity-60 flex justify-between"><span>{message.poll.options.reduce((acc, o) => acc + (o.votes?.length || 0), 0)} votes</span><span>Poll</span></div>
+                                            </div>
+                                        )}
+
+                                        {message.text && !message.audio && (
+                                            <div className="relative">
+                                                <div className="relative px-0.5 pb-0.5">
+                                                    {editingMessageId === message._id ? (
+                                                        <MessageEditField
+                                                            initialText={message.text}
+                                                            onSave={(newText) => {
+                                                                editGroupMessage(selectedGroup._id, message._id, newText);
+                                                                setEditingMessageId(null);
+                                                            }}
+                                                            onCancel={() => setEditingMessageId(null)}
+                                                            isMyMessage={isMyMessage}
+                                                        />
+                                                    ) : (
+                                                        <p className="text-[14.5px] sm:text-[15px] leading-[1.35] whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] text-left">
                                                             {searchQuery
                                                                 ? highlightText(message.text, searchQuery, searchActiveId === message._id)
                                                                 : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
-                                                            <span className={`inline-block h-1 ${message.isEdited ? 'w-[125px] md:w-[130px]' : 'w-[70px] md:w-[75px]'}`}></span>
+                                                            <span className={`inline-block h-0 select-none pointer-events-none ${isMyMessage ? (message.isEdited ? 'w-[105px]' : 'w-[68px]') : (message.isEdited ? 'w-[90px]' : 'w-[52px]')}`} aria-hidden="true"></span>
                                                         </p>
-                                                    </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Bottom Right Timestamp */}
+                                        {editingMessageId !== message._id && (
+                                            <div className={`absolute bottom-1 right-2 flex items-center gap-1 text-[10.5px] select-none pointer-events-none ${isMyMessage ? (isWhatsApp ? 'text-[#111b21]/60' : 'text-primary-content/75') : 'text-base-content/60'} leading-none`}>
+                                                {message.isEdited && <span className="mr-0.5 opacity-80 italic">Edited</span>}
+                                                <span>{formatMessageTime(message.createdAt)}</span>
+                                                {isMyMessage && (
+                                                    <span className="flex items-center ml-0.5">
+                                                        {message.status === "pending" || message.pending || message.isOptimistic ? (
+                                                            <Clock className="w-3 h-3 opacity-50" />
+                                                        ) : message.status === "read" ? (
+                                                            <CheckCheck className="w-[15px] h-[15px] text-sky-300" />
+                                                        ) : message.status === "delivered" ? (
+                                                            <CheckCheck className="w-[15px] h-[15px] opacity-80" />
+                                                        ) : (
+                                                            <Check className="w-[15px] h-[15px] opacity-80" />
+                                                        )}
+                                                    </span>
                                                 )}
                                             </div>
-                                        </div>
-                                    )}
-                                    <div
-                                        className={`flex items-center justify-end gap-1 mt-1 ${
-                                            isMyMessage ? "text-primary-content/70" : "text-base-content/50"
-                                        }`}
-                                    >
-                                        {message.isEdited && (
-                                            <span className="text-[10px] leading-none opacity-70 italic mr-0.5">
-                                                Edited
-                                            </span>
                                         )}
-                                        <time className="text-[10px] leading-none">
-                                            {formatMessageTime(message.createdAt)}
-                                        </time>
-                                        {isMyMessage && (
-                                            <span className="inline-flex items-center status-container">
-                                                {message.status === "pending" || message.pending || message.isOptimistic ? (
-                                                    <Clock className="w-3.5 h-3.5 opacity-70" />
-                                                ) : message.status === "read" ? (
-                                                    <CheckCheck className="w-3.5 h-3.5 tick-read message-status-icon text-sky-300" />
-                                                ) : message.status === "delivered" ? (
-                                                    <CheckCheck className="w-3.5 h-3.5 tick-delivered message-status-icon opacity-80" />
-                                                ) : (
-                                                    <Check className="w-3.5 h-3.5 tick-sent message-status-icon opacity-80" />
-                                                )}
-                                            </span>
-                                        )}
-                                    </div>
                                     </>
-                                    )}
-                                </div>
-                                <MessageMenuTrigger
-                                    isMine={isMyMessage}
-                                    onOpen={(el) => openMessageMenu(message._id, el)}
-                                />
-                            </SwipeableMessageBubble>
-                        </div>
+                                )}
+                            </div>
+                            <MessageMenuTrigger
+                                isMine={isMyMessage}
+                                onOpen={(el) => openMessageMenu(message._id, el)}
+                            />
+                        </SwipeableMessageBubble>
                     </div>
                 </div>
             </div>

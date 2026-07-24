@@ -145,7 +145,7 @@ export default function SwipeableMessageBubble({
 
   return (
     <div
-      className={`swipeable-message relative inline-block w-fit max-w-[min(85vw,28rem)] align-bottom ${className}`}
+      className={`swipeable-message relative flex flex-col w-full max-w-full ${className}`}
     >
       <span
         data-swipe-reply-icon
@@ -173,7 +173,7 @@ export default function SwipeableMessageBubble({
 
       <div
         ref={bubbleRef}
-        className="relative z-[1] w-fit max-w-full will-change-transform select-none"
+        className="relative z-[1] w-full max-w-full will-change-transform select-none flex flex-col"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={finishTouch}
