@@ -8,6 +8,7 @@ import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime, formatDateSeparator, getMessageDateKey } from "../lib/utils";
 import { sortMessages } from "../lib/messageSync";
 import defaultAvatar from "../public/avatar.png";
+import { useGroupVibeStore } from "../store/useGroupVibeStore";
 import { Trash2, Forward, Search, Users, X, Download, ZoomIn, ZoomOut, Check, CheckCheck, Clock, ChevronDown } from "lucide-react";
 import { formatGroupTypingLabel, formatGroupRecordingLabel } from "../lib/groupPresence";
 import toast from "react-hot-toast";
@@ -582,6 +583,12 @@ const GroupChatContainer = () => {
                                             }`}
                                             onClick={(e) => {
                                                 e.stopPropagation();
+                                                const vibeId = message.replyToMessage?.vibeId;
+                                                const isVibeReply = vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"));
+                                                if (isVibeReply) {
+                                                    useGroupVibeStore.getState().openViewer(selectedGroup._id, vibeId || null);
+                                                    return;
+                                                }
                                                 const replyId = message.replyTo;
                                                 const idx = sortedGroupMessages.findIndex(m => String(m.realId || m._id) === String(replyId));
                                                 if (idx !== -1) {

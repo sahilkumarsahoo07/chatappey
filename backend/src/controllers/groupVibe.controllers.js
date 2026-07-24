@@ -590,6 +590,7 @@ export const replyToGroupVibe = async (req, res) => {
       messageType: "text",
       text: text.trim(),
       replyToMessage: {
+        vibeId: vibe ? vibe._id : vibeId,
         text: isAvailable ? `Replying to ${vibe.creatorId?.fullName || "Member"}'s Vibe` : "This Vibe is no longer available.",
         senderName: vibe?.creatorId?.fullName || "Group Vibe",
         image: vibe?.thumbnailUrl || vibe?.mediaUrl || undefined,

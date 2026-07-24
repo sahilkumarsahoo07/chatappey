@@ -1,4 +1,5 @@
 import { useChatStore } from "../store/useChatStore";
+import { useGroupVibeStore } from "../store/useGroupVibeStore";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -506,6 +507,14 @@ const ChatContainer = () => {
                         className={`mb-1.5 flex overflow-hidden rounded-lg transition-colors cursor-pointer relative border-l-[4px] ${message.senderId === authUser._id ? 'bg-primary-content/10 hover:bg-primary-content/20 border-primary-content/50' : 'bg-base-content/5 hover:bg-base-content/10 border-primary'}`}
                         onClick={(e) => {
                           e.stopPropagation();
+                          const vibeId = message.replyToMessage?.vibeId;
+                          if (vibeId || (message.replyToMessage?.text && message.replyToMessage.text.includes("Vibe"))) {
+                            const targetGroupId = message.replyToMessage?.groupId || message.groupId;
+                            if (targetGroupId) {
+                              useGroupVibeStore.getState().openViewer(targetGroupId, vibeId || null);
+                              return;
+                            }
+                          }
                           const element = document.getElementById(`msg-${message.replyTo}`);
                           if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });

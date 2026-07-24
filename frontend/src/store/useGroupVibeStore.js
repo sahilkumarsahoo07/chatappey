@@ -356,15 +356,63 @@ export const useGroupVibeStore = create((set, get) => ({
     }
   },
 
-  // Reply to Vibe in Group Chat
+  openViewer: async (groupId, vibeId = null) => {
+    if (!groupId) return;
+    let vibes = get().groupVibesMap[groupId];
+    if (!vibes || vibes.length === 0) {
+      vibes = await get().fetchGroupVibes(groupId);
+    }
+    let targetIndex = 0;
+    if (vibeId && vibes && vibes.length > 0) {
+      const idx = vibes.findIndex((v) => String(v._id) === String(vibeId));
+      if (idx !== -1) {
+        targetIndex = idx;
+      } else {
+        toast("This Vibe is no longer active", { icon: "⌛" });
+      }
+    }
+    get().setViewerOpen(true, groupId, targetIndex);
+  },
+
+  // Reply to Vibe in Group Chat (Optimistic & High-Performance)
   replyToVibe: async (groupId, vibeId, text) => {
+    if (!groupId || !vibeId || !text || !text.trim()) return;
+
+    const vibes = get().groupVibesMap[groupId] || [];
+    const currentVibe = vibes.find((v) => String(v._id) === String(vibeId));
+
+    const replyToMessageData = {
+      vibeId,
+      text: currentVibe
+        ? `Replying to ${currentVibe.creator?.fullName || currentVibe.creatorId?.fullName || "Member"}'s Vibe`
+        : "Replying to Group Vibe",
+      senderName: currentVibe?.creator?.fullName || currentVibe?.creatorId?.fullName || "Group Vibe",
+      image: currentVibe?.thumbnailUrl || currentVibe?.mediaUrl || undefined,
+    };
+
+    // Optimistically push into group chat store
     try {
-      const data = await replyToGroupVibeApi(groupId, vibeId, text);
-      toast.success("Replied in group chat! 💬");
-      return data;
+      const { useGroupStore } = await import("./useGroupStore");
+      const groupStore = useGroupStore.getState();
+      if (groupStore?.sendGroupMessage) {
+        groupStore.sendGroupMessage(
+          {
+            text: text.trim(),
+            replyToMessage: replyToMessageData,
+          },
+          groupId
+        );
+      }
+    } catch (err) {
+      console.warn("Optimistic vibe reply dispatch error:", err);
+    }
+
+    toast.success("Replied in group chat! 💬");
+
+    try {
+      return await replyToGroupVibeApi(groupId, vibeId, text);
     } catch (e) {
-      toast.error("Failed to send reply");
-      throw e;
+      console.warn("replyToVibe background API error:", e);
     }
   },
 

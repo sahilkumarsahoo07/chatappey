@@ -84,6 +84,10 @@ const groupMessageSchema = new mongoose.Schema(
         ref: "User",
       },
       senderName: String,
+      vibeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "GroupVibe",
+      },
     },
     clientMessageId: { type: String, default: null },
     mentions: [
