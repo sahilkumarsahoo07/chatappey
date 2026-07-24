@@ -227,13 +227,36 @@ function StatusViewer() {
     };
   }, [status?._id, status?.mediaUrl, status?.mediaType, isMusicOnly]);
 
-  // Record unique view
+  const viewTimerRef = useRef(null);
+
+  // Record unique view (requires minimum 1.5 seconds of active visibility & ready media)
   useEffect(() => {
-    if (!status?._id || isOwn) return;
+    if (!status?._id || isOwn || !isViewerOpen) return;
     if (viewedSet.current.has(status._id)) return;
-    viewedSet.current.add(status._id);
-    markViewed(status._id);
-  }, [status?._id, isOwn, markViewed]);
+
+    if (!mediaReady || paused || showViewersPanel) {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+        viewTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Require 1.5s active continuous viewing before recording view
+    viewTimerRef.current = setTimeout(() => {
+      if (status?._id && !viewedSet.current.has(status._id)) {
+        viewedSet.current.add(status._id);
+        markViewed(status._id);
+      }
+    }, 1500);
+
+    return () => {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+        viewTimerRef.current = null;
+      }
+    };
+  }, [status?._id, isOwn, isViewerOpen, mediaReady, paused, showViewersPanel, markViewed]);
 
   // Preload next story media
   useEffect(() => {

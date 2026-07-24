@@ -255,13 +255,19 @@ export const useStatusStore = create((set, get) => ({
     });
   },
 
-  applyStatusViewed: ({ statusId, viewerCount, viewer }) => {
+  applyStatusViewed: (payload) => {
+    if (!payload) return;
+    const statusId = payload.storyId || payload.statusId;
     if (!statusId) return;
+
+    const viewerCount = payload.viewerCount;
+    const viewer = payload.viewer;
+
     set((state) => {
       const feed = state.feed.map((g) => ({
         ...g,
         statuses: g.statuses.map((s) =>
-          s._id === statusId
+          String(s._id) === String(statusId)
             ? { ...s, viewerCount: viewerCount ?? s.viewerCount }
             : s
         ),
@@ -270,19 +276,19 @@ export const useStatusStore = create((set, get) => ({
       const viewerGroups = state.viewerGroups.map((g) => ({
         ...g,
         statuses: g.statuses.map((s) =>
-          s._id === statusId
+          String(s._id) === String(statusId)
             ? { ...s, viewerCount: viewerCount ?? s.viewerCount }
             : s
         ),
       }));
 
       let viewersList = state.viewersList;
-      if (
-        state.showViewersPanel &&
-        viewer?.user &&
-        !viewersList.some((v) => v.user?._id === viewer.user._id)
-      ) {
-        viewersList = [viewer, ...viewersList];
+      if (viewer?.user && viewer.user._id) {
+        const vUid = String(viewer.user._id);
+        const filtered = viewersList.filter((v) => String(v.user?._id) !== vUid);
+        viewersList = [viewer, ...filtered].sort(
+          (a, b) => new Date(b.viewedAt) - new Date(a.viewedAt)
+        );
       }
 
       return { feed, viewerGroups, viewersList };
@@ -589,6 +595,7 @@ export const useStatusStore = create((set, get) => ({
     if (boundSocketId && socket.id !== boundSocketId) {
       socket.off("status:created");
       socket.off("status:deleted");
+      socket.off("story:viewed");
       socket.off("status:viewed");
       socket.off("status:liked");
       socket.off("status:reacted");
@@ -667,7 +674,12 @@ export const useStatusStore = create((set, get) => ({
               ...reactionsList,
             ].sort((a, b) => new Date(b.reactedAt) - new Date(a.reactedAt));
           }
-          return { reactionsList };
+          const viewersList = state.viewersList.map((v) =>
+            String(v.user?._id) === uid
+              ? { ...v, reaction: payload.myReaction }
+              : v
+          );
+          return { reactionsList, viewersList };
         });
       }
     };
@@ -681,12 +693,14 @@ export const useStatusStore = create((set, get) => ({
 
     socket.off("status:created");
     socket.off("status:deleted");
+    socket.off("story:viewed");
     socket.off("status:viewed");
     socket.off("status:liked");
     socket.off("status:reacted");
     socket.off("status:commented");
     socket.on("status:created", onCreated);
     socket.on("status:deleted", onDeleted);
+    socket.on("story:viewed", onViewed);
     socket.on("status:viewed", onViewed);
     socket.on("status:liked", onLiked);
     socket.on("status:reacted", onReacted);
@@ -703,6 +717,7 @@ export const useStatusStore = create((set, get) => ({
     if (!socket) return;
     socket.off("status:created");
     socket.off("status:deleted");
+    socket.off("story:viewed");
     socket.off("status:viewed");
     socket.off("status:liked");
     socket.off("status:reacted");

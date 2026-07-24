@@ -109,22 +109,27 @@ function buildAnalytics(viewers, likes, reactions, comments) {
  */
 const StatusInsightsSheet = memo(function StatusInsightsSheet({
   open,
+  isOpen,
   tab,
   onTabChange,
   onClose,
   loading,
-  viewers,
-  likes,
-  reactions,
-  comments,
+  viewers = [],
+  likes = [],
+  reactions = [],
+  comments = [],
   onDeleteComment,
+  onRemoveComment,
 }) {
+  const isSheetOpen = open ?? isOpen ?? false;
+  const handleDeleteComment = onDeleteComment || onRemoveComment;
+
   const analytics = useMemo(
     () => buildAnalytics(viewers, likes, reactions, comments),
     [viewers, likes, reactions, comments]
   );
 
-  if (!open) return null;
+  if (!isSheetOpen) return null;
 
   const counts = {
     overview: 0,
@@ -199,7 +204,9 @@ const StatusInsightsSheet = memo(function StatusInsightsSheet({
                   key: v.user._id,
                   user: v.user,
                   sub: formatStatusTime(v.viewedAt),
-                  trailing: null,
+                  trailing: v.reaction ? (
+                    <span className="text-xl leading-none animate-bounce">{v.reaction}</span>
+                  ) : null,
                 }))}
               />
             )
@@ -232,7 +239,7 @@ const StatusInsightsSheet = memo(function StatusInsightsSheet({
           ) : comments.length === 0 ? (
             <EmptyState text="No comments yet" />
           ) : (
-            <CommentsList comments={comments} onDeleteComment={onDeleteComment} />
+            <CommentsList comments={comments} onDeleteComment={handleDeleteComment} />
           )}
         </div>
       </motion.div>
@@ -296,7 +303,9 @@ function OverviewPanel({ analytics, onTabChange }) {
               key: v.user._id,
               user: v.user,
               sub: formatStatusTime(v.viewedAt),
-              trailing: null,
+              trailing: v.reaction ? (
+                <span className="text-xl leading-none">{v.reaction}</span>
+              ) : null,
             }))}
           />
         </section>
@@ -362,7 +371,15 @@ function StatCard({ label, value, onClick }) {
       whileTap={{ scale: 0.97 }}
     >
       <p className="text-[10px] uppercase tracking-wide text-base-content/45 font-bold">{label}</p>
-      <p className="text-2xl font-bold tabular-nums mt-0.5">{value}</p>
+      <motion.p
+        key={value}
+        initial={{ scale: 1.2, opacity: 0.8 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+        className="text-2xl font-bold tabular-nums mt-0.5"
+      >
+        {value}
+      </motion.p>
     </motion.button>
   );
 }
@@ -414,17 +431,23 @@ function EmptyState({ text }) {
 
 function UserList({ items }) {
   return (
-    <ul className="space-y-0.5">
+    <ul className="space-y-0.5 divide-y divide-base-200/40">
       {items.map((item) => (
-        <li key={item.key} className="flex items-center gap-3 py-2.5 px-1">
+        <li key={item.key} className="flex items-center gap-3 py-2.5 px-1 first:pt-1">
           <img
             src={item.user.profilePic || defaultImg}
             alt=""
             className="w-11 h-11 rounded-full object-cover ring-1 ring-base-300/50 shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm truncate">{item.user.fullName || "User"}</p>
-            <p className="text-xs text-base-content/45">{item.sub}</p>
+            <p className="font-semibold text-sm truncate text-base-content">{item.user.fullName || "User"}</p>
+            <div className="flex items-center gap-1.5">
+              {item.user.username && (
+                <span className="text-xs text-base-content/50 font-normal truncate">@{item.user.username}</span>
+              )}
+              {item.user.username && <span className="text-xs text-base-content/30">•</span>}
+              <p className="text-xs text-base-content/45">{item.sub}</p>
+            </div>
           </div>
           {item.trailing}
         </li>

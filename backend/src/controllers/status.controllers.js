@@ -726,36 +726,73 @@ export const viewStatus = async (req, res) => {
       return res.status(403).json({ error: "Not allowed" });
     }
 
-    const already = status.viewers.some((v) => v.userId.toString() === myId.toString());
-    if (!already) {
-      status.viewers.push({ userId: myId, viewedAt: new Date() });
-      await status.save();
+    const alreadyIndex = status.viewers.findIndex((v) => v.userId.toString() === myId.toString());
+    const now = new Date();
 
-      // Notify status owner live (viewer count / list)
-      const ownerSocketId = getReceiverSocketId(status.userId.toString());
-      if (ownerSocketId) {
-        const viewerUser = await User.findById(myId).select("fullName profilePic").lean();
-        io.to(ownerSocketId).emit("status:viewed", {
-          statusId: status._id,
-          viewerCount: status.viewers.length,
-          viewer: viewerUser
-            ? {
-                user: {
-                  _id: viewerUser._id,
-                  fullName: viewerUser.fullName,
-                  profilePic: viewerUser.profilePic || "",
-                },
-                viewedAt: new Date(),
-              }
-            : null,
-        });
-      }
+    if (alreadyIndex >= 0) {
+      // Update last viewed time if already exists
+      status.viewers[alreadyIndex].viewedAt = now;
+      await status.save();
+      return res.status(200).json({
+        viewed: true,
+        viewerCount: status.viewers.length,
+        duplicate: true,
+      });
+    }
+
+    // New unique view
+    status.viewers.push({ userId: myId, viewedAt: now });
+    await status.save();
+
+    // Check if viewer has a reaction on this status
+    const existingReaction = (status.reactions || []).find(
+      (r) => (r.userId?._id || r.userId)?.toString() === myId.toString()
+    );
+
+    // Notify status owner live via socket.io (ONLY owner receives this!)
+    const ownerIdStr = status.userId.toString();
+    const ownerSocketId = getReceiverSocketId(ownerIdStr);
+
+    if (ownerSocketId) {
+      const viewerUser = await User.findById(myId)
+        .select("fullName username profilePic")
+        .lean();
+
+      const viewerData = viewerUser
+        ? {
+            user: {
+              _id: viewerUser._id.toString(),
+              fullName: viewerUser.fullName,
+              username: viewerUser.username || "",
+              profilePic: viewerUser.profilePic || "",
+            },
+            viewedAt: now.toISOString(),
+            reaction: existingReaction ? existingReaction.emoji : null,
+          }
+        : null;
+
+      const viewPayload = {
+        storyId: status._id.toString(),
+        statusId: status._id.toString(),
+        viewerId: myId.toString(),
+        viewerName: viewerUser?.fullName || "User",
+        viewerUsername: viewerUser?.username || "",
+        viewerAvatar: viewerUser?.profilePic || "",
+        viewedAt: now.toISOString(),
+        storyOwnerId: ownerIdStr,
+        viewerCount: status.viewers.length,
+        viewer: viewerData,
+      };
+
+      // Emit both story:viewed and status:viewed strictly to story owner
+      io.to(ownerSocketId).emit("story:viewed", viewPayload);
+      io.to(ownerSocketId).emit("status:viewed", viewPayload);
     }
 
     return res.status(200).json({
       viewed: true,
       viewerCount: status.viewers.length,
-      duplicate: already,
+      duplicate: false,
     });
   } catch (error) {
     console.error("viewStatus:", error.message);
@@ -774,7 +811,7 @@ export const getStatusViewers = async (req, res) => {
     }
 
     const status = await Status.findById(id)
-      .populate("viewers.userId", "fullName profilePic")
+      .populate("viewers.userId", "fullName username profilePic")
       .lean();
 
     if (!status) return res.status(404).json({ error: "Status not found" });
@@ -782,15 +819,24 @@ export const getStatusViewers = async (req, res) => {
       return res.status(403).json({ error: "Only the owner can see viewers" });
     }
 
+    const reactionMap = new Map(
+      (status.reactions || []).map((r) => [
+        (r.userId?._id || r.userId).toString(),
+        r.emoji,
+      ])
+    );
+
     const viewers = (status.viewers || [])
       .filter((v) => v.userId)
       .map((v) => ({
         user: {
           _id: v.userId._id,
           fullName: v.userId.fullName,
+          username: v.userId.username || "",
           profilePic: v.userId.profilePic || "",
         },
         viewedAt: v.viewedAt,
+        reaction: reactionMap.get(v.userId._id.toString()) || null,
       }))
       .sort((a, b) => new Date(b.viewedAt) - new Date(a.viewedAt));
 

@@ -1,19 +1,25 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, AtSign, Check, X, UserCheck } from "lucide-react";
-import { useUserStore } from "../../store/useUserStore";
+import { useChatStore } from "../../store/useChatStore";
 import { useAuthStore } from "../../store/useAuthStore";
 
 export default function StoryMentionPicker({ selectedMentions = [], onSelectUser, onClose }) {
   const { authUser } = useAuthStore();
-  const { users } = useUserStore();
+  const { users = [], getUsers } = useChatStore();
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (!users || users.length === 0) {
+      getUsers();
+    }
+  }, [users, getUsers]);
 
   // Instant local filtering of friends / users
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^@/, "");
-    if (!q) return users.filter(u => u._id !== authUser?._id);
+    if (!q) return (users || []).filter((u) => u._id !== authUser?._id);
 
-    return users.filter((u) => {
+    return (users || []).filter((u) => {
       if (u._id === authUser?._id) return false;
       const nameMatch = u.fullName?.toLowerCase().includes(q);
       const unameMatch = u.username?.toLowerCase().includes(q);
