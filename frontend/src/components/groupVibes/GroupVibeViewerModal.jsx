@@ -193,7 +193,7 @@ export const GroupVibeViewerModal = () => {
     durationSec,
   ]);
 
-  // --- KEYBOARD SHORTCUTS ---
+  // --- KEYBOARD SHORTCUTS & WINDOW FOCUS AUTO-RESUME ---
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isViewerOpen) return;
@@ -205,9 +205,20 @@ export const GroupVibeViewerModal = () => {
         setViewerOpen(false);
       }
     };
+
+    const handleFocus = () => {
+      if (isViewerOpen && currentVibe?.music && !isMuted && !isPaused && !viewersDrawerOpen) {
+        audioManager.resume();
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isViewerOpen, nextVibe, prevVibe, setViewerOpen]);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isViewerOpen, nextVibe, prevVibe, setViewerOpen, currentVibe?.music, isMuted, isPaused, viewersDrawerOpen]);
 
   if (!isViewerOpen || !currentVibe) return null;
 
@@ -256,17 +267,6 @@ export const GroupVibeViewerModal = () => {
     // Swipe down > 80px to close
     if (diffY > 80) {
       setViewerOpen(false);
-      return;
-    }
-
-    // Tap left/right 30% boundaries
-    const screenWidth = window.innerWidth;
-    const clickX = e.changedTouches[0].clientX;
-
-    if (clickX < screenWidth * 0.35) {
-      prevVibe();
-    } else if (clickX > screenWidth * 0.65) {
-      nextVibe();
     }
   };
 
@@ -277,10 +277,52 @@ export const GroupVibeViewerModal = () => {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
+        {/* Left Chevron Button (Previous Vibe / Group) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            prevVibe();
+          }}
+          className="hidden sm:flex absolute -left-16 top-1/2 -translate-y-1/2 z-40 p-3.5 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95 border border-white/20 shadow-2xl group cursor-pointer"
+          title="Previous Story"
+        >
+          <ChevronLeft className="w-6 h-6 transition-transform group-hover:-translate-x-0.5" />
+        </button>
+
+        {/* Right Chevron Button (Next Vibe / Group) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            nextVibe();
+          }}
+          className="hidden sm:flex absolute -right-16 top-1/2 -translate-y-1/2 z-40 p-3.5 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-all hover:scale-110 active:scale-95 border border-white/20 shadow-2xl group cursor-pointer"
+          title="Next Story"
+        >
+          <ChevronRight className="w-6 h-6 transition-transform group-hover:translate-x-0.5" />
+        </button>
+
         {/* ==================================================================== */}
         {/* 1. MEDIA CANVAS CONTAINER */}
         {/* ==================================================================== */}
         <div className="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-slate-900">
+          {/* Interactive Tap Zones for Direct Desktop & Mobile Click Navigation */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-1/3 z-20 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              prevVibe();
+            }}
+          />
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1/3 z-20 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              nextVibe();
+            }}
+          />
+
           {/* Media Content rendering based on mediaType */}
           {currentVibe.mediaType === "photo" && currentVibe.mediaUrl && (
             <img

@@ -19,7 +19,10 @@ class AudioManager {
 
   handleVisibilityChange() {
     if (document.hidden) {
+      this.wasPlayingBeforeHide = Boolean(this.currentAudio && !this.currentAudio.paused);
       this.pauseAll();
+    } else if (this.wasPlayingBeforeHide) {
+      this.resume();
     }
   }
 

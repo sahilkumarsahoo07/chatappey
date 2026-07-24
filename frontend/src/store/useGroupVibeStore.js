@@ -92,6 +92,14 @@ export const useGroupVibeStore = create((set, get) => ({
       get().setActiveVibeIndex(activeVibeIndex + 1);
       return true;
     } else {
+      // Auto advance to next group's story if available
+      const groupIds = Object.keys(groupVibesMap).filter((gid) => (groupVibesMap[gid] || []).length > 0);
+      const currentIdx = groupIds.indexOf(activeViewerGroupId);
+      if (currentIdx !== -1 && currentIdx < groupIds.length - 1) {
+        const nextGid = groupIds[currentIdx + 1];
+        get().setViewerOpen(true, nextGid, 0);
+        return true;
+      }
       get().setViewerOpen(false);
       return false;
     }
@@ -103,6 +111,17 @@ export const useGroupVibeStore = create((set, get) => ({
     if (activeVibeIndex > 0) {
       get().setActiveVibeIndex(activeVibeIndex - 1);
       return true;
+    } else {
+      // Auto rewind to previous group's last story if available
+      const groupIds = Object.keys(groupVibesMap).filter((gid) => (groupVibesMap[gid] || []).length > 0);
+      const currentIdx = groupIds.indexOf(activeViewerGroupId);
+      if (currentIdx > 0) {
+        const prevGid = groupIds[currentIdx - 1];
+        const prevVibes = groupVibesMap[prevGid] || [];
+        const lastIdx = Math.max(0, prevVibes.length - 1);
+        get().setViewerOpen(true, prevGid, lastIdx);
+        return true;
+      }
     }
     return false;
   },
