@@ -469,7 +469,7 @@ const ChatContainer = () => {
               }
               onDoubleTap={() => sendReaction(message._id, "❤️")}
             >
-              <div className={`flex flex-col relative w-fit max-w-full px-3 pt-1.5 pb-2.5 min-w-[85px] shadow-sm ${bubbleBgColor}
+              <div className={`flex flex-col relative w-fit max-w-[78%] sm:max-w-[75%] px-3 pt-1.5 pb-2.5 min-w-[85px] shadow-sm ${bubbleBgColor}
               ${isLastInGroup ? 'chat-bubble-wa' : ''}
               ${!isMyMessage && !isWhatsApp ? 'border border-base-content/5' : ''}
               ${message.status === 'scheduled' ? 'opacity-70 border-dashed border-2' : ''}`}
@@ -662,7 +662,7 @@ const ChatContainer = () => {
                             />
                           ) : (
                             <>
-                              <p className="text-[15px] md:text-base whitespace-pre-wrap leading-[1.3]">
+                              <p className="text-[15px] md:text-base whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] leading-[1.3]">
                                 {parseMessageText(message.text, searchQuery, searchActiveId === message._id)}
                                 {/* Inline spacer to let time wrap nicely if short text */}
                                 <span className={`inline-block h-1 ${message.isEdited ? 'w-[125px] md:w-[130px]' : 'w-[70px] md:w-[75px]'}`}></span>

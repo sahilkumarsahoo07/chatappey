@@ -85,7 +85,7 @@ export const GroupVibeViewerModal = () => {
     }
   }, [isViewerOpen, activeViewerGroupId, activeVibeIndex, vibes]);
 
-  // --- AUDIO & PROGRESS SYNCHRONIZATION ENGINE ---
+  // --- AUDIO PLAYBACK ENGINE ---
   useEffect(() => {
     if (!isViewerOpen || !currentVibe) {
       audioManager.stop();
@@ -94,9 +94,6 @@ export const GroupVibeViewerModal = () => {
 
     setProgress(0);
     setIsBuffering(false);
-
-    let progressInterval = null;
-    let audioStarted = false;
 
     // Handle music playback
     if (currentVibe?.music && !isMuted) {
@@ -134,7 +131,6 @@ export const GroupVibeViewerModal = () => {
           clipDuration: clipDuration,
           onPlaying: () => {
             setIsBuffering(false);
-            audioStarted = true;
           },
           onWaiting: () => {
             setIsBuffering(true);
@@ -144,7 +140,6 @@ export const GroupVibeViewerModal = () => {
               startPlayback(fallbackUrl, true);
             } else {
               setIsBuffering(false);
-              audioStarted = true; // allow story to proceed silently if audio fails
             }
           },
         });
@@ -153,20 +148,37 @@ export const GroupVibeViewerModal = () => {
       startPlayback(primaryUrl, false);
     } else {
       audioManager.stop();
-      audioStarted = true; // No music, start progress timer right away
     }
 
-    // --- Story Timer Engine (Updates progress only when NOT buffering and NOT paused) ---
+    return () => {
+      audioManager.stop();
+    };
+  }, [
+    isViewerOpen,
+    activeViewerGroupId,
+    activeVibeIndex,
+    currentVibe?._id,
+    isMuted,
+  ]);
+
+  // --- AUDIO PAUSE / RESUME SYNC ---
+  useEffect(() => {
+    if (!currentVibe?.music || isMuted) return;
+    if (isPaused || viewersDrawerOpen) {
+      audioManager.pause();
+    } else if (isViewerOpen) {
+      audioManager.resume();
+    }
+  }, [isViewerOpen, isMuted, isPaused, viewersDrawerOpen, currentVibe?.music]);
+
+  // --- STORY PROGRESS TIMER ENGINE ---
+  useEffect(() => {
+    if (!isViewerOpen || !currentVibe) return;
+
     const totalMs = durationSec * 1000;
 
-    progressInterval = setInterval(() => {
-      if (isPaused || viewersDrawerOpen) return;
-
-      // Wait if media/audio is buffering
-      if (currentVibe?.music && !isMuted && !audioStarted) {
-        setIsBuffering(true);
-        return;
-      }
+    const progressInterval = setInterval(() => {
+      if (isPaused || viewersDrawerOpen || isBuffering) return;
 
       setProgress((prev) => {
         const nextVal = prev + 100 / (totalMs / 50);
@@ -180,18 +192,18 @@ export const GroupVibeViewerModal = () => {
     }, 50);
 
     return () => {
-      if (progressInterval) clearInterval(progressInterval);
-      audioManager.stop();
+      clearInterval(progressInterval);
     };
   }, [
     isViewerOpen,
     activeViewerGroupId,
     activeVibeIndex,
     currentVibe?._id,
-    isMuted,
+    durationSec,
     isPaused,
     viewersDrawerOpen,
-    durationSec,
+    isBuffering,
+    nextVibe,
   ]);
 
   // --- KEYBOARD SHORTCUTS & WINDOW FOCUS AUTO-RESUME ---

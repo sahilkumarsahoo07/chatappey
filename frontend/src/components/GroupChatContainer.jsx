@@ -702,7 +702,7 @@ const GroupChatContainer = () => {
                                                     />
                                                 ) : (
                                                     <>
-                                                        <p className="text-[15px] md:text-base whitespace-pre-wrap break-words leading-[1.3]">
+                                                        <p className="text-[15px] md:text-base whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] leading-[1.3]">
                                                             {searchQuery
                                                                 ? highlightText(message.text, searchQuery, searchActiveId === message._id)
                                                                 : renderMessageWithMentions(message.text, message.mentions, isMyMessage)}
