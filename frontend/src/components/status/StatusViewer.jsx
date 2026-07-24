@@ -337,7 +337,7 @@ function StatusViewer() {
     }
 
     const audioUrl = music.audioUrl || "";
-    const sourceUrl = music.sourceUrl || "";
+    const sourceUrl = music.sourceUrl || (music.id ? `https://music.youtube.com/watch?v=${music.id}` : "");
     const title = music.title || "";
     const artist = music.artist || "";
     const startSec = Number(music.clipStart ?? music.startOffset ?? 0);

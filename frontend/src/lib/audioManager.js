@@ -191,6 +191,7 @@ class AudioManager {
         .catch((err) => {
           console.warn("AudioManager play error:", err.message);
           this.notifyState("paused", id);
+          if (onError) onError(err);
         });
     }
 

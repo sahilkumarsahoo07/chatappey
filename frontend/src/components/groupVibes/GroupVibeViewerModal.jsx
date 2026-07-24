@@ -101,7 +101,8 @@ export const GroupVibeViewerModal = () => {
     // Handle music playback
     if (currentVibe?.music && !isMuted) {
       const audioUrl = currentVibe.music.audioUrl || "";
-      const sourceUrl = currentVibe.music.sourceUrl || "";
+      const sourceUrl =
+        currentVibe.music.sourceUrl || (currentVibe.music.id ? `https://music.youtube.com/watch?v=${currentVibe.music.id}` : "");
       const title = currentVibe.music.title || "";
       const artist = currentVibe.music.artist || "";
       const startSec = Number(currentVibe.music.clipStart ?? currentVibe.music.startOffset ?? 0);

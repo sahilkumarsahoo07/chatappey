@@ -178,7 +178,10 @@ export const streamMusicProxy = async (req, res) => {
 
     if (!response && sourceUrl) {
       try {
-        const freshSong = await getMusicByLink(sourceUrl);
+        const fullSourceUrl = sourceUrl.includes("music.youtube.com")
+          ? sourceUrl
+          : `https://music.youtube.com/watch?v=${sourceUrl}`;
+        const freshSong = await getMusicByLink(fullSourceUrl);
         if (freshSong?.audioUrl) {
           streamUrl = freshSong.audioUrl;
           const cacheKey = `link:${sourceUrl}`;
@@ -204,22 +207,46 @@ export const streamMusicProxy = async (req, res) => {
 
     if (!response && (title || artist)) {
       try {
-        const query = `${title} ${artist}`.trim();
-        const freshLink = await resolveYoutubeMusicUrl(query);
-        const freshSong = await parseMusicMedia(freshLink);
-        if (freshSong?.audioUrl) {
-          streamUrl = freshSong.audioUrl;
-          const headers = {
-            "User-Agent":
-              "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-            Accept: "*/*",
-          };
-          if (req.headers.range) {
-            headers["Range"] = req.headers.range;
+        const cleanTitle = title
+          .replace(/Unknown artist/gi, "")
+          .replace(/\[.*?\]|\(.*?\)/g, "")
+          .replace(/\|.*/, "")
+          .replace(/\.\.\./g, "")
+          .trim();
+        const cleanArtist = artist.replace(/Unknown artist/gi, "").trim();
+
+        const query = `${cleanTitle} ${cleanArtist}`.trim();
+        if (query) {
+          console.log(`🔎 Stream proxy searching fallback query: "${query}"`);
+          let freshAudioUrl = "";
+          try {
+            const freshLink = await resolveYoutubeMusicUrl(query);
+            const freshSong = await parseMusicMedia(freshLink);
+            freshAudioUrl = freshSong?.audioUrl || "";
+          } catch {
+            const searchRes = await searchStoryMusic(query, { relatedLimit: 0 });
+            if (searchRes?.song?.audioUrl) {
+              freshAudioUrl = searchRes.song.audioUrl;
+            } else if (searchRes?.song?.sourceUrl) {
+              const freshSong = await parseMusicMedia(searchRes.song.sourceUrl);
+              freshAudioUrl = freshSong?.audioUrl || "";
+            }
           }
-          const titleRes = await fetch(streamUrl, { headers });
-          if (titleRes.ok || titleRes.status === 206) {
-            response = titleRes;
+
+          if (freshAudioUrl) {
+            streamUrl = freshAudioUrl;
+            const headers = {
+              "User-Agent":
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+              Accept: "*/*",
+            };
+            if (req.headers.range) {
+              headers["Range"] = req.headers.range;
+            }
+            const titleRes = await fetch(streamUrl, { headers });
+            if (titleRes.ok || titleRes.status === 206) {
+              response = titleRes;
+            }
           }
         }
       } catch (err) {
